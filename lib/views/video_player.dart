@@ -236,10 +236,27 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   @override
   void dispose() {
-    _saveCurrentProgress(); // Remove await
-    player.dispose();
-    _scrollController.dispose();
-    super.dispose(); // This must be synchronous and called last
+    // 先调用父类的 dispose
+    super.dispose();
+
+    // 创建一个异步函数来处理清理工作
+    Future<void> cleanup() async {
+      try {
+        // 等待进度保存完成
+        await _saveCurrentProgress();
+
+        // 等待播放器关闭完成
+        await player.dispose();
+
+        // 其他资源清理
+        _scrollController.dispose();
+      } catch (e) {
+        print('Error during cleanup: $e');
+      }
+    }
+
+    // 执行清理
+    cleanup();
   }
 
   @override
@@ -252,6 +269,24 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () {
+            // 创建异步函数来处理返回前的操作
+            Future<void> handleBack() async {
+              try {
+                await _saveCurrentProgress();
+                if (!mounted) return;
+                Navigator.of(context).pop();
+              } catch (e) {
+                print('Error saving progress before navigation: $e');
+              }
+            }
+
+            // 执行返回处理
+            handleBack();
+          },
+        ),
         title: Text(
           currentVideoName,
           style: const TextStyle(
