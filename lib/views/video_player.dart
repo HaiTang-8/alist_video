@@ -31,7 +31,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   String? _currentUsername;
   bool _hasSeekInitialPosition = false;
-  bool _isLoading = true;
+  bool _isLoading = false;
 
   // 获取当前登录用户名
   Future<void> _getCurrentUsername() async {
@@ -73,7 +73,10 @@ class VideoPlayerState extends State<VideoPlayer> {
           playList,
           index: playIndex,
         );
-        await player.open(playable);
+        await player.open(playable, play: false);
+        // 指定从 10 秒开始播放
+        player.seek(Duration(seconds: 10));
+        // player.play(); // 开始播放
       } else {
         // 处理API错误
         if (mounted) {
@@ -138,6 +141,18 @@ class VideoPlayerState extends State<VideoPlayer> {
     _getCurrentUsername();
     _openAndSeekVideo();
 
+    player.stream.buffer.listen((event) {
+      if (event.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
+        _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
+            .then((_) {
+          if (mounted) {
+            setState(() => _isLoading = false);
+          }
+        });
+        _hasSeekInitialPosition = true;
+      }
+    });
+
     player.stream.playlist.listen((event) async {
       if (mounted) {
         // 先保存当前视频进度，再更新状态
@@ -153,17 +168,17 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
 
-    player.stream.position.listen((Duration position) {
-      if (position.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
-        _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
-            .then((_) {
-          if (mounted) {
-            setState(() => _isLoading = false);
-          }
-        });
-        _hasSeekInitialPosition = true;
-      }
-    });
+    // player.stream.position.listen((Duration position) {
+    //   if (position.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
+    //     _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
+    //         .then((_) {
+    //       if (mounted) {
+    //         setState(() => _isLoading = false);
+    //       }
+    //     });
+    //     _hasSeekInitialPosition = true;
+    //   }
+    // });
 
     player.stream.error.listen((error) {
       if (mounted) {
@@ -211,6 +226,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       if (record != null && mounted) {
+        player.play();
         player.seek(Duration(seconds: record.videoSeek));
         // await player.seek(Duration(seconds: record.videoSeek));
         print('Seeked to position: ${record.videoSeek}s for video: $videoName');
