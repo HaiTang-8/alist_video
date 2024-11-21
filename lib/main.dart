@@ -307,10 +307,10 @@ class _LoginPageState extends State<LoginPage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      SvgPicture.network(
-                        'https://cdn.jsdelivr.net/gh/alist-org/logo@main/logo.svg',
-                        height: 32,
+                      SvgPicture.asset(
+                        'assets/images/logo.svg',
                         width: 32,
+                        height: 32,
                       ),
                       const SizedBox(width: 8.0),
                       const Text(
