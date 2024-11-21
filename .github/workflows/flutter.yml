@@ -11,52 +11,13 @@ on:
   workflow_dispatch: # 手动触发选项
 
 jobs:
-  build:
-    # 使用矩阵策略同时在 Linux 和 Windows 平台上构建
-    strategy:
-      matrix:
-        platform: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.platform }}
-
+  main:
+    runs-on: windows-latest
     steps:
-      # 检出代码
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      # 设置缓存以保存 Flutter 依赖
-      - name: Cache Flutter dependencies
-        uses: actions/cache@v3
-        with:
-          path: ${{ runner.os == 'Windows' && 'C:\\Users\\runneradmin\\.pub-cache' || '~/.pub-cache' }}
-          key: ${{ runner.os }}-flutter-cache
-          restore-keys: |
-            ${{ runner.os }}-flutter-cache
-
-      # 安装 Flutter SDK
+      - name: Clone repository
+        uses: actions/checkout@v4
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: 3.22.1  # 可以指定具体版本，例如 '3.13.0'
-
-      # 获取依赖
-      - name: Install dependencies
-        run: flutter pub get
-
-      # 构建 APK（仅在 Linux 平台运行）
-      - name: Build APK
-        if: matrix.platform == 'ubuntu-latest'
-        run: flutter build apk --release
-
-      # 构建 EXE（仅在 Windows 平台运行）
-      - name: Build EXE
-        if: matrix.platform == 'windows-latest'
-        run: flutter build windows --release
-
-      # 上传构建产物
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v3
-        with:
-          name: Build Outputs
-          path: |
-            build/app/outputs/flutter-apk/app-release.apk
-            build/windows/runner/Release/
+          channel: stable
+      - run: flutter build windows
