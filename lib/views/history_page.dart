@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:webdav_video/models/historical_record.dart';
 import 'package:webdav_video/utils/db.dart';
@@ -67,8 +65,9 @@ class _HistoryPageState extends State<HistoryPage> {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: InkWell(
-        onTap: () {
-          Navigator.push(
+        onTap: () async {
+          // 等待视频播放页面返回
+          await Navigator.push(
             context,
             MaterialPageRoute(
               builder: (context) => VideoPlayer(
@@ -77,6 +76,11 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
             ),
           );
+
+          // 视频播放页面返回后刷新历史记录
+          if (mounted) {
+            _loadHistory();
+          }
         },
         child: Padding(
           padding: const EdgeInsets.all(12),

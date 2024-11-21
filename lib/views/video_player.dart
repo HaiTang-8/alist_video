@@ -31,7 +31,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   String? _currentUsername;
   bool _hasSeekInitialPosition = false;
-  bool _isLoading = false;
+  bool _isLoading = true;
 
   // 获取当前登录用户名
   Future<void> _getCurrentUsername() async {
@@ -74,9 +74,6 @@ class VideoPlayerState extends State<VideoPlayer> {
           index: playIndex,
         );
         await player.open(playable, play: false);
-        // 指定从 10 秒开始播放
-        player.seek(Duration(seconds: 10));
-        // player.play(); // 开始播放
       } else {
         // 处理API错误
         if (mounted) {
@@ -105,7 +102,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 保存当前播放进度
   Future<void> _saveCurrentProgress() async {
-    if (!mounted || _currentUsername == null || playList.isEmpty) return;
+    if (!mounted || _currentUsername == null || playList.isEmpty || _isLoading)
+      return;
 
     try {
       final currentPosition = player.state.position;
@@ -236,7 +234,6 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
-  @override
   @override
   void dispose() {
     _saveCurrentProgress(); // Remove await
