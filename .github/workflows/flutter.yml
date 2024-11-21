@@ -1,23 +1,51 @@
-name: Build Flutter APK and EXE
+name: Build Flutter App
 
-# 触发条件：支持 push、PR 和手动触发
 on:
   push:
     branches:
-      - main
+      - main  # 触发分支
   pull_request:
-    branches:
-      - main
-  workflow_dispatch: # 手动触发选项
 
 jobs:
-  main:
-    runs-on: windows-latest
+  build:
+    name: Build Flutter App
+    runs-on: ubuntu-latest
+
     steps:
-      - name: Clone repository
-        uses: actions/checkout@v4
-      - name: Set up Flutter
+      # 检出代码
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # 设置 Flutter 环境
+      - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
-      - run: flutter build windows
+          flutter-version: 'stable' # 可更改为指定的 Flutter 版本
+
+      # 获取依赖
+      - name: Install dependencies
+        run: flutter pub get
+
+      # 构建 Windows 应用
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        run: flutter build windows --release
+
+      # 构建 Android APK
+      - name: Build Android
+        run: flutter build apk --release
+
+      # 上传 Windows 构建文件
+      - name: Upload Windows Build
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v3
+        with:
+          name: windows-build
+          path: build/windows/runner/Release/app.exe
+
+      # 上传 Android APK
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v3
+        with:
+          name: android-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
