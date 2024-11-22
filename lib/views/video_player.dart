@@ -1,6 +1,7 @@
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart'; // Provides [Player], [Media], [Playlist] etc.
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +33,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   String? _currentUsername;
   bool _hasSeekInitialPosition = false;
   bool _isLoading = true;
+
+  // 添加控制栏显示状态
+  bool _showControls = false;
 
   // 获取当前登录用户名
   Future<void> _getCurrentUsername() async {
@@ -249,7 +253,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         // 等待进度保存完成
         await _saveCurrentProgress();
 
-        // 等待播放器关闭完成
+        // 放器关闭完成
         await player.dispose();
 
         // 其他资源清理
@@ -310,7 +314,124 @@ class VideoPlayerState extends State<VideoPlayer> {
           aspectRatio: 16 / 9,
           child: Stack(
             children: [
-              Video(controller: controller),
+              MaterialVideoControlsTheme(
+                normal: MaterialVideoControlsThemeData(
+                  // 基础主题设置
+                  buttonBarButtonSize: 24.0,
+                  buttonBarButtonColor: Colors.white,
+                  // 顶部按钮栏
+                  topButtonBar: [
+                    const Spacer(),
+                    MaterialDesktopCustomButton(
+                      onPressed: () {
+                        // 播放速率选择
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('播放速度'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [0.5, 1.0, 1.5, 2.0]
+                                  .map(
+                                    (speed) => ListTile(
+                                      title: Text('${speed}x'),
+                                      onTap: () {
+                                        player.setRate(speed);
+                                        Navigator.pop(context);
+                                      },
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.speed),
+                    ),
+                  ],
+
+                  // 主要控制按钮
+                  primaryButtonBar: [
+                    const MaterialSkipPreviousButton(),
+                    const MaterialPlayOrPauseButton(),
+                    const MaterialSkipNextButton(),
+                    const MaterialPositionIndicator(),
+                    const Spacer(),
+                    MaterialDesktopCustomButton(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('播放速度'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [0.5, 1.0, 1.5, 2.0]
+                                  .map(
+                                    (speed) => ListTile(
+                                      title: Text('${speed}x'),
+                                      onTap: () {
+                                        controller.player.setRate(speed);
+                                        Navigator.pop(context);
+                                      },
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.speed),
+                    ),
+                    const MaterialFullscreenButton(),
+                  ],
+                ),
+
+                // 全屏模式的主题设置
+                fullscreen: MaterialVideoControlsThemeData(
+                  buttonBarButtonSize: 28.0,
+                  buttonBarButtonColor: Colors.white,
+                  seekBarColor: Colors.white.withOpacity(0.3),
+                  seekBarPositionColor: Colors.white,
+                  seekBarThumbColor: Colors.white,
+                  seekBarBufferColor: Colors.white.withOpacity(0.1),
+                  primaryButtonBar: [
+                    const MaterialSkipPreviousButton(),
+                    const MaterialPlayOrPauseButton(),
+                    const MaterialSkipNextButton(),
+                    const MaterialPositionIndicator(),
+                    const Spacer(),
+                    MaterialDesktopCustomButton(
+                      onPressed: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('播放速度'),
+                            content: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [0.5, 1.0, 1.5, 2.0]
+                                  .map(
+                                    (speed) => ListTile(
+                                      title: Text('${speed}x'),
+                                      onTap: () {
+                                        controller.player.setRate(speed);
+                                        Navigator.pop(context);
+                                      },
+                                    ),
+                                  )
+                                  .toList(),
+                            ),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.speed),
+                    ),
+                    const MaterialFullscreenButton(),
+                  ],
+                ),
+                child: Video(
+                  controller: controller,
+                ),
+              ),
               if (_isLoading)
                 const Center(
                   child: CircularProgressIndicator(),
@@ -335,16 +456,185 @@ class VideoPlayerState extends State<VideoPlayer> {
           flex: 2,
           child: Padding(
             padding: const EdgeInsets.all(8.0),
-            child: AspectRatio(
-              aspectRatio: 16 / 9,
-              child: Stack(
-                children: [
-                  Video(controller: controller),
-                  if (_isLoading)
-                    const Center(
-                      child: CircularProgressIndicator(),
+            child: MouseRegion(
+              onEnter: (_) => setState(() => _showControls = true),
+              onExit: (_) => setState(() => _showControls = false),
+              child: AspectRatio(
+                aspectRatio: 16 / 9,
+                child: Stack(
+                  children: [
+                    // Wrap [Video] widget with [MaterialDesktopVideoControlsTheme].
+                    MaterialDesktopVideoControlsTheme(
+                      normal: MaterialDesktopVideoControlsThemeData(
+                        seekBarThumbColor: Colors.blue,
+                        seekBarPositionColor: Colors.blue,
+                        toggleFullscreenOnDoublePress: false,
+                        keyboardShortcuts: <SingleActivator, VoidCallback>{
+                          const SingleActivator(LogicalKeyboardKey.mediaPlay):
+                              () => controller.player.play(),
+                          const SingleActivator(LogicalKeyboardKey.mediaPause):
+                              () => controller.player.pause(),
+                          const SingleActivator(
+                                  LogicalKeyboardKey.mediaPlayPause):
+                              () => controller.player.playOrPause(),
+                          const SingleActivator(
+                                  LogicalKeyboardKey.mediaTrackNext):
+                              () => controller.player.next(),
+                          const SingleActivator(
+                                  LogicalKeyboardKey.mediaTrackPrevious):
+                              () => controller.player.previous(),
+                          const SingleActivator(LogicalKeyboardKey.space): () =>
+                              controller.player.playOrPause(),
+                          const SingleActivator(LogicalKeyboardKey.keyJ): () {
+                            final rate = controller.player.state.position -
+                                const Duration(seconds: 10);
+                            controller.player.seek(rate);
+                          },
+                          const SingleActivator(LogicalKeyboardKey.keyI): () {
+                            final rate = controller.player.state.position +
+                                const Duration(seconds: 10);
+                            controller.player.seek(rate);
+                          },
+                          const SingleActivator(LogicalKeyboardKey.arrowLeft):
+                              () {
+                            final rate = controller.player.state.position -
+                                const Duration(seconds: 2);
+                            controller.player.seek(rate);
+                          },
+                          const SingleActivator(LogicalKeyboardKey.arrowRight):
+                              () {
+                            final rate = controller.player.state.position +
+                                const Duration(seconds: 2);
+                            controller.player.seek(rate);
+                          },
+                          const SingleActivator(LogicalKeyboardKey.arrowUp):
+                              () {
+                            final volume = controller.player.state.volume + 5.0;
+                            controller.player
+                                .setVolume(volume.clamp(0.0, 100.0));
+                          },
+                          const SingleActivator(LogicalKeyboardKey.arrowDown):
+                              () {
+                            final volume = controller.player.state.volume - 5.0;
+                            controller.player
+                                .setVolume(volume.clamp(0.0, 100.0));
+                          },
+                          const SingleActivator(LogicalKeyboardKey.keyF): () =>
+                              toggleFullscreen(context),
+                          const SingleActivator(LogicalKeyboardKey.escape):
+                              () => exitFullscreen(context),
+                        },
+                      ),
+                      fullscreen: const MaterialDesktopVideoControlsThemeData(),
+                      child: Scaffold(
+                        body: Video(
+                          controller: controller,
+                          controls: (state) {
+                            return Stack(
+                              children: [
+                                GestureDetector(
+                                  onTap: () {
+                                    if (player.state.playing) {
+                                      player.pause();
+                                    } else {
+                                      player.play();
+                                    }
+                                    setState(
+                                        () => _showControls = !_showControls);
+                                  },
+                                  child: Container(color: Colors.transparent),
+                                ),
+                                if (_showControls)
+                                  Positioned(
+                                    left: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 16, vertical: 8),
+                                      decoration: BoxDecoration(
+                                        gradient: LinearGradient(
+                                          begin: Alignment.topCenter,
+                                          end: Alignment.bottomCenter,
+                                          colors: [
+                                            Colors.transparent,
+                                            Colors.black.withOpacity(0.7),
+                                          ],
+                                        ),
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // 添加进度条
+                                          const MaterialSeekBar(),
+                                          // 控制按钮行
+                                          Row(
+                                            children: [
+                                              const MaterialSkipPreviousButton(),
+                                              const MaterialPlayOrPauseButton(),
+                                              const MaterialSkipNextButton(),
+                                              const MaterialDesktopVolumeButton(),
+                                              const MaterialPositionIndicator(),
+                                              const Spacer(),
+                                              // 速率控制按钮
+                                              MaterialCustomButton(
+                                                onPressed: () {
+                                                  showDialog(
+                                                    context: context,
+                                                    builder: (context) =>
+                                                        AlertDialog(
+                                                      title: const Text('播放速度'),
+                                                      content: Column(
+                                                        mainAxisSize:
+                                                            MainAxisSize.min,
+                                                        children:
+                                                            [0.5, 1.0, 1.5, 2.0]
+                                                                .map(
+                                                                  (speed) =>
+                                                                      ListTile(
+                                                                    title: Text(
+                                                                        '${speed}x'),
+                                                                    onTap: () {
+                                                                      state
+                                                                          .widget
+                                                                          .controller
+                                                                          .player
+                                                                          .setRate(
+                                                                              speed);
+                                                                      Navigator.pop(
+                                                                          context);
+                                                                    },
+                                                                  ),
+                                                                )
+                                                                .toList(),
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                                icon: const Icon(
+                                                  Icons.speed,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                              const MaterialFullscreenButton(),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                      ),
                     ),
-                ],
+                    if (_isLoading)
+                      const Center(
+                        child: CircularProgressIndicator(),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -399,7 +689,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               ],
             ),
           ),
-          // 播放列表内容
+          // 播��列表内容
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
