@@ -265,30 +265,24 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   @override
   Widget build(BuildContext context) {
-    // 获取当前播放视频名称
     String currentVideoName =
         playList.isNotEmpty && currentPlayingIndex < playList.length
             ? playList[currentPlayingIndex].extras!['name']
             : '视频播放';
 
+    // 获取屏幕宽度
+    final screenWidth = MediaQuery.of(context).size.width;
+    // 判断是否是移动端布局（小于 600dp 使用移动端布局）
+    final isMobile = screenWidth < 600;
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            // 创建异步函数来处理返回前的操作
-            Future<void> handleBack() async {
-              try {
-                await _saveCurrentProgress();
-                if (!mounted) return;
-                Navigator.of(context).pop();
-              } catch (e) {
-                print('Error saving progress before navigation: $e');
-              }
-            }
-
-            // 执行返回处理
-            handleBack();
+          onPressed: () async {
+            await _saveCurrentProgress();
+            if (!mounted) return;
+            Navigator.of(context).pop();
           },
         ),
         title: Text(
@@ -303,107 +297,138 @@ class VideoPlayerState extends State<VideoPlayer> {
         centerTitle: false,
         elevation: 1,
       ),
-      body: Row(
-        children: [
-          // Left side video player
-          Expanded(
-            flex: 2,
-            child: Padding(
-              padding: const EdgeInsets.all(8.0),
+      body: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+    );
+  }
+
+  // 移动端布局
+  Widget _buildMobileLayout() {
+    return Column(
+      children: [
+        // 视频播放器
+        AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Stack(
+            children: [
+              Video(controller: controller),
+              if (_isLoading)
+                const Center(
+                  child: CircularProgressIndicator(),
+                ),
+            ],
+          ),
+        ),
+        // 播放列表
+        Expanded(
+          child: _buildPlaylist(),
+        ),
+      ],
+    );
+  }
+
+  // 桌面端布局
+  Widget _buildDesktopLayout() {
+    return Row(
+      children: [
+        // 左侧视频播放器
+        Expanded(
+          flex: 2,
+          child: Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: AspectRatio(
+              aspectRatio: 16 / 9,
               child: Stack(
                 children: [
-                  AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: Video(controller: controller),
-                  ),
+                  Video(controller: controller),
                   if (_isLoading)
-                    const AspectRatio(
-                      aspectRatio: 16 / 9,
-                      child: Center(
-                        child: CircularProgressIndicator(),
-                      ),
+                    const Center(
+                      child: CircularProgressIndicator(),
                     ),
                 ],
               ),
             ),
           ),
-          // Right side playlist
-          Expanded(
-            flex: 1,
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.grey[100],
-                border: Border(
-                  left: BorderSide(
-                    color: Colors.grey[300]!,
-                    width: 1,
+        ),
+        // 右侧播放列表
+        Expanded(
+          flex: 1,
+          child: _buildPlaylist(),
+        ),
+      ],
+    );
+  }
+
+  // 播放列表组件
+  Widget _buildPlaylist() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.grey[100],
+        border: Border(
+          left: BorderSide(
+            color: Colors.grey[300]!,
+            width: 1,
+          ),
+        ),
+      ),
+      child: Column(
+        children: [
+          // 播放列表标题
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.grey.withOpacity(0.1),
+                  spreadRadius: 1,
+                  blurRadius: 1,
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.playlist_play, color: Colors.blue),
+                const SizedBox(width: 8),
+                Text(
+                  '播放列表 (${playList.length})',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
                   ),
                 ),
-              ),
-              child: Column(
-                children: [
-                  // Playlist header
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.1),
-                          spreadRadius: 1,
-                          blurRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.playlist_play, color: Colors.blue),
-                        const SizedBox(width: 8),
-                        Text(
-                          '播放列表 (${playList.length})',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+              ],
+            ),
+          ),
+          // 播放列表内容
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              itemCount: playList.length,
+              itemBuilder: (context, index) {
+                final isPlaying = index == currentPlayingIndex;
+                return Container(
+                  margin: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
                   ),
-                  // Playlist items with ScrollController
-                  Expanded(
-                    child: ListView.builder(
-                      controller: _scrollController, // 添加 ScrollController
-                      itemCount: playList.length,
-                      itemBuilder: (context, index) {
-                        final isPlaying = index == currentPlayingIndex;
-                        return Container(
-                          margin: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: isPlaying
-                                ? Colors.blue.withOpacity(0.1)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.grey.withOpacity(0.1),
-                                spreadRadius: 1,
-                                blurRadius: 2,
-                              ),
-                            ],
-                          ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: _buildPlaylistItem(index, isPlaying),
-                          ),
-                        );
-                      },
-                    ),
+                  decoration: BoxDecoration(
+                    color:
+                        isPlaying ? Colors.blue.withOpacity(0.1) : Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.1),
+                        spreadRadius: 1,
+                        blurRadius: 2,
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: _buildPlaylistItem(index, isPlaying),
+                  ),
+                );
+              },
             ),
           ),
         ],
