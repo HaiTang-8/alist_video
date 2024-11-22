@@ -66,22 +66,16 @@ jobs:
       - name: Get dependencies
         run: flutter pub get
 
-      # 安装flutter_distributor
-      - name: Install flutter_distributor
-        run: dart pub global activate flutter_distributor
-
       # 构建Windows应用
       - name: Build Windows
-        run: flutter_distributor package --platform windows --targets exe,zip --skip-clean
+        run: flutter build windows --release
 
       # 上传构建产物
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: |
-            build/windows/*/*/*/*.exe
-            build/windows/*/*/*/*.zip
+          path: build/windows/x64/runner/Release
 
       # 发布Release
       - name: Create Release
@@ -89,8 +83,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            build/windows/*/*/*/*.exe
-            build/windows/*/*/*/*.zip
+            build/windows/x64/runner/Release
             build/app/outputs/flutter-apk/app-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
