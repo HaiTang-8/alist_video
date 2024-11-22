@@ -1,58 +1,96 @@
-name: Build Flutter App
+name: App Build
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
+    tags:
+      - "v*"
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Setup Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.22.1'
-          channel: 'stable'
-
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Build Windows
-        run: flutter build windows --release
-
-      - name: Upload Windows Build
-        uses: actions/upload-artifact@v3
-        with:
-          name: windows-build
-          path: build/windows/x64/runner/Release
-
   build-android:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
+      # 设置Java环境
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: "17"
+          cache: 'gradle'
+
+      # 设置Flutter环境
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.1'
-          channel: 'stable'
+          flutter-version: '3.22.x'
+          cache: true
 
-      - name: Install dependencies
+      # 获取依赖
+      - name: Get dependencies
         run: flutter pub get
 
-      - name: Build Android
+      # 构建APK
+      - name: Build APK
         run: flutter build apk --release
 
-      - name: Upload Android APK
+      # 上传构建产物
+      - name: Upload APK artifacts
         uses: actions/upload-artifact@v3
         with:
           name: android-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 设置Flutter环境
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.x'
+          cache: true
+
+      # 启用Windows桌面支持
+      - name: Enable Windows Desktop
+        run: flutter config --enable-windows-desktop
+
+      # 获取依赖
+      - name: Get dependencies
+        run: flutter pub get
+
+      # 安装flutter_distributor
+      - name: Install flutter_distributor
+        run: dart pub global activate flutter_distributor
+
+      # 构建Windows应用
+      - name: Build Windows
+        run: flutter_distributor package --platform windows --targets exe,zip --skip-clean
+
+      # 上传构建产物
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            build/dist/*/*.exe
+            build/dist/*/*.zip
+
+      # 发布Release
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            build/dist/*/*.exe
+            build/dist/*/*.zip
+            build/app/outputs/flutter-apk/app-release.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
