@@ -158,36 +158,19 @@ class WooHttpUtil {
 
 /// 拦截
 class RequestInterceptors extends Interceptor {
-  //
-
-  /// 发送请求
-  /// 我们这里可以添加一些公共参数，或者对参数进行加密
   @override
   Future<void> onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
-    // super.onRequest(options, handler);
     EasyLoading.show(status: '加载中...');
-    // http header 头加入 Authorization
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    // print("token");
-    // print('(${prefs.get('token')})');
     options.headers['Authorization'] = '${prefs.get('token')}';
-    // if (UserService.to.hasToken) {
-    //   options.headers['Authorization'] = 'Bearer ${UserService.to.token}';
-    // }
-
     return handler.next(options);
-    // 如果你想完成请求并返回一些自定义数据，你可以resolve一个Response对象 `handler.resolve(response)`。
-    // 这样请求将会被终止，上层then会被调用，then中返回的数据将是你的自定义response.
-    //
-    // 如果你想终止请求并触发一个错误,你可以返回一个`DioError`对象,如`handler.reject(error)`，
-    // 这样请求将被中止并触发异常，上层catchError会被调用。
   }
 
-  /// 响应
   @override
   void onResponse(Response response, ResponseInterceptorHandler handler) {
-    // 200 请求成功, 201 添加成功
+    EasyLoading.dismiss();
+
     if (response.statusCode != 200 && response.statusCode != 201) {
       handler.reject(
         DioException(
@@ -200,59 +183,55 @@ class RequestInterceptors extends Interceptor {
     } else {
       handler.next(response);
     }
-    EasyLoading.dismiss();
   }
 
-  // // 退出并重新登录
-  // Future<void> _errorNoAuthLogout() async {
-  //   await UserService.to.logout();
-  //   IMService.to.logout();
-  //   Get.toNamed(RouteNames.systemLogin);
-  // }
-
-  /// 错误
   @override
   Future<void> onError(
       DioException err, ErrorInterceptorHandler handler) async {
+    EasyLoading.dismiss();
+
     final exception = HttpException(err.message ?? "error message");
     switch (err.type) {
-      case DioExceptionType.badResponse: // 服务端自定义错误体处理
+      case DioExceptionType.badResponse:
         {
           final response = err.response;
           final errorMessage = ErrorMessageModel.fromJson(response?.data);
           switch (errorMessage.statusCode) {
-            // 401 未登录
             case 401:
-              // 注销 并跳转到登录页面
-              // _errorNoAuthLogout();
+              EasyLoading.showError('未登录或登录已过期');
               break;
             case 404:
+              EasyLoading.showError('请求的资源不存在');
               break;
             case 500:
+              EasyLoading.showError('服务器内部错误');
               break;
             case 502:
+              EasyLoading.showError('网关错误');
               break;
             default:
+              if (errorMessage.message != null) {
+                EasyLoading.showError(errorMessage.message!);
+              }
               break;
           }
-          // 显示错误信息
-          // if(errorMessage.message != null){
-          //   Loading.error(errorMessage.message);
-          // }
         }
         break;
       case DioExceptionType.unknown:
+        EasyLoading.showError('网络连接错误');
         break;
       case DioExceptionType.cancel:
+        EasyLoading.showInfo('请求已取消');
         break;
       case DioExceptionType.connectionTimeout:
+        EasyLoading.showError('连接超时');
         break;
       default:
+        EasyLoading.showError('请求失败');
         break;
     }
-    DioException errNext = err.copyWith(
-      error: exception,
-    );
+
+    DioException errNext = err.copyWith(error: exception);
     handler.next(errNext);
   }
 }
