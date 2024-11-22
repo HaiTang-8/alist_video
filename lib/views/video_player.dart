@@ -102,8 +102,12 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 保存当前播放进度
   Future<void> _saveCurrentProgress() async {
-    if (!mounted || _currentUsername == null || playList.isEmpty || _isLoading)
+    if (!mounted ||
+        _currentUsername == null ||
+        playList.isEmpty ||
+        _isLoading) {
       return;
+    }
 
     try {
       final currentPosition = player.state.position;

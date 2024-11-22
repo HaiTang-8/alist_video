@@ -3,48 +3,79 @@ name: Build Flutter App
 on:
   push:
     branches:
-      - main  # 触发分支
+      - main
   pull_request:
 
 jobs:
   build:
-    name: Build Flutter App
-    runs-on: ubuntu-latest
-
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    
     steps:
-      # 检出代码
       - name: Checkout code
         uses: actions/checkout@v3
 
-      # 设置 Flutter 环境
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.22.1' # 可更改为指定的 Flutter 版本
+          flutter-version: '3.22.1'
+          channel: 'stable'
 
-      # 获取依赖
       - name: Install dependencies
         run: flutter pub get
 
-      # 构建 Windows 应用
+      # Linux 构建配置
+      - name: Install Linux dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev
+
+      - name: Build Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: flutter build linux --release
+
+      # Windows 构建配置
       - name: Build Windows
-        if: runner.os == 'Windows'
+        if: matrix.os == 'windows-latest'
         run: flutter build windows --release
 
-      # 构建 Android APK
+      # macOS 构建配置
+      - name: Build macOS
+        if: matrix.os == 'macos-latest'
+        run: flutter build macos --release
+
+      # Android 构建配置
       - name: Build Android
+        if: matrix.os == 'ubuntu-latest'
         run: flutter build apk --release
 
-      # 上传 Windows 构建文件
+      # 上传构建产物
+      - name: Upload Linux Build
+        if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: linux-build
+          path: build/linux/x64/release/bundle
+
       - name: Upload Windows Build
-        if: runner.os == 'Windows'
+        if: matrix.os == 'windows-latest'
         uses: actions/upload-artifact@v3
         with:
           name: windows-build
-          path: build/windows/runner/Release/app.exe
+          path: build/windows/x64/runner/Release
 
-      # 上传 Android APK
+      - name: Upload macOS Build
+        if: matrix.os == 'macos-latest'
+        uses: actions/upload-artifact@v3
+        with:
+          name: macos-build
+          path: build/macos/Build/Products/Release
+
       - name: Upload Android APK
+        if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v3
         with:
           name: android-apk
