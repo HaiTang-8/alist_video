@@ -1,7 +1,7 @@
+import 'package:alist_player/views/history_page.dart';
+import 'package:alist_player/views/home_page.dart';
+import 'package:alist_player/views/person_page.dart';
 import 'package:flutter/material.dart';
-import 'package:webdav_video/views/history_page.dart';
-import 'package:webdav_video/views/home_page.dart';
-import 'package:webdav_video/views/person_page.dart';
 
 class IndexPage extends StatefulWidget {
   const IndexPage({super.key});

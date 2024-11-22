@@ -1,9 +1,9 @@
 import 'dart:io';
 
+import 'package:alist_player/models/error_message_model.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_video/models/error_message_model.dart';
 
 const String APPLICATION_JSON = "application/json";
 const String CONTENT_TYPE = "content-type";

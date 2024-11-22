@@ -1,5 +1,5 @@
-name: webdav_video
-description: "A new Flutter project."
+name: alist_player
+description: "依托alist的播放器、支持进度保存、历史浏览记录"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev

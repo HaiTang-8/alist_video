@@ -1,5 +1,5 @@
-import 'package:webdav_video/models/fs_resp/fs_resp.dart';
-import 'package:webdav_video/utils/woo_http.dart';
+import 'package:alist_player/models/fs_resp/fs_resp.dart';
+import 'package:alist_player/utils/woo_http.dart';
 
 class FsApi {
   static Future<FsResp> list({

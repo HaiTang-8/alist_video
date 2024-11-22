@@ -1,12 +1,12 @@
+import 'package:alist_player/apis/login.dart';
+import 'package:alist_player/utils/db.dart';
+import 'package:alist_player/views/index.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:webdav_video/apis/login.dart';
 import 'package:toastification/toastification.dart';
-import 'package:webdav_video/utils/db.dart';
-import 'package:webdav_video/views/index.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 Future<void> main() async {

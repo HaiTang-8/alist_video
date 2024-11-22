@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
+import 'package:alist_player/models/historical_record.dart';
 import 'package:postgres/postgres.dart';
-import 'package:webdav_video/models/historical_record.dart';
 
 class DatabaseHelper {
   static DatabaseHelper? _instance;

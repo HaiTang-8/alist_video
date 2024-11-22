@@ -1,8 +1,8 @@
+import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/utils/db.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart'; // Provides [Player], [Media], [Playlist] etc.
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:webdav_video/apis/fs.dart';
-import 'package:webdav_video/utils/db.dart'; // Provides [VideoController] & [Video] etc.
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 

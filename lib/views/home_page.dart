@@ -1,9 +1,9 @@
 import 'dart:ui';
 
+import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
-import 'package:webdav_video/apis/fs.dart';
-import 'package:webdav_video/views/video_player.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -100,13 +100,14 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 600;
-    
+
     return Scaffold(
       body: Column(
         children: <Widget>[
           // 美化后的面包屑导航栏
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
             decoration: BoxDecoration(
               color: Colors.white,
               boxShadow: [
@@ -159,7 +160,8 @@ class _HomePageState extends State<HomePage> {
                                 InkWell(
                                   onTap: () {
                                     setState(() {
-                                      currentPath = currentPath.sublist(0, index + 1);
+                                      currentPath =
+                                          currentPath.sublist(0, index + 1);
                                     });
                                     _getList();
                                   },
@@ -171,17 +173,23 @@ class _HomePageState extends State<HomePage> {
                                     ),
                                     decoration: BoxDecoration(
                                       color: isLast
-                                          ? Theme.of(context).primaryColor.withOpacity(0.1)
+                                          ? Theme.of(context)
+                                              .primaryColor
+                                              .withOpacity(0.1)
                                           : Colors.transparent,
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text(
-                                      currentPath[index] == '/' ? '主目录' : currentPath[index],
+                                      currentPath[index] == '/'
+                                          ? '主目录'
+                                          : currentPath[index],
                                       style: TextStyle(
                                         color: isLast
                                             ? Theme.of(context).primaryColor
                                             : Colors.grey[600],
-                                        fontWeight: isLast ? FontWeight.w600 : FontWeight.normal,
+                                        fontWeight: isLast
+                                            ? FontWeight.w600
+                                            : FontWeight.normal,
                                         fontSize: 14,
                                       ),
                                     ),
@@ -190,7 +198,8 @@ class _HomePageState extends State<HomePage> {
                                 // 分隔符
                                 if (!isLast)
                                   Padding(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8.0),
                                     child: Icon(
                                       Icons.chevron_right_rounded,
                                       size: 20,
@@ -217,7 +226,8 @@ class _HomePageState extends State<HomePage> {
                     children: [
                       // 表头
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16.0, vertical: 8.0),
                         decoration: BoxDecoration(
                           color: Colors.grey[50],
                           border: Border(
@@ -239,7 +249,8 @@ class _HomePageState extends State<HomePage> {
                             ),
                             child: ListView.builder(
                               itemCount: files.length,
-                              itemBuilder: (context, index) => _buildFileListItem(
+                              itemBuilder: (context, index) =>
+                                  _buildFileListItem(
                                 files[index],
                                 isSmallScreen,
                               ),
@@ -261,10 +272,7 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.folder_open_outlined, 
-            size: 80, 
-            color: Colors.grey[300]
-          ),
+          Icon(Icons.folder_open_outlined, size: 80, color: Colors.grey[300]),
           const SizedBox(height: 16),
           Text(
             '文件夹为空',
@@ -289,7 +297,8 @@ class _HomePageState extends State<HomePage> {
 
   // 表头构建
   Widget _buildTableHeader(bool isSmallScreen) {
-    Widget buildSortableHeader(String text, int columnIndex, Comparable Function(FileItem file) getField) {
+    Widget buildSortableHeader(String text, int columnIndex,
+        Comparable Function(FileItem file) getField) {
       return InkWell(
         onTap: () {
           final isAsc = _sortColumnIndex != columnIndex || !_isAscending;
@@ -329,7 +338,8 @@ class _HomePageState extends State<HomePage> {
           ),
           SizedBox(
             width: 120,
-            child: buildSortableHeader('修改时间', 2, (file) => file.modified.millisecondsSinceEpoch),
+            child: buildSortableHeader(
+                '修改时间', 2, (file) => file.modified.millisecondsSinceEpoch),
           ),
         ],
       ],
@@ -444,17 +454,21 @@ class _HomePageState extends State<HomePage> {
       case 'mp4':
       case 'avi':
       case 'mkv':
-        return const Icon(Icons.video_collection, color: Colors.blue, size: iconSize);
+        return const Icon(Icons.video_collection,
+            color: Colors.blue, size: iconSize);
       case 'mp3':
       case 'wav':
       case 'flac':
-        return const Icon(Icons.audiotrack, color: Colors.green, size: iconSize);
+        return const Icon(Icons.audiotrack,
+            color: Colors.green, size: iconSize);
       case 'pdf':
-        return const Icon(Icons.picture_as_pdf, color: Colors.orange, size: iconSize);
+        return const Icon(Icons.picture_as_pdf,
+            color: Colors.orange, size: iconSize);
       case 'doc':
       case 'docx':
       case 'txt':
-        return const Icon(Icons.description, color: Colors.grey, size: iconSize);
+        return const Icon(Icons.description,
+            color: Colors.grey, size: iconSize);
       case '':
         return const Icon(Icons.folder, color: Colors.blue, size: iconSize);
       default:

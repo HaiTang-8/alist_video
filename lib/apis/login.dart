@@ -1,5 +1,5 @@
-import 'package:webdav_video/models/login_resp/login_resp.dart';
-import 'package:webdav_video/utils/woo_http.dart';
+import 'package:alist_player/models/login_resp/login_resp.dart';
+import 'package:alist_player/utils/woo_http.dart';
 
 class LoginApi {
   static Future<LoginResp> login(
