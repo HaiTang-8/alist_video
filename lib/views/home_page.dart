@@ -1,6 +1,8 @@
 import 'dart:ui';
 
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/views/history_page.dart';
+import 'package:alist_player/views/person_page.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
@@ -102,6 +104,43 @@ class _HomePageState extends State<HomePage> {
     final isSmallScreen = screenWidth < 600;
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          'Alist Player',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        actions: [
+          // 历史记录按钮
+          IconButton(
+            icon: const Icon(Icons.history),
+            tooltip: '观看历史',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HistoryPage()),
+              );
+            },
+          ),
+          // 设置按钮
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: '设置',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const PersonPage()),
+              );
+            },
+          ),
+          const SizedBox(width: 8), // 右侧边距
+        ],
+        elevation: 1,
+        backgroundColor: Colors.white,
+        foregroundColor: Colors.black87,
+      ),
       body: Column(
         children: <Widget>[
           // 美化后的面包屑导航栏
