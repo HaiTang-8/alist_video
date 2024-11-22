@@ -269,7 +269,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     String currentVideoName =
         playList.isNotEmpty && currentPlayingIndex < playList.length
             ? playList[currentPlayingIndex].extras!['name']
-            : '视频播放器';
+            : '视频播放';
 
     return Scaffold(
       appBar: AppBar(
