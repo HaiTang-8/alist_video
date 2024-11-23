@@ -5,6 +5,7 @@ import 'package:alist_player/utils/db.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as path;
 import 'package:timeago/timeago.dart' as timeago;
+import 'dart:async';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -19,6 +20,10 @@ class _HistoryPageState extends State<HistoryPage> {
   String? _currentUsername;
   bool _isTimelineMode = true;
   String? _selectedDirectory;
+  bool _isSelectMode = false;
+  final Set<String> _selectedItems = <String>{};
+  HistoricalRecord? _lastDeletedRecord;
+  String? _lastDeletedGroupKey;
 
   @override
   void initState() {
@@ -121,6 +126,180 @@ class _HistoryPageState extends State<HistoryPage> {
     }
   }
 
+  void _toggleSelectMode() {
+    setState(() {
+      _isSelectMode = !_isSelectMode;
+      if (!_isSelectMode) {
+        _selectedItems.clear();
+      }
+    });
+  }
+
+  void _toggleSelect(String videoSha1) {
+    setState(() {
+      if (_selectedItems.contains(videoSha1)) {
+        _selectedItems.remove(videoSha1);
+      } else {
+        _selectedItems.add(videoSha1);
+      }
+
+      if (_selectedItems.isEmpty) {
+        _isSelectMode = false;
+      }
+    });
+  }
+
+  Future<void> _deleteRecord(HistoricalRecord record, String groupKey) async {
+    try {
+      final deletedRecord = record;
+      final deletedGroupKey = groupKey;
+      final deletedIndex = _groupedRecords[groupKey]?.indexOf(record) ?? 0;
+
+      setState(() {
+        _groupedRecords[groupKey]?.remove(record);
+        if (_groupedRecords[groupKey]?.isEmpty ?? false) {
+          _groupedRecords.remove(groupKey);
+        }
+        _lastDeletedRecord = deletedRecord;
+        _lastDeletedGroupKey = deletedGroupKey;
+      });
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).clearSnackBars();
+
+      final remainingSeconds = ValueNotifier<int>(3);
+      Timer? countdownTimer;
+
+      final snackBar = SnackBar(
+        content: Row(
+          children: [
+            const Text('已删除该记录（'),
+            ValueListenableBuilder<int>(
+              valueListenable: remainingSeconds,
+              builder: (context, seconds, _) => Text(
+                '$seconds秒',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Text('内可撤销）'),
+          ],
+        ),
+        action: SnackBarAction(
+          label: '撤销',
+          onPressed: () {
+            countdownTimer?.cancel();
+            _undoDelete(deletedIndex);
+          },
+        ),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+      );
+
+      countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        if (remainingSeconds.value > 0) {
+          remainingSeconds.value--;
+        } else {
+          timer.cancel();
+        }
+      });
+
+      final result =
+          await ScaffoldMessenger.of(context).showSnackBar(snackBar).closed;
+
+      countdownTimer.cancel();
+      remainingSeconds.dispose();
+
+      if (result == SnackBarClosedReason.timeout &&
+          _lastDeletedRecord == deletedRecord) {
+        await DatabaseHelper.instance.deleteHistoricalRecord(record.videoSha1);
+        _lastDeletedRecord = null;
+        _lastDeletedGroupKey = null;
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _undoDelete([int? index]) async {
+    if (_lastDeletedRecord != null && _lastDeletedGroupKey != null) {
+      setState(() {
+        _groupedRecords.putIfAbsent(_lastDeletedGroupKey!, () => []);
+
+        if (index != null &&
+            index < _groupedRecords[_lastDeletedGroupKey]!.length) {
+          _groupedRecords[_lastDeletedGroupKey]!
+              .insert(index, _lastDeletedRecord!);
+        } else {
+          _groupedRecords[_lastDeletedGroupKey]!.add(_lastDeletedRecord!);
+        }
+
+        if (!_isTimelineMode) {
+          _groupedRecords[_lastDeletedGroupKey]!
+              .sort((a, b) => b.changeTime.compareTo(a.changeTime));
+        }
+      });
+      _lastDeletedRecord = null;
+      _lastDeletedGroupKey = null;
+    }
+  }
+
+  Future<void> _deleteSelected() async {
+    try {
+      if (_selectedItems.isEmpty) return;
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text('删除${_selectedItems.length}条记录'),
+          content: const Text('确定要删除选中的记录吗？此操作不可撤销。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                '删除',
+                style: TextStyle(color: Colors.red),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed == true) {
+        for (var sha1 in _selectedItems) {
+          await DatabaseHelper.instance.deleteHistoricalRecord(sha1);
+        }
+
+        setState(() {
+          _isSelectMode = false;
+          _selectedItems.clear();
+        });
+
+        await _loadHistory();
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已删除选中的记录')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -129,65 +308,75 @@ class _HistoryPageState extends State<HistoryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(_isTimelineMode
-            ? '观看历史'
-            : (_selectedDirectory != null
-                ? path.basename(_selectedDirectory!)
-                : '观看历史')),
-        leading: !_isTimelineMode && _selectedDirectory != null
+        leading: _isSelectMode
             ? IconButton(
-                icon: const Icon(Icons.arrow_back),
-                onPressed: () {
-                  setState(() => _selectedDirectory = null);
-                },
+                icon: const Icon(Icons.close),
+                onPressed: _toggleSelectMode,
               )
             : null,
+        title: _isSelectMode
+            ? Text('已选择 ${_selectedItems.length} 项')
+            : Text(_isTimelineMode
+                ? '观看历史'
+                : (_selectedDirectory != null
+                    ? path.basename(_selectedDirectory!)
+                    : '观看历史')),
         actions: [
-          IconButton(
-            icon: Icon(_isTimelineMode ? Icons.folder : Icons.access_time),
-            tooltip: _isTimelineMode ? '切换到目录视图' : '切换到时间线视图',
-            onPressed: () {
-              setState(() {
-                _isTimelineMode = !_isTimelineMode;
-                _selectedDirectory = null;
-                _loadHistory();
-              });
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_sweep),
-            onPressed: _groupedRecords.isEmpty
-                ? null
-                : () {
-                    showDialog(
-                      context: context,
-                      builder: (context) => AlertDialog(
-                        title: const Text('清空历史记录'),
-                        content: const Text('确定要清空所有历史记录吗？此操作不可恢复。'),
-                        actions: [
-                          TextButton(
-                            onPressed: () => Navigator.pop(context),
-                            child: const Text('取消'),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              Navigator.pop(context);
-                              _clearAllHistory();
-                            },
-                            child: const Text(
-                              '确定',
-                              style: TextStyle(color: Colors.red),
+          if (_isSelectMode)
+            IconButton(
+              icon: const Icon(Icons.delete),
+              onPressed: _selectedItems.isEmpty ? null : _deleteSelected,
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.select_all),
+              onPressed: _toggleSelectMode,
+            ),
+            IconButton(
+              icon: Icon(_isTimelineMode ? Icons.folder : Icons.access_time),
+              onPressed: () {
+                setState(() {
+                  _isTimelineMode = !_isTimelineMode;
+                  _selectedDirectory = null;
+                  _loadHistory();
+                });
+              },
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete_sweep),
+              onPressed: _groupedRecords.isEmpty
+                  ? null
+                  : () {
+                      showDialog(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('清空历史记录'),
+                          content: const Text('确定要清空所有历史记录吗？此操作不可恢复。'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context),
+                              child: const Text('取消'),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadHistory,
-          ),
+                            TextButton(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _clearAllHistory();
+                              },
+                              child: const Text(
+                                '确定',
+                                style: TextStyle(color: Colors.red),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+            ),
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadHistory,
+            ),
+          ],
         ],
       ),
       body: RefreshIndicator(
@@ -394,24 +583,6 @@ class _HistoryPageState extends State<HistoryPage> {
     );
   }
 
-  Future<void> _deleteRecord(HistoricalRecord record) async {
-    try {
-      await DatabaseHelper.instance.deleteHistoricalRecord(record.videoSha1);
-      await _loadHistory();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已删除该记录')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e')),
-        );
-      }
-    }
-  }
-
   Future<void> _clearAllHistory() async {
     try {
       if (_currentUsername != null) {
@@ -444,9 +615,6 @@ class _HistoryPageState extends State<HistoryPage> {
       progressText = '${(progressValue * 100).toStringAsFixed(1)}%';
     }
 
-    String parentDirName = record.videoPath.substring(1);
-    String videoName = path.basename(record.videoName);
-
     return Dismissible(
       key: Key(record.videoSha1),
       background: Container(
@@ -456,84 +624,136 @@ class _HistoryPageState extends State<HistoryPage> {
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       direction: DismissDirection.endToStart,
-      onDismissed: (direction) => _deleteRecord(record),
+      confirmDismiss: (direction) async {
+        if (_isSelectMode) {
+          _toggleSelect(record.videoSha1);
+          return false;
+        }
+        return true;
+      },
+      onDismissed: (direction) {
+        final groupKey = _selectedDirectory ??
+            (_isTimelineMode
+                ? record.changeTime.toLocal().toString().substring(0, 10)
+                : path.dirname(record.videoPath));
+        _deleteRecord(record, groupKey);
+      },
       child: Card(
         elevation: 0,
         margin: const EdgeInsets.only(right: 16, bottom: 8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: Colors.grey[200]!),
+          side: BorderSide(
+            color: _selectedItems.contains(record.videoSha1)
+                ? Colors.blue
+                : Colors.grey[200]!,
+          ),
         ),
         child: InkWell(
-          onTap: () async {
-            await Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => VideoPlayer(
-                  path: record.videoPath,
-                  name: record.videoName,
-                ),
-              ),
-            );
-
-            if (mounted) {
-              _loadHistory();
+          onTap: _isSelectMode
+              ? () => _toggleSelect(record.videoSha1)
+              : () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => VideoPlayer(
+                        path: record.videoPath,
+                        name: record.videoName,
+                      ),
+                    ),
+                  );
+                  if (mounted) {
+                    _loadHistory();
+                  }
+                },
+          onLongPress: () {
+            if (!_isSelectMode) {
+              _toggleSelectMode();
+              _toggleSelect(record.videoSha1);
             }
           },
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  parentDirName,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey[600],
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  videoName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 8),
-                Row(
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
-                    const SizedBox(width: 4),
                     Text(
-                      '${timeago.format(record.changeTime, locale: 'zh')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                      record.videoPath.substring(1),
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 13,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      record.videoName,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.access_time,
+                            size: 14, color: Colors.grey[600]),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${timeago.format(record.changeTime, locale: 'zh')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    LinearProgressIndicator(
+                      value: progressValue,
+                      backgroundColor: Colors.grey[200],
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
+                      minHeight: 4,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '观看至 $progressText',
+                      style: TextStyle(
+                        fontSize: 12,
                         color: Colors.grey[600],
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                LinearProgressIndicator(
-                  value: progressValue,
-                  backgroundColor: Colors.grey[200],
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
-                  minHeight: 4,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '观看至 $progressText',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
+              ),
+              if (_isSelectMode)
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _selectedItems.contains(record.videoSha1)
+                          ? Colors.blue
+                          : Colors.grey[300],
+                    ),
+                    child: _selectedItems.contains(record.videoSha1)
+                        ? const Icon(
+                            Icons.check,
+                            size: 16,
+                            color: Colors.white,
+                          )
+                        : null,
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
         ),
       ),

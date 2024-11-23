@@ -112,31 +112,6 @@ class _HomePageState extends State<HomePage> {
             fontWeight: FontWeight.w600,
           ),
         ),
-        actions: [
-          // 历史记录按钮
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: '观看历史',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const HistoryPage()),
-              );
-            },
-          ),
-          // 设置按钮
-          IconButton(
-            icon: const Icon(Icons.settings),
-            tooltip: '设置',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const PersonPage()),
-              );
-            },
-          ),
-          const SizedBox(width: 8), // 右侧边距
-        ],
         elevation: 1,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
