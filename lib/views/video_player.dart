@@ -400,7 +400,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     );
   }
 
-  // 移动端布局
+  // 动端布局
   Widget _buildMobileLayout() {
     return Column(
       children: [
@@ -570,107 +570,6 @@ class VideoPlayerState extends State<VideoPlayer> {
                         child: Video(
                           controller: controller,
                           controls: MaterialDesktopVideoControls,
-                          // controls: (state) {
-                          //   return Stack(
-                          //     children: [
-                          //       GestureDetector(
-                          //         onTap: () {
-                          //           setState(() {
-                          //             _showControls = !_showControls;
-                          //           });
-                          //         },
-                          //         onDoubleTap: () {
-                          //           if (player.state.playing) {
-                          //             player.pause();
-                          //           } else {
-                          //             player.play();
-                          //           }
-                          //         },
-                          //         child: Container(color: Colors.transparent),
-                          //       ),
-                          //       if (_showControls)
-                          //         Positioned(
-                          //           left: 0,
-                          //           right: 0,
-                          //           bottom: 0,
-                          //           child: Container(
-                          //             padding: const EdgeInsets.symmetric(
-                          //                 horizontal: 16, vertical: 8),
-                          //             decoration: BoxDecoration(
-                          //               gradient: LinearGradient(
-                          //                 begin: Alignment.topCenter,
-                          //                 end: Alignment.bottomCenter,
-                          //                 colors: [
-                          //                   Colors.transparent,
-                          //                   Colors.black.withOpacity(0.7),
-                          //                 ],
-                          //               ),
-                          //             ),
-                          //             child: Column(
-                          //               mainAxisSize: MainAxisSize.min,
-                          //               children: [
-                          //                 // 添加进度条
-                          //                 const MaterialSeekBar(),
-                          //                 const SizedBox(height: 2),
-                          //                 // 控制按钮行
-                          //                 Row(
-                          //                   children: [
-                          //                     const MaterialSkipPreviousButton(),
-                          //                     const MaterialPlayOrPauseButton(),
-                          //                     const MaterialSkipNextButton(),
-                          //                     const MaterialDesktopVolumeButton(),
-                          //                     const MaterialPositionIndicator(),
-                          //                     const Spacer(),
-                          //                     // 速率控制按钮
-                          //                     MaterialCustomButton(
-                          //                       onPressed: () {
-                          //                         showDialog(
-                          //                           context: context,
-                          //                           builder: (context) =>
-                          //                               AlertDialog(
-                          //                             title: const Text('播放速度'),
-                          //                             content: Column(
-                          //                               mainAxisSize:
-                          //                                   MainAxisSize.min,
-                          //                               children:
-                          //                                   [0.5, 1.0, 1.5, 2.0]
-                          //                                       .map(
-                          //                                         (speed) =>
-                          //                                             ListTile(
-                          //                                           title: Text(
-                          //                                               '${speed}x'),
-                          //                                           onTap: () {
-                          //                                             state
-                          //                                                 .widget
-                          //                                                 .controller
-                          //                                                 .player
-                          //                                                 .setRate(
-                          //                                                     speed);
-                          //                                             Navigator.pop(
-                          //                                                 context);
-                          //                                           },
-                          //                                         ),
-                          //                                       )
-                          //                                       .toList(),
-                          //                             ),
-                          //                           ),
-                          //                         );
-                          //                       },
-                          //                       icon: const Icon(
-                          //                         Icons.speed,
-                          //                         color: Colors.white,
-                          //                       ),
-                          //                     ),
-                          //                     const MaterialFullscreenButton(),
-                          //                   ],
-                          //                 ),
-                          //               ],
-                          //             ),
-                          //           ),
-                          //         ),
-                          //     ],
-                          //   );
-                          // },
                         ),
                       ),
                     ),
@@ -840,37 +739,164 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 在 VideoPlayerState 类中添加一个方法来构建速度选择对话框
   Widget buildSpeedDialog() {
+    final isLandscape =
+        MediaQuery.of(context).orientation == Orientation.landscape;
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
     return StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('播放速度'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [0.5, 1.0, 1.25, 1.5, 2.0]
-              .map((speed) => ListTile(
-                    dense: true,
-                    title: Text('${speed}x'),
-                    selected: speed == _currentSpeed,
-                    onTap: () async {
-                      await player.setRate(speed);
-                      setState(() => _currentSpeed = speed);
-                      if (mounted && context.mounted) {
-                        Navigator.pop(context);
-                      }
-                    },
-                  ))
-              .toList(),
-        ),
-      ),
+      builder: (context, setState) {
+        if (isMobile && isLandscape) {
+          // 横屏模式：水平排列的现代设计
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Center(
+              child: Container(
+                height: 40,
+                margin: const EdgeInsets.only(bottom: 64),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.6),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: speeds.map((speed) {
+                    final isSelected = speed == _currentSpeed;
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () async {
+                            await player.setRate(speed);
+                            setState(() => _currentSpeed = speed);
+                            if (mounted && context.mounted) {
+                              Navigator.pop(context);
+                            }
+                          },
+                          child: Container(
+                            width: 48,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.white.withOpacity(0.2)
+                                  : Colors.transparent,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Center(
+                              child: Text(
+                                speed == 1.0 ? '正常' : '${speed}x',
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : Colors.white70,
+                                  fontSize: 13,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ),
+          );
+        } else {
+          // 竖屏模式和桌面端：统一的现代化对话框
+          return Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            backgroundColor: Colors.white,
+            child: Container(
+              width: 300,
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '播放速度',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey[800],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    alignment: WrapAlignment.center,
+                    children: speeds.map((speed) {
+                      final isSelected = speed == _currentSpeed;
+                      return Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(8),
+                          onTap: () async {
+                            await player.setRate(speed);
+                            setState(() => _currentSpeed = speed);
+                            if (mounted && context.mounted) {
+                              Navigator.pop(context);
+                            }
+                          },
+                          child: Container(
+                            width: 80,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? Colors.blue.withOpacity(0.1)
+                                  : Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected
+                                    ? Colors.blue
+                                    : Colors.grey[300]!,
+                                width: 1,
+                              ),
+                            ),
+                            child: Center(
+                              child: Text(
+                                speed == 1.0 ? '正常' : '${speed}x',
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.blue
+                                      : Colors.grey[800],
+                                  fontSize: 14,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w600
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+      },
     );
   }
 
-  // 在 VideoPlayerState 类中添加一个方法来构建速度按钮
+  // 修改 buildSpeedButton 中的显示方法
   Widget buildSpeedButton() {
     return StatefulBuilder(
       builder: (context, setState) => MaterialCustomButton(
         onPressed: () {
           showDialog(
             context: context,
+            barrierColor: Colors.black54,
             builder: (context) => buildSpeedDialog(),
           );
         },
