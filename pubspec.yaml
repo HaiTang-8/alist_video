@@ -108,9 +108,16 @@ flutter:
     - assets/images/
 
 flutter_launcher_icons:
-  android: "launcher_icon"
+  android: true
   ios: true
-  image_path: "assets/icon/1024_logo.png"  # 放置你的图标文件
-  min_sdk_android: 21 # android min sdk min:16, default 21
-  # 可选：如果要适配自适应图标
-  adaptive_icon_background: "#ffffff" # 背景色
+  macos:
+    generate: true
+    image_path: "assets/icon/1024_logo.png"
+  windows:
+    generate: true
+    image_path: "assets/icon/1024_logo.png"
+    icon_size: 48
+  image_path: "assets/icon/1024_logo.png"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon/1024_logo.png"
+  remove_alpha_ios: true
