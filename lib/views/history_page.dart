@@ -274,6 +274,10 @@ class _HistoryPageState extends State<HistoryPage> {
       progressText = '${(progressValue * 100).toStringAsFixed(1)}%';
     }
 
+    // 获取最后一级目录名称
+    String parentDirName = record.videoPath.substring(1); // 获取最后一级目录名
+    String videoName = path.basename(record.videoName);
+
     return Dismissible(
       key: Key(record.videoSha1),
       background: Container(
@@ -286,7 +290,7 @@ class _HistoryPageState extends State<HistoryPage> {
       onDismissed: (direction) => _deleteRecord(record),
       child: Card(
         elevation: 0,
-        margin: const EdgeInsets.only(right: 16, bottom: 8), // 调整边距以适应时间轴
+        margin: const EdgeInsets.only(right: 16, bottom: 8),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
           side: BorderSide(color: Colors.grey[200]!),
@@ -314,8 +318,19 @@ class _HistoryPageState extends State<HistoryPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 父级目录名称
                 Text(
-                  path.basename(record.videoName),
+                  parentDirName,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                // 视频名称
+                Text(
+                  videoName,
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
