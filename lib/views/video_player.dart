@@ -36,6 +36,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加排序相关状态
   bool _isAscending = true;
 
+  // 添加一个状态变量
+  bool _isExiting = false;
+
   // 排序方法
   void _sortPlaylist() async {
     setState(() {
@@ -309,9 +312,31 @@ class VideoPlayerState extends State<VideoPlayer> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
-            await _saveCurrentProgress();
-            if (!mounted) return;
-            Navigator.of(context).pop();
+            if (_isExiting) return;
+
+            setState(() => _isExiting = true);
+
+            try {
+              // 暂停视频
+              await player.pause();
+              // 等待进度保存
+              await _saveCurrentProgress();
+              // 等待播放器关闭
+              await player.dispose();
+
+              if (!mounted) return;
+              Navigator.of(context).pop();
+            } catch (e) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('退出时发生错误: $e')),
+                );
+              }
+            } finally {
+              if (mounted) {
+                setState(() => _isExiting = false);
+              }
+            }
           },
         ),
         title: Text(
@@ -326,7 +351,43 @@ class VideoPlayerState extends State<VideoPlayer> {
         centerTitle: false,
         elevation: 1,
       ),
-      body: isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+      body: Stack(
+        children: [
+          // 原有的布局
+          isMobile ? _buildMobileLayout() : _buildDesktopLayout(),
+
+          // 退出时的 loading 遮罩
+          if (_isExiting)
+            Container(
+              color: Colors.black54,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      '正在保存播放进度...',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        shadows: [
+                          Shadow(
+                            blurRadius: 4,
+                            color: Colors.black.withOpacity(0.3),
+                            offset: const Offset(0, 1),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
