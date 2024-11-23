@@ -39,6 +39,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加一个状态变量
   bool _isExiting = false;
 
+  // 添加一个变量来跟踪当前播放速度
+  double _currentSpeed = 1.0;
+
   // 排序方法
   void _sortPlaylist() async {
     setState(() {
@@ -194,7 +197,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         if (mounted) {
           setState(() {
             currentPlayingIndex = event.index;
-            _scrollToCurrentItem();
+            scrollToCurrentItem();
             _isLoading = true;
             _hasSeekInitialPosition = false;
           });
@@ -227,29 +230,35 @@ class VideoPlayerState extends State<VideoPlayer> {
     });
   }
 
-  // 添加滚动到当前项的方法
-  void _scrollToCurrentItem() {
-    // 确保构建完成后再滚动
+  // Move the method outside of initState and rename it
+  void scrollToCurrentItem() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        const itemHeight = 72.0; // ListTile的预估高度（包含margin）
-        final screenHeight = MediaQuery.of(context).size.height;
-        final scrollOffset =
-            (currentPlayingIndex * itemHeight) - (screenHeight / 3);
+      if (!_scrollController.hasClients) return;
 
-        _scrollController.animateTo(
-          scrollOffset.clamp(
-            0.0,
-            _scrollController.position.maxScrollExtent,
-          ),
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeInOut,
-        );
-      }
+      // 获取屏幕宽度判断是否为移动端
+      final screenWidth = MediaQuery.of(context).size.width;
+      final isMobile = screenWidth < 600;
+
+      const itemHeight = 72.0; // ListTile的预估高度
+      final screenHeight = MediaQuery.of(context).size.height;
+
+      // 移动端和桌面端使用不同的滚动位置计算
+      final scrollOffset = isMobile
+          ? (currentPlayingIndex * itemHeight)
+          : (currentPlayingIndex * itemHeight) - (screenHeight / 3);
+
+      _scrollController.animateTo(
+        scrollOffset.clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
     });
   }
 
-  // 查询并跳转到上次播放位置
+  // 查询并跳转到上次播放位
   Future<void> _seekToLastPosition(String videoName) async {
     if (_currentUsername == null) return;
 
@@ -433,36 +442,9 @@ class VideoPlayerState extends State<VideoPlayer> {
                         ),
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
-                      MaterialCustomButton(
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('播放速度'),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [0.5, 1.0, 1.5, 2.0]
-                                    .map((speed) => ListTile(
-                                          dense: true,
-                                          title: Text('${speed}x'),
-                                          onTap: () {
-                                            player.setRate(speed);
-                                            Navigator.pop(context);
-                                          },
-                                        ))
-                                    .toList(),
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.speed,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
+                      buildSpeedButton(),
                       const MaterialFullscreenButton(
-                        iconSize: 20,
+                        iconSize: 22,
                       ),
                     ]),
                 fullscreen: MaterialVideoControlsThemeData(
@@ -497,34 +479,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                         ),
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
-                      MaterialCustomButton(
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (context) => AlertDialog(
-                              title: const Text('播放速度'),
-                              content: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [0.5, 1.0, 1.5, 2.0]
-                                    .map((speed) => ListTile(
-                                          dense: true,
-                                          title: Text('${speed}x'),
-                                          onTap: () {
-                                            player.setRate(speed);
-                                            Navigator.pop(context);
-                                          },
-                                        ))
-                                    .toList(),
-                              ),
-                            ),
-                          );
-                        },
-                        icon: const Icon(
-                          Icons.speed,
-                          color: Colors.white,
-                          size: 18,
-                        ),
-                      ),
+                      buildSpeedButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -580,34 +535,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const MaterialDesktopVolumeButton(),
                             const MaterialPositionIndicator(),
                             const Spacer(), // 将全屏按钮推到最右边
-                            MaterialCustomButton(
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text('播放速度'),
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [0.5, 1.0, 1.5, 2.0]
-                                          .map((speed) => ListTile(
-                                                dense: true,
-                                                title: Text('${speed}x'),
-                                                onTap: () {
-                                                  player.setRate(speed);
-                                                  Navigator.pop(context);
-                                                },
-                                              ))
-                                          .toList(),
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(
-                                Icons.speed,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ),
+                            buildSpeedButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -627,34 +555,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const MaterialDesktopVolumeButton(),
                             const MaterialPositionIndicator(),
                             const Spacer(), // 将全屏按钮推到最右边
-                            MaterialCustomButton(
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text('播放速度'),
-                                    content: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [0.5, 1.0, 1.5, 2.0]
-                                          .map((speed) => ListTile(
-                                                dense: true,
-                                                title: Text('${speed}x'),
-                                                onTap: () {
-                                                  player.setRate(speed);
-                                                  Navigator.pop(context);
-                                                },
-                                              ))
-                                          .toList(),
-                                    ),
-                                  ),
-                                );
-                              },
-                              icon: const Icon(
-                                Icons.speed,
-                                color: Colors.white,
-                                size: 24,
-                              ),
-                            ),
+                            buildSpeedButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -885,7 +786,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         await _saveCurrentProgress();
         if (mounted) {
           player.jump(index);
-          _scrollToCurrentItem();
+          scrollToCurrentItem();
         }
       },
       hoverColor: Colors.blue.withOpacity(0.05),
@@ -933,6 +834,53 @@ class VideoPlayerState extends State<VideoPlayer> {
             tooltip: _isAscending ? '降序排列' : '升序排列',
           ),
         ],
+      ),
+    );
+  }
+
+  // 在 VideoPlayerState 类中添加一个方法来构建速度选择对话框
+  Widget buildSpeedDialog() {
+    return StatefulBuilder(
+      builder: (context, setState) => AlertDialog(
+        title: const Text('播放速度'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [0.5, 1.0, 1.25, 1.5, 2.0]
+              .map((speed) => ListTile(
+                    dense: true,
+                    title: Text('${speed}x'),
+                    selected: speed == _currentSpeed,
+                    onTap: () async {
+                      await player.setRate(speed);
+                      setState(() => _currentSpeed = speed);
+                      if (mounted && context.mounted) {
+                        Navigator.pop(context);
+                      }
+                    },
+                  ))
+              .toList(),
+        ),
+      ),
+    );
+  }
+
+  // 在 VideoPlayerState 类中添加一个方法来构建速度按钮
+  Widget buildSpeedButton() {
+    return StatefulBuilder(
+      builder: (context, setState) => MaterialCustomButton(
+        onPressed: () {
+          showDialog(
+            context: context,
+            builder: (context) => buildSpeedDialog(),
+          );
+        },
+        icon: Text(
+          '${_currentSpeed}x',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+          ),
+        ),
       ),
     );
   }
