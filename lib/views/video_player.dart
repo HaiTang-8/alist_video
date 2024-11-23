@@ -480,12 +480,100 @@ class VideoPlayerState extends State<VideoPlayer> {
                   children: [
                     // Wrap [Video] widget with [MaterialDesktopVideoControlsTheme].
                     MaterialDesktopVideoControlsTheme(
-                      normal: const MaterialDesktopVideoControlsThemeData(
-                        seekBarThumbColor: Colors.blue,
-                        seekBarPositionColor: Colors.blue,
-                        toggleFullscreenOnDoublePress: false,
-                      ),
-                      fullscreen: const MaterialDesktopVideoControlsThemeData(),
+                      normal: MaterialDesktopVideoControlsThemeData(
+                          displaySeekBar: true,
+                          visibleOnMount: false,
+                          primaryButtonBar: [],
+                          seekBarMargin: const EdgeInsets.only(
+                              bottom: 10, left: 0, right: 0),
+                          bottomButtonBarMargin: const EdgeInsets.only(
+                              bottom: 0, left: 0, right: 0, top: 0),
+                          bottomButtonBar: [
+                            const MaterialDesktopSkipPreviousButton(),
+                            const MaterialPlayOrPauseButton(),
+                            const MaterialSkipNextButton(),
+                            const MaterialDesktopVolumeButton(),
+                            const MaterialPositionIndicator(),
+                            const Spacer(), // 将全屏按钮推到最右边
+                            MaterialCustomButton(
+                              onPressed: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('播放速度'),
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [0.5, 1.0, 1.5, 2.0]
+                                          .map((speed) => ListTile(
+                                                dense: true,
+                                                title: Text('${speed}x'),
+                                                onTap: () {
+                                                  player.setRate(speed);
+                                                  Navigator.pop(context);
+                                                },
+                                              ))
+                                          .toList(),
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(
+                                Icons.speed,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const MaterialFullscreenButton(
+                              iconSize: 28,
+                            ),
+                          ]),
+                      fullscreen: MaterialDesktopVideoControlsThemeData(
+                          displaySeekBar: true,
+                          visibleOnMount: false,
+                          primaryButtonBar: [],
+                          seekBarMargin: const EdgeInsets.only(
+                              bottom: 10, left: 0, right: 0),
+                          bottomButtonBarMargin: const EdgeInsets.only(
+                              bottom: 0, left: 0, right: 0, top: 0),
+                          bottomButtonBar: [
+                            const MaterialDesktopSkipPreviousButton(),
+                            const MaterialPlayOrPauseButton(),
+                            const MaterialSkipNextButton(),
+                            const MaterialDesktopVolumeButton(),
+                            const MaterialPositionIndicator(),
+                            const Spacer(), // 将全屏按钮推到最右边
+                            MaterialCustomButton(
+                              onPressed: () {
+                                showDialog(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('播放速度'),
+                                    content: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [0.5, 1.0, 1.5, 2.0]
+                                          .map((speed) => ListTile(
+                                                dense: true,
+                                                title: Text('${speed}x'),
+                                                onTap: () {
+                                                  player.setRate(speed);
+                                                  Navigator.pop(context);
+                                                },
+                                              ))
+                                          .toList(),
+                                    ),
+                                  ),
+                                );
+                              },
+                              icon: const Icon(
+                                Icons.speed,
+                                color: Colors.white,
+                                size: 24,
+                              ),
+                            ),
+                            const MaterialFullscreenButton(
+                              iconSize: 28,
+                            ),
+                          ]),
                       child: GestureDetector(
                         onLongPressStart: (_) {
                           controller.player.setRate(2.0);
@@ -495,107 +583,108 @@ class VideoPlayerState extends State<VideoPlayer> {
                         },
                         child: Video(
                           controller: controller,
-                          controls: (state) {
-                            return Stack(
-                              children: [
-                                GestureDetector(
-                                  onTap: () {
-                                    setState(() {
-                                      _showControls = !_showControls;
-                                    });
-                                  },
-                                  onDoubleTap: () {
-                                    if (player.state.playing) {
-                                      player.pause();
-                                    } else {
-                                      player.play();
-                                    }
-                                  },
-                                  child: Container(color: Colors.transparent),
-                                ),
-                                if (_showControls)
-                                  Positioned(
-                                    left: 0,
-                                    right: 0,
-                                    bottom: 0,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 16, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        gradient: LinearGradient(
-                                          begin: Alignment.topCenter,
-                                          end: Alignment.bottomCenter,
-                                          colors: [
-                                            Colors.transparent,
-                                            Colors.black.withOpacity(0.7),
-                                          ],
-                                        ),
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          // 添加进度条
-                                          const MaterialSeekBar(),
-                                          const SizedBox(height: 2),
-                                          // 控制按钮行
-                                          Row(
-                                            children: [
-                                              const MaterialSkipPreviousButton(),
-                                              const MaterialPlayOrPauseButton(),
-                                              const MaterialSkipNextButton(),
-                                              const MaterialDesktopVolumeButton(),
-                                              const MaterialPositionIndicator(),
-                                              const Spacer(),
-                                              // 速率控制按钮
-                                              MaterialCustomButton(
-                                                onPressed: () {
-                                                  showDialog(
-                                                    context: context,
-                                                    builder: (context) =>
-                                                        AlertDialog(
-                                                      title: const Text('播放速度'),
-                                                      content: Column(
-                                                        mainAxisSize:
-                                                            MainAxisSize.min,
-                                                        children:
-                                                            [0.5, 1.0, 1.5, 2.0]
-                                                                .map(
-                                                                  (speed) =>
-                                                                      ListTile(
-                                                                    title: Text(
-                                                                        '${speed}x'),
-                                                                    onTap: () {
-                                                                      state
-                                                                          .widget
-                                                                          .controller
-                                                                          .player
-                                                                          .setRate(
-                                                                              speed);
-                                                                      Navigator.pop(
-                                                                          context);
-                                                                    },
-                                                                  ),
-                                                                )
-                                                                .toList(),
-                                                      ),
-                                                    ),
-                                                  );
-                                                },
-                                                icon: const Icon(
-                                                  Icons.speed,
-                                                  color: Colors.white,
-                                                ),
-                                              ),
-                                              const MaterialFullscreenButton(),
-                                            ],
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
+                          controls: MaterialDesktopVideoControls,
+                          // controls: (state) {
+                          //   return Stack(
+                          //     children: [
+                          //       GestureDetector(
+                          //         onTap: () {
+                          //           setState(() {
+                          //             _showControls = !_showControls;
+                          //           });
+                          //         },
+                          //         onDoubleTap: () {
+                          //           if (player.state.playing) {
+                          //             player.pause();
+                          //           } else {
+                          //             player.play();
+                          //           }
+                          //         },
+                          //         child: Container(color: Colors.transparent),
+                          //       ),
+                          //       if (_showControls)
+                          //         Positioned(
+                          //           left: 0,
+                          //           right: 0,
+                          //           bottom: 0,
+                          //           child: Container(
+                          //             padding: const EdgeInsets.symmetric(
+                          //                 horizontal: 16, vertical: 8),
+                          //             decoration: BoxDecoration(
+                          //               gradient: LinearGradient(
+                          //                 begin: Alignment.topCenter,
+                          //                 end: Alignment.bottomCenter,
+                          //                 colors: [
+                          //                   Colors.transparent,
+                          //                   Colors.black.withOpacity(0.7),
+                          //                 ],
+                          //               ),
+                          //             ),
+                          //             child: Column(
+                          //               mainAxisSize: MainAxisSize.min,
+                          //               children: [
+                          //                 // 添加进度条
+                          //                 const MaterialSeekBar(),
+                          //                 const SizedBox(height: 2),
+                          //                 // 控制按钮行
+                          //                 Row(
+                          //                   children: [
+                          //                     const MaterialSkipPreviousButton(),
+                          //                     const MaterialPlayOrPauseButton(),
+                          //                     const MaterialSkipNextButton(),
+                          //                     const MaterialDesktopVolumeButton(),
+                          //                     const MaterialPositionIndicator(),
+                          //                     const Spacer(),
+                          //                     // 速率控制按钮
+                          //                     MaterialCustomButton(
+                          //                       onPressed: () {
+                          //                         showDialog(
+                          //                           context: context,
+                          //                           builder: (context) =>
+                          //                               AlertDialog(
+                          //                             title: const Text('播放速度'),
+                          //                             content: Column(
+                          //                               mainAxisSize:
+                          //                                   MainAxisSize.min,
+                          //                               children:
+                          //                                   [0.5, 1.0, 1.5, 2.0]
+                          //                                       .map(
+                          //                                         (speed) =>
+                          //                                             ListTile(
+                          //                                           title: Text(
+                          //                                               '${speed}x'),
+                          //                                           onTap: () {
+                          //                                             state
+                          //                                                 .widget
+                          //                                                 .controller
+                          //                                                 .player
+                          //                                                 .setRate(
+                          //                                                     speed);
+                          //                                             Navigator.pop(
+                          //                                                 context);
+                          //                                           },
+                          //                                         ),
+                          //                                       )
+                          //                                       .toList(),
+                          //                             ),
+                          //                           ),
+                          //                         );
+                          //                       },
+                          //                       icon: const Icon(
+                          //                         Icons.speed,
+                          //                         color: Colors.white,
+                          //                       ),
+                          //                     ),
+                          //                     const MaterialFullscreenButton(),
+                          //                   ],
+                          //                 ),
+                          //               ],
+                          //             ),
+                          //           ),
+                          //         ),
+                          //     ],
+                          //   );
+                          // },
                         ),
                       ),
                     ),
