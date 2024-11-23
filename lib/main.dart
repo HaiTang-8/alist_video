@@ -46,14 +46,41 @@ class MyApp extends StatelessWidget {
       child: MaterialApp(
         title: 'AList Video',
         theme: ThemeData(
-          // 基础主题色调
+          useMaterial3: true,
+          fontFamily: 'Microsoft YaHei',
+          textTheme: const TextTheme(
+            titleLarge: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.15,
+            ),
+            titleMedium: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 0.15,
+            ),
+            bodyLarge: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.5,
+            ),
+            bodyMedium: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.25,
+            ),
+            bodySmall: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w400,
+              letterSpacing: 0.4,
+            ),
+          ),
+          primaryTextTheme: const TextTheme().apply(
+            fontFamily: 'Microsoft YaHei',
+          ),
           primarySwatch: Colors.blue,
           primaryColor: const Color(0xFF2C68D5),
-
-          // 应用整体亮度
           brightness: Brightness.light,
-
-          // AppBar 主题
           appBarTheme: const AppBarTheme(
             backgroundColor: Colors.white,
             foregroundColor: Color(0xFF2C68D5),
@@ -68,16 +95,12 @@ class MyApp extends StatelessWidget {
               color: Color(0xFF2C68D5),
             ),
           ),
-
-          // 卡片主题
           cardTheme: CardTheme(
             elevation: 2,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(12),
             ),
           ),
-
-          // 输入框主题
           inputDecorationTheme: InputDecorationTheme(
             filled: true,
             fillColor: Colors.grey[50],
@@ -98,8 +121,6 @@ class MyApp extends StatelessWidget {
               vertical: 16,
             ),
           ),
-
-          // 按钮主题
           elevatedButtonTheme: ElevatedButtonThemeData(
             style: ElevatedButton.styleFrom(
               elevation: 0,
@@ -114,57 +135,16 @@ class MyApp extends StatelessWidget {
               foregroundColor: Colors.white,
             ),
           ),
-
-          // 文本主题
-          textTheme: const TextTheme(
-            titleLarge: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF2C68D5),
-            ),
-            titleMedium: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF2C68D5),
-            ),
-            bodyLarge: TextStyle(
-              fontSize: 16,
-              color: Color(0xFF333333),
-            ),
-            bodyMedium: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF666666),
-            ),
-          ),
-
-          // 列表瓦片主题
-          listTileTheme: const ListTileThemeData(
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 8,
-            ),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
-          ),
-
-          // 图标主题
           iconTheme: const IconThemeData(
             color: Color(0xFF2C68D5),
             size: 24,
           ),
-
-          // 分割线主题
           dividerTheme: DividerThemeData(
             color: Colors.grey[200],
             thickness: 1,
             space: 1,
           ),
-
-          // 添加全局背景颜色
           scaffoldBackgroundColor: Colors.white,
-
-          // 更新 ColorScheme
           colorScheme: const ColorScheme.light(
             primary: Color(0xFF2C68D5),
             secondary: Color(0xFF64B5F6),
