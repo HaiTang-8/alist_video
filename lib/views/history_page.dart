@@ -14,10 +14,11 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage> {
-  // 添加分组数据结构
   Map<String, List<HistoricalRecord>> _groupedRecords = {};
   bool _isLoading = true;
   String? _currentUsername;
+  bool _isTimelineMode = true;
+  String? _selectedDirectory;
 
   @override
   void initState() {
@@ -38,17 +39,13 @@ class _HistoryPageState extends State<HistoryPage> {
           limit: 50,
         );
 
-        // 按日期分组
-        _groupedRecords = {};
-        for (var record in records.map((r) => HistoricalRecord.fromMap(r))) {
-          final date = DateTime(
-            record.changeTime.year,
-            record.changeTime.month,
-            record.changeTime.day,
-          );
-          final dateKey = date.toString().substring(0, 10);
-          _groupedRecords.putIfAbsent(dateKey, () => []);
-          _groupedRecords[dateKey]!.add(record);
+        final List<HistoricalRecord> historyRecords =
+            records.map((r) => HistoricalRecord.fromMap(r)).toList();
+
+        if (_isTimelineMode) {
+          _groupByTimeline(historyRecords);
+        } else {
+          _groupByDirectory(historyRecords);
         }
 
         setState(() => _isLoading = false);
@@ -59,144 +56,68 @@ class _HistoryPageState extends State<HistoryPage> {
     }
   }
 
-  // 删除单个历史记录
-  Future<void> _deleteRecord(HistoricalRecord record) async {
-    try {
-      await DatabaseHelper.instance.deleteHistoricalRecord(record.videoSha1);
-      // 刷新列表
-      await _loadHistory();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('已删除该记录')),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('删除失败: $e')),
-        );
-      }
+  void _groupByTimeline(List<HistoricalRecord> records) {
+    _groupedRecords = {};
+    for (var record in records) {
+      final localTime = record.changeTime.toLocal();
+      final date = DateTime(
+        localTime.year,
+        localTime.month,
+        localTime.day,
+      );
+      final dateKey = date.toString().substring(0, 10);
+      _groupedRecords.putIfAbsent(dateKey, () => []);
+      _groupedRecords[dateKey]!.add(record);
     }
   }
 
-  // 清空所有历史记录
-  Future<void> _clearAllHistory() async {
-    try {
-      if (_currentUsername != null) {
-        await DatabaseHelper.instance.clearUserHistoricalRecords(
-          _currentUsername!.hashCode,
-        );
-        await _loadHistory();
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('已清空所有记录')),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('清空失败: $e')),
-        );
-      }
+  void _groupByDirectory(List<HistoricalRecord> records) {
+    _groupedRecords = {};
+    for (var record in records) {
+      final dirPath = path.dirname(record.videoPath);
+      _groupedRecords.putIfAbsent(dirPath, () => []);
+      _groupedRecords[dirPath]!.add(record);
     }
+
+    _groupedRecords.forEach((key, list) {
+      list.sort((a, b) => b.changeTime.compareTo(a.changeTime));
+    });
+
+    final sortedKeys = _groupedRecords.keys.toList()
+      ..sort((a, b) {
+        final aTime = _groupedRecords[a]!.first.changeTime;
+        final bTime = _groupedRecords[b]!.first.changeTime;
+        return bTime.compareTo(aTime);
+      });
+
+    final sortedMap = Map<String, List<HistoricalRecord>>.fromEntries(
+        sortedKeys.map((key) => MapEntry(key, _groupedRecords[key]!)));
+    _groupedRecords = sortedMap;
   }
 
-  // 修改日期组标题样式
-  Widget _buildDateGroup(String dateKey, List<HistoricalRecord> records) {
-    return IntrinsicHeight(
-      child: Row(
-        children: [
-          // 时间轴
-          SizedBox(
-            width: 60,
-            child: Column(
-              children: [
-                Container(
-                  width: 2,
-                  height: 24,
-                  color: Colors.grey[300],
-                ),
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white,
-                      width: 2,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    width: 2,
-                    color: Colors.grey[300],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 内容区域
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(0, 16, 16, 12),
-                  child: Row(
-                    children: [
-                      Text(
-                        _getDateTitle(dateKey),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[800],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '(${records.length})',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                ...records.map((record) => _buildHistoryCard(record)),
-                const SizedBox(height: 16), // 底部间距
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  String _getGroupTitle(String key) {
+    if (_isTimelineMode) {
+      final now = DateTime.now();
+      final date = DateTime.parse(key);
+      final localDate = date.toLocal();
+      final localNow = now.toLocal();
 
-  // 获取日期标题
-  String _getDateTitle(String dateKey) {
-    final now = DateTime.now();
-    final date = DateTime.parse(dateKey);
-    final difference = now.difference(date).inDays;
+      final isSameDay = localDate.year == localNow.year &&
+          localDate.month == localNow.month &&
+          localDate.day == localNow.day;
 
-    if (difference == 0) {
-      return '今天';
-    } else if (difference == 1) {
-      return '昨天';
-    } else if (difference < 7) {
-      return '${difference}天前';
+      final isYesterday = localDate.year == localNow.year &&
+          localDate.month == localNow.month &&
+          localDate.day == localNow.day - 1;
+
+      if (isSameDay) return '今天';
+      if (isYesterday) return '昨天';
+
+      final difference = localNow.difference(localDate).inDays;
+      if (difference < 7) return '${difference}天前';
+      return key;
     } else {
-      return dateKey;
+      return path.basename(key);
     }
   }
 
@@ -208,9 +129,31 @@ class _HistoryPageState extends State<HistoryPage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('观看历史'),
+        title: Text(_isTimelineMode
+            ? '观看历史'
+            : (_selectedDirectory != null
+                ? path.basename(_selectedDirectory!)
+                : '观看历史')),
+        leading: !_isTimelineMode && _selectedDirectory != null
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () {
+                  setState(() => _selectedDirectory = null);
+                },
+              )
+            : null,
         actions: [
-          // 添加清空按钮
+          IconButton(
+            icon: Icon(_isTimelineMode ? Icons.folder : Icons.access_time),
+            tooltip: _isTimelineMode ? '切换到目录视图' : '切换到时间线视图',
+            onPressed: () {
+              setState(() {
+                _isTimelineMode = !_isTimelineMode;
+                _selectedDirectory = null;
+                _loadHistory();
+              });
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.delete_sweep),
             onPressed: _groupedRecords.isEmpty
@@ -251,19 +194,246 @@ class _HistoryPageState extends State<HistoryPage> {
         onRefresh: _loadHistory,
         child: _groupedRecords.isEmpty
             ? const Center(child: Text('暂无观看历史'))
-            : ListView.builder(
-                itemCount: _groupedRecords.length,
-                itemBuilder: (context, index) {
-                  final dateKey = _groupedRecords.keys.elementAt(index);
-                  final records = _groupedRecords[dateKey]!;
-                  return _buildDateGroup(dateKey, records);
-                },
-              ),
+            : _buildContent(),
       ),
     );
   }
 
-  // 调整卡片样式
+  Widget _buildContent() {
+    if (!_isTimelineMode && _selectedDirectory == null) {
+      return _buildDirectoryList();
+    } else if (!_isTimelineMode && _selectedDirectory != null) {
+      return _buildDirectoryTimeline(_selectedDirectory!);
+    } else {
+      return _buildTimelineView();
+    }
+  }
+
+  Widget _buildDirectoryList() {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: _groupedRecords.length,
+      itemBuilder: (context, index) {
+        final dirPath = _groupedRecords.keys.elementAt(index);
+        final records = _groupedRecords[dirPath]!;
+        final latestRecord = records.first;
+
+        return Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              setState(() => _selectedDirectory = dirPath);
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.folder, size: 20),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          path.basename(dirPath),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          '${records.length}个视频',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.blue,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '最近观看：${timeago.format(latestRecord.changeTime, locale: 'zh')}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDirectoryTimeline(String dirPath) {
+    final records = _groupedRecords[dirPath]!;
+    final timelineRecords = <String, List<HistoricalRecord>>{};
+
+    for (var record in records) {
+      final localTime = record.changeTime.toLocal();
+      final date = DateTime(
+        localTime.year,
+        localTime.month,
+        localTime.day,
+      );
+      final dateKey = date.toString().substring(0, 10);
+      timelineRecords.putIfAbsent(dateKey, () => []);
+      timelineRecords[dateKey]!.add(record);
+    }
+
+    return ListView.builder(
+      itemCount: timelineRecords.length,
+      itemBuilder: (context, index) {
+        final dateKey = timelineRecords.keys.elementAt(index);
+        final dateRecords = timelineRecords[dateKey]!;
+        return _buildDateGroup(dateKey, dateRecords);
+      },
+    );
+  }
+
+  Widget _buildTimelineView() {
+    return ListView.builder(
+      itemCount: _groupedRecords.length,
+      itemBuilder: (context, index) {
+        final key = _groupedRecords.keys.elementAt(index);
+        final records = _groupedRecords[key]!;
+        return _buildDateGroup(key, records);
+      },
+    );
+  }
+
+  Widget _buildDateGroup(String key, List<HistoricalRecord> records) {
+    return IntrinsicHeight(
+      child: Row(
+        children: [
+          SizedBox(
+            width: 60,
+            child: Column(
+              children: [
+                Container(
+                  width: 2,
+                  height: 24,
+                  color: Colors.grey[300],
+                ),
+                Container(
+                  width: 12,
+                  height: 12,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).primaryColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white,
+                      width: 2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.grey.withOpacity(0.3),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: Container(
+                    width: 2,
+                    color: Colors.grey[300],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.fromLTRB(0, 16, 16, 12),
+                  child: Row(
+                    children: [
+                      Text(
+                        _getGroupTitle(key),
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[800],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '(${records.length})',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ...records.map((record) => _buildHistoryCard(record)),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deleteRecord(HistoricalRecord record) async {
+    try {
+      await DatabaseHelper.instance.deleteHistoricalRecord(record.videoSha1);
+      await _loadHistory();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已删除该记录')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('删除失败: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _clearAllHistory() async {
+    try {
+      if (_currentUsername != null) {
+        await DatabaseHelper.instance.clearUserHistoricalRecords(
+          _currentUsername!.hashCode,
+        );
+        await _loadHistory();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('已清空所有记录')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('清空失败: $e')),
+        );
+      }
+    }
+  }
+
   Widget _buildHistoryCard(HistoricalRecord record) {
     double progressValue = 0.0;
     String progressText = '0%';
@@ -274,8 +444,7 @@ class _HistoryPageState extends State<HistoryPage> {
       progressText = '${(progressValue * 100).toStringAsFixed(1)}%';
     }
 
-    // 获取最后一级目录名称
-    String parentDirName = record.videoPath.substring(1); // 获取最后一级目录名
+    String parentDirName = record.videoPath.substring(1);
     String videoName = path.basename(record.videoName);
 
     return Dismissible(
@@ -297,7 +466,6 @@ class _HistoryPageState extends State<HistoryPage> {
         ),
         child: InkWell(
           onTap: () async {
-            // 等待视频播放页面返回
             await Navigator.push(
               context,
               MaterialPageRoute(
@@ -308,7 +476,6 @@ class _HistoryPageState extends State<HistoryPage> {
               ),
             );
 
-            // 视频播放页面返回后刷新历史记录
             if (mounted) {
               _loadHistory();
             }
@@ -318,7 +485,6 @@ class _HistoryPageState extends State<HistoryPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // 父级目录名称
                 Text(
                   parentDirName,
                   style: TextStyle(
@@ -328,7 +494,6 @@ class _HistoryPageState extends State<HistoryPage> {
                   ),
                 ),
                 const SizedBox(height: 4),
-                // 视频名称
                 Text(
                   videoName,
                   style: const TextStyle(
