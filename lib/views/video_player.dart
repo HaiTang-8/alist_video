@@ -33,8 +33,34 @@ class VideoPlayerState extends State<VideoPlayer> {
   bool _hasSeekInitialPosition = false;
   bool _isLoading = true;
 
-  // 添加控制栏显示状态
-  bool _showControls = false;
+  // 添加排序相关状态
+  bool _isAscending = true;
+
+  // 排序方法
+  void _sortPlaylist() async {
+    setState(() {
+      playList.sort((a, b) {
+        String nameA = a.extras!['name'] as String;
+        String nameB = b.extras!['name'] as String;
+        int comparison =
+            _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+        return comparison;
+      });
+      // 更新当前播放索引
+      for (int i = 0; i < playList.length; i++) {
+        if (playList[i].extras!['name'] == widget.name) {
+          currentPlayingIndex = i;
+          break;
+        }
+      }
+    });
+
+    // 更新播放器的播放列表
+    await player.open(
+      Playlist(playList, index: currentPlayingIndex),
+      play: player.state.playing, // 保持当前播放状态
+    );
+  }
 
   // 获取当前登录用户名
   Future<void> _getCurrentUsername() async {
@@ -103,7 +129,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
-  // 保存当前播放进度
+  // 存当前播放进度
   Future<void> _saveCurrentProgress() async {
     if (!mounted ||
         _currentUsername == null ||
@@ -227,7 +253,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     try {
       final record = await DatabaseHelper.instance.getHistoricalRecordByName(
         name: videoName,
-        userId: _currentUsername!.hashCode, // 使用用户名的哈希值作为userId
+        userId: _currentUsername!.hashCode, // 使用用户名的希值作为userId
       );
 
       if (record != null && mounted) {
@@ -472,8 +498,6 @@ class VideoPlayerState extends State<VideoPlayer> {
           child: Padding(
             padding: const EdgeInsets.all(8.0),
             child: MouseRegion(
-              onEnter: (_) => setState(() => _showControls = true),
-              onExit: (_) => setState(() => _showControls = false),
               child: AspectRatio(
                 aspectRatio: 16 / 9,
                 child: Stack(
@@ -721,34 +745,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       ),
       child: Column(
         children: [
-          // 播放列表标题
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  spreadRadius: 1,
-                  blurRadius: 1,
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.playlist_play, color: Colors.blue),
-                const SizedBox(width: 8),
-                Text(
-                  '播放列表 (${playList.length})',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 播放列表内容
+          _buildPlaylistHeader(), // 使用新的标题组件
           Expanded(
             child: ListView.builder(
               controller: _scrollController,
@@ -831,6 +828,51 @@ class VideoPlayerState extends State<VideoPlayer> {
         }
       },
       hoverColor: Colors.blue.withOpacity(0.05),
+    );
+  }
+
+  // 修改播放列表标题部分
+  Widget _buildPlaylistHeader() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 1,
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.playlist_play, color: Colors.blue),
+          const SizedBox(width: 8),
+          Text(
+            '播放列表 (${playList.length})',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const Spacer(),
+          // 添加排序按钮
+          IconButton(
+            icon: Icon(
+              _isAscending ? Icons.arrow_downward : Icons.arrow_upward,
+              size: 20,
+            ),
+            onPressed: () {
+              setState(() {
+                _isAscending = !_isAscending;
+                _sortPlaylist();
+              });
+            },
+            tooltip: _isAscending ? '降序排列' : '升序排列',
+          ),
+        ],
+      ),
     );
   }
 }
