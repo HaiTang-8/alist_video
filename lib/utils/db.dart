@@ -7,6 +7,13 @@ class DatabaseHelper {
   static DatabaseHelper? _instance;
   static Connection? _connection;
 
+  // 添加配置字段
+  late String _host;
+  late int _port;
+  late String _database;
+  late String _username;
+  late String _password;
+
   // 单例模式
   static DatabaseHelper get instance {
     _instance ??= DatabaseHelper._();
@@ -23,6 +30,13 @@ class DatabaseHelper {
     required String username,
     required String password,
   }) async {
+    // 保存配置以供重连使用
+    _host = host;
+    _port = port;
+    _database = database;
+    _username = username;
+    _password = password;
+
     try {
       if (_connection != null) {
         await _connection!.close();
@@ -64,7 +78,14 @@ class DatabaseHelper {
     } catch (e) {
       print('Connection test failed: $e');
       _connection = null;
-      throw Exception('Database connection lost. Please reconnect.');
+      // 使用保存的配置重新连接
+      await init(
+        host: _host, // 需要添加这个字段
+        port: _port,
+        database: _database,
+        username: _username,
+        password: _password,
+      );
     }
   }
 
