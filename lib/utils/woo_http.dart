@@ -1,17 +1,10 @@
 import 'dart:io';
 
+import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/error_message_model.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
-const String APPLICATION_JSON = "application/json";
-const String CONTENT_TYPE = "content-type";
-const String ACCEPT = "accept";
-const String AUTHORIZATION = "authorization";
-const String DEFAULT_LANGUAGE = "en";
-const String TOKEN = "Bearer token";
-const String BASE_URL = "https://alist.tt1.top";
 
 /// api 请求工具类
 class WooHttpUtil {
@@ -24,18 +17,18 @@ class WooHttpUtil {
   WooHttpUtil._internal() {
     // header 头
     Map<String, String> headers = {
-      CONTENT_TYPE: APPLICATION_JSON,
-      ACCEPT: APPLICATION_JSON,
-      AUTHORIZATION: TOKEN,
-      DEFAULT_LANGUAGE: DEFAULT_LANGUAGE
+      AppConstants.contentType: AppConstants.applicationJson,
+      AppConstants.accept: AppConstants.applicationJson,
+      AppConstants.authorization: '${AppConstants.tokenPrefix} token',
+      AppConstants.defaultLanguage: AppConstants.defaultLanguage
     };
 
     // 初始选项
     var options = BaseOptions(
-      baseUrl: BASE_URL,
+      baseUrl: AppConstants.baseUrl,
       headers: headers,
-      connectTimeout: const Duration(seconds: 5), // 5秒
-      receiveTimeout: const Duration(seconds: 3), // 3秒
+      connectTimeout: AppConstants.apiConnectTimeout,
+      receiveTimeout: AppConstants.apiReceiveTimeout,
       responseType: ResponseType.json,
     );
 

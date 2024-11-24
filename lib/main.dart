@@ -1,4 +1,5 @@
 import 'package:alist_player/apis/login.dart';
+import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/views/index.dart';
 import 'package:flutter/material.dart';
@@ -20,11 +21,11 @@ Future<void> main() async {
   try {
     final db = DatabaseHelper.instance;
     await db.init(
-      host: '81.68.250.223',
-      port: 5555,
-      database: 'alist_video',
-      username: 'alist_video',
-      password: '2jkxXaG3pKs4P6mX',
+      host: AppConstants.dbHost,
+      port: AppConstants.dbPort,
+      database: AppConstants.dbName,
+      username: AppConstants.dbUser,
+      password: AppConstants.dbPassword,
     );
 
     // 测试连接

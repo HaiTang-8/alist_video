@@ -1,4 +1,5 @@
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -101,7 +102,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           List<Media> playMediaList =
               res.data?.content!.where((data) => data.type == 2).map((data) {
                     // 构建基础URL
-                    String baseUrl = 'https://alist.tt1.top/d';
+                    String baseUrl = AppConstants.baseDownloadUrl;
                     // 如果 base_path 不是 '/'，则拼接到基础URL后
                     if (basePath != '/') {
                       baseUrl = '$baseUrl$basePath';
@@ -249,7 +250,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       final screenWidth = MediaQuery.of(context).size.width;
       final isMobile = screenWidth < 600;
 
-      const itemHeight = 72.0; // ListTile的预估高度
+      const itemHeight = AppConstants.defaultItemHeight; // ListTile的预估高度
       final screenHeight = MediaQuery.of(context).size.height;
 
       // 移动端和桌面端使用不同的滚动位置计算
@@ -297,7 +298,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 创建一个异步函数来处理清理工作
     Future<void> cleanup() async {
       try {
-        // 等待进度保存���成
+        // 等待进度保存成
         await _saveCurrentProgress();
 
         // 放器关闭完成
@@ -630,14 +631,16 @@ class VideoPlayerState extends State<VideoPlayer> {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color:
-                        isPlaying ? Colors.blue.withOpacity(0.1) : Colors.white,
+                    color: isPlaying
+                        ? Colors.blue.withOpacity(AppConstants.hoverOpacity)
+                        : Colors.white,
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.grey.withOpacity(0.1),
-                        spreadRadius: 1,
-                        blurRadius: 2,
+                        color:
+                            Colors.grey.withOpacity(AppConstants.shadowOpacity),
+                        spreadRadius: AppConstants.defaultSpreadRadius,
+                        blurRadius: AppConstants.defaultBlurRadius,
                       ),
                     ],
                   ),
@@ -684,7 +687,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       title: Text(
         playList[index].extras!['name'],
         style: TextStyle(
-          fontSize: 14,
+          fontSize: AppConstants.defaultFontSize,
           color: isPlaying ? Colors.blue : Colors.black87,
           fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
         ),
@@ -741,7 +744,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 _sortPlaylist();
               });
             },
-            tooltip: _isAscending ? '降序排列' : '升序排��',
+            tooltip: _isAscending ? '降序排列' : '升序排',
           ),
         ],
       ),

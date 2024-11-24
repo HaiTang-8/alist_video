@@ -119,7 +119,7 @@ class _HistoryPageState extends State<HistoryPage> {
       if (isYesterday) return '昨天';
 
       final difference = localNow.difference(localDate).inDays;
-      if (difference < 7) return '${difference}天前';
+      if (difference < 7) return '$difference天前';
       return key;
     } else {
       return path.basename(key);
