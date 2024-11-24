@@ -1,8 +1,6 @@
 import 'dart:ui';
 
 import 'package:alist_player/apis/fs.dart';
-import 'package:alist_player/views/history_page.dart';
-import 'package:alist_player/views/person_page.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';

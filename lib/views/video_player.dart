@@ -1,6 +1,7 @@
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart'; // Provides [Player], [Media], [Playlist] etc.
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -544,6 +545,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                           displaySeekBar: true,
                           visibleOnMount: false,
                           primaryButtonBar: [],
+                          keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
                           seekBarMargin: const EdgeInsets.only(
                               bottom: 10, left: 0, right: 0),
                           bottomButtonBarMargin: const EdgeInsets.only(
@@ -909,5 +911,125 @@ class VideoPlayerState extends State<VideoPlayer> {
         ),
       ),
     );
+  }
+
+  Map<ShortcutActivator, VoidCallback> _buildDesktopKeyboardShortcuts() {
+    return {
+      VideoShortcutActivator(
+        key: LogicalKeyboardKey.arrowRight,
+        onPress: () {
+          // 单次点击前进2秒
+          final rate = player.state.position + const Duration(seconds: 2);
+          player.seek(rate);
+        },
+        onLongPress: () {
+          // 长按时设置2倍速
+          player.setRate(2.0);
+        },
+        onRelease: () {
+          // 松开时恢复正常速度
+          player.setRate(1.0);
+        },
+      ): () {},
+
+      // 其他快捷键
+      const SingleActivator(LogicalKeyboardKey.mediaPlay): () => player.play(),
+      const SingleActivator(LogicalKeyboardKey.mediaPause): () =>
+          player.pause(),
+      const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () =>
+          player.playOrPause(),
+      const SingleActivator(LogicalKeyboardKey.mediaTrackNext): () =>
+          player.next(),
+      const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): () =>
+          player.previous(),
+      const SingleActivator(LogicalKeyboardKey.space): () =>
+          player.playOrPause(),
+      const SingleActivator(LogicalKeyboardKey.keyJ): () {
+        final rate = player.state.position - const Duration(seconds: 10);
+        player.seek(rate);
+      },
+      const SingleActivator(LogicalKeyboardKey.keyI): () {
+        final rate = player.state.position + const Duration(seconds: 10);
+        player.seek(rate);
+      },
+      const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+        final rate = player.state.position - const Duration(seconds: 2);
+        player.seek(rate);
+      },
+      const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+        final volume = player.state.volume + 5.0;
+        player.setVolume(volume.clamp(0.0, 100.0));
+      },
+      const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+        final volume = player.state.volume - 5.0;
+        player.setVolume(volume.clamp(0.0, 100.0));
+      },
+      const SingleActivator(LogicalKeyboardKey.keyF): () =>
+          toggleFullscreen(context),
+      const SingleActivator(LogicalKeyboardKey.escape): () =>
+          exitFullscreen(context),
+    };
+  }
+}
+
+class VideoShortcutActivator extends ShortcutActivator {
+  final LogicalKeyboardKey key;
+  final VoidCallback? onPress;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onRelease;
+
+  VideoShortcutActivator({
+    required this.key,
+    this.onPress,
+    this.onLongPress,
+    this.onRelease,
+  });
+
+  static DateTime? _pressStartTime;
+  static bool _isLongPress = false;
+  static Timer? _pressTimer;
+  static const _longPressThreshold = Duration(milliseconds: 500);
+
+  @override
+  bool accepts(KeyEvent event, HardwareKeyboard state) {
+    if (event is KeyDownEvent && event.logicalKey == key) {
+      _pressStartTime = DateTime.now();
+      _isLongPress = false;
+
+      // 使用Timer延迟判断是否为短按
+      _pressTimer?.cancel();
+      _pressTimer = Timer(_longPressThreshold, () {
+        if (_pressStartTime != null) {
+          _isLongPress = true;
+          onLongPress?.call();
+        }
+      });
+    } else if (event is KeyUpEvent && event.logicalKey == key) {
+      _pressTimer?.cancel();
+
+      if (_isLongPress) {
+        onRelease?.call();
+      } else if (_pressStartTime != null &&
+          DateTime.now().difference(_pressStartTime!) < _longPressThreshold) {
+        onPress?.call();
+      }
+
+      _pressStartTime = null;
+      _isLongPress = false;
+    }
+    return false;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    return other is VideoShortcutActivator && other.key == key;
+  }
+
+  @override
+  int get hashCode => key.hashCode;
+
+  @override
+  String debugDescribeKeys() {
+    return key.debugName ?? 'unknown';
   }
 }
