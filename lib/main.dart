@@ -202,7 +202,7 @@ class _LoginPageState extends State<LoginPage> {
     if (res.code != 200) {
       if (context.mounted) {
         toastification.show(
-          style: ToastificationStyle.flat,
+          context: context,
           type: ToastificationType.error,
           title: Text(res.message ?? '登录失败'),
           autoCloseDuration: const Duration(seconds: 3),
@@ -227,10 +227,19 @@ class _LoginPageState extends State<LoginPage> {
       // 保存当前登录的用户名
       await prefs.setString('current_username', username);
 
+      // 获取并保存 base_path
+      try {
+        final userInfo = await LoginApi.me();
+        await prefs.setString('base_path', userInfo.basePath);
+      } catch (e) {
+        print('Failed to fetch user info: $e');
+      }
+
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const IndexPage()),
-          (route) => false);
+        MaterialPageRoute(builder: (context) => const IndexPage()),
+        (route) => false,
+      );
     }
   }
 

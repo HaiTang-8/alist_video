@@ -89,17 +89,30 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   Future<void> _openAndSeekVideo() async {
     try {
+      // 获取 base_path
+      final prefs = await SharedPreferences.getInstance();
+      final basePath = prefs.getString('base_path') ?? '/';
+
       var res = await FsApi.list(
           path: widget.path, password: '', page: 1, perPage: 0, refresh: false);
+
       if (res.code == 200) {
         setState(() {
-          List<Media> playMediaList = res.data?.content!
-                  .where((data) => data.type == 2)
-                  .map((data) => Media(
-                      'https://alist.tt1.top/d${widget.path.substring(1)}/${data.name}?sign=${data.sign}',
-                      extras: {'name': data.name ?? ''}))
-                  .toList() ??
-              [];
+          List<Media> playMediaList =
+              res.data?.content!.where((data) => data.type == 2).map((data) {
+                    // 构建基础URL
+                    String baseUrl = 'https://alist.tt1.top/d';
+                    // 如果 base_path 不是 '/'，则拼接到基础URL后
+                    if (basePath != '/') {
+                      baseUrl = '$baseUrl$basePath';
+                    }
+                    // 拼接完整的视频URL
+                    return Media(
+                        '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}',
+                        extras: {'name': data.name ?? ''});
+                  }).toList() ??
+                  [];
+
           playList.clear();
           for (var i = 0; i < playMediaList.length; i++) {}
 
@@ -112,6 +125,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             index++;
           }
         });
+
         Playable playable = Playlist(
           playList,
           index: playIndex,
@@ -213,18 +227,6 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
 
-    // player.stream.position.listen((Duration position) {
-    //   if (position.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
-    //     _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
-    //         .then((_) {
-    //       if (mounted) {
-    //         setState(() => _isLoading = false);
-    //       }
-    //     });
-    //     _hasSeekInitialPosition = true;
-    //   }
-    // });
-
     player.stream.error.listen((error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -295,7 +297,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 创建一个异步函数来处理清理工作
     Future<void> cleanup() async {
       try {
-        // 等待进度保存完成
+        // 等待进度保存���成
         await _saveCurrentProgress();
 
         // 放器关闭完成
@@ -338,7 +340,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               await player.pause();
               // 等待进度保存
               await _saveCurrentProgress();
-              // 等��播放器关闭
+              // 等播放器关闭
               await player.dispose();
 
               if (!mounted) return;
@@ -739,7 +741,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 _sortPlaylist();
               });
             },
-            tooltip: _isAscending ? '降序排列' : '升序排列',
+            tooltip: _isAscending ? '降序排列' : '升序排��',
           ),
         ],
       ),
