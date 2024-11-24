@@ -198,6 +198,13 @@ class VideoPlayerState extends State<VideoPlayer> {
   @override
   void initState() {
     super.initState();
+
+    (player.platform as dynamic).setProperty('cache', 'no');
+    (player.platform as dynamic).setProperty('cache-secs', '0');
+    (player.platform as dynamic).setProperty('demuxer-seekable-cache', 'no');
+    (player.platform as dynamic).setProperty('demuxer-max-back-bytes', '0');
+    (player.platform as dynamic).setProperty('demuxer-donate-buffer', 'no');
+
     _getCurrentUsername();
     _openAndSeekVideo();
 
