@@ -45,28 +45,35 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 排序方法
   void _sortPlaylist() async {
-    setState(() {
-      playList.sort((a, b) {
-        String nameA = a.extras!['name'] as String;
-        String nameB = b.extras!['name'] as String;
-        int comparison =
-            _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
-        return comparison;
-      });
-      // 更新当前播放索引
-      for (int i = 0; i < playList.length; i++) {
-        if (playList[i].extras!['name'] == widget.name) {
-          currentPlayingIndex = i;
-          break;
-        }
-      }
+    // 记住当前播放的视频名称和位置
+    final currentPlayingName =
+        playList[currentPlayingIndex].extras!['name'] as String;
+
+    // 创建一个排序后的新列表，但不直接修改原列表
+    final sortedList = List<Media>.from(playList);
+    sortedList.sort((a, b) {
+      String nameA = a.extras!['name'] as String;
+      String nameB = b.extras!['name'] as String;
+      return _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
     });
 
-    // 更新播放器的播放列表
-    await player.open(
-      Playlist(playList, index: currentPlayingIndex),
-      play: player.state.playing, // 保持当前播放状态
-    );
+    // 使用 move API 重新排列播放列表
+    for (int i = 0; i < sortedList.length; i++) {
+      final currentIndex = playList.indexWhere(
+          (item) => item.extras!['name'] == sortedList[i].extras!['name']);
+      if (currentIndex != i) {
+        await player.move(currentIndex, i);
+        // 同步更新本地列表
+        final item = playList.removeAt(currentIndex);
+        playList.insert(i, item);
+      }
+    }
+
+    // 更新当前播放索引
+    setState(() {
+      currentPlayingIndex = playList
+          .indexWhere((item) => item.extras!['name'] == currentPlayingName);
+    });
   }
 
   // 获取当前登录用户名
@@ -331,7 +338,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               await player.pause();
               // 等待进度保存
               await _saveCurrentProgress();
-              // 等待播放器关闭
+              // 等��播放器关闭
               await player.dispose();
 
               if (!mounted) return;
@@ -710,7 +717,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.playlist_play, color: Colors.blue),
+          const Icon(Icons.format_list_bulleted, color: Colors.blue),
           const SizedBox(width: 8),
           Text(
             '播放列表 (${playList.length})',
