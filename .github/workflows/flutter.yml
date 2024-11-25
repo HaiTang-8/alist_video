@@ -28,20 +28,27 @@ jobs:
           flutter-version: '3.22.x'
           cache: true
 
+      # 打开MAC Desktop支持
+      - name: Enable Flutter Desktop
+        run: flutter config --enable-macos-desktop
+
       # 获取依赖
       - name: Get dependencies
         run: flutter pub get
 
       # 构建APK
       - name: Build APK
-        run: flutter build apk --release
+        run: flutter build apk --target-platform android-arm,android-arm64,android-x64 --split-per-abi
 
       # 上传构建产物
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v3
         with:
           name: android-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
 
   build-windows:
     runs-on: windows-latest
@@ -80,10 +87,11 @@ jobs:
       # 发布Release
       - name: Create Release
         uses: softprops/action-gh-release@v1
-        if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
             build/windows/x64/runner/Release
-            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+            build/app/outputs/flutter-apk/app-x86_64-release.apk
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -15,7 +15,8 @@ class HistoryPage extends StatefulWidget {
   State<StatefulWidget> createState() => _HistoryPageState();
 }
 
-class _HistoryPageState extends State<HistoryPage> {
+class _HistoryPageState extends State<HistoryPage>
+    with SingleTickerProviderStateMixin {
   Map<String, List<HistoricalRecord>> _groupedRecords = {};
   bool _isLoading = true;
   String? _currentUsername;
@@ -26,12 +27,23 @@ class _HistoryPageState extends State<HistoryPage> {
   HistoricalRecord? _lastDeletedRecord;
   String? _lastDeletedGroupKey;
   String? _basePath;
+  late final AnimationController _controller;
 
   @override
   void initState() {
     super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 800),
+      vsync: this,
+    );
     _loadHistory();
     _loadBasePath();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHistory() async {
@@ -56,7 +68,10 @@ class _HistoryPageState extends State<HistoryPage> {
           _groupByDirectory(historyRecords);
         }
 
-        setState(() => _isLoading = false);
+        setState(() {
+          _isLoading = false;
+        });
+        _controller.forward(from: 0);
       }
     } catch (e) {
       print('Error loading history: $e');
@@ -175,6 +190,8 @@ class _HistoryPageState extends State<HistoryPage> {
       final deletedGroupKey = groupKey;
       final deletedIndex = _groupedRecords[groupKey]?.indexOf(record) ?? 0;
 
+      await _controller.reverse();
+
       setState(() {
         _groupedRecords[groupKey]?.remove(record);
         if (_groupedRecords[groupKey]?.isEmpty ?? false) {
@@ -183,6 +200,8 @@ class _HistoryPageState extends State<HistoryPage> {
         _lastDeletedRecord = deletedRecord;
         _lastDeletedGroupKey = deletedGroupKey;
       });
+
+      await _controller.forward();
 
       if (!mounted) return;
 
@@ -332,10 +351,6 @@ class _HistoryPageState extends State<HistoryPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
     return Scaffold(
       appBar: AppBar(
         leading: _isSelectMode
@@ -417,10 +432,18 @@ class _HistoryPageState extends State<HistoryPage> {
         ],
       ),
       body: RefreshIndicator(
-        onRefresh: _loadHistory,
-        child: _groupedRecords.isEmpty
-            ? const Center(child: Text('暂无观看历史'))
-            : _buildContent(),
+        onRefresh: () async {
+          await _loadHistory();
+          _controller.forward(from: 0);
+        },
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _groupedRecords.isEmpty
+                  ? const Center(child: Text('暂无观看历史'))
+                  : _buildContent(),
+        ),
       ),
     );
   }
@@ -447,59 +470,82 @@ class _HistoryPageState extends State<HistoryPage> {
         final pathParts = latestRecord.videoPath.split('/');
         final lastDirName = pathParts[pathParts.length - 1];
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 12),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              setState(() => _selectedDirectory = dirPath);
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 0.2),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(
+            parent: _controller,
+            curve: Interval(
+              index * 0.05,
+              0.8,
+              curve: Curves.easeOutCubic,
+            ),
+          )),
+          child: FadeTransition(
+            opacity: CurvedAnimation(
+              parent: _controller,
+              curve: Interval(
+                index * 0.05,
+                0.8,
+                curve: Curves.easeOut,
+              ),
+            ),
+            child: Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () {
+                  setState(() => _selectedDirectory = dirPath);
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.folder, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          lastDirName,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                      Row(
+                        children: [
+                          const Icon(Icons.folder, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              lastDirName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ),
-                        ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(
+                              '${records.length}个视频',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Colors.blue,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${records.length}个视频',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue,
-                          ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '最近观看：${timeago.format(latestRecord.changeTime, locale: 'zh')}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '最近观看：${timeago.format(latestRecord.changeTime, locale: 'zh')}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -546,79 +592,91 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Widget _buildDateGroup(String key, List<HistoricalRecord> records) {
-    return IntrinsicHeight(
-      child: Row(
-        children: [
-          SizedBox(
-            width: 60,
-            child: Column(
-              children: [
-                Container(
-                  width: 2,
-                  height: 24,
-                  color: Colors.grey[300],
-                ),
-                Container(
-                  width: 12,
-                  height: 12,
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Colors.white,
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, 0.2),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOutCubic,
+      )),
+      child: FadeTransition(
+        opacity: _controller,
+        child: IntrinsicHeight(
+          child: Row(
+            children: [
+              SizedBox(
+                width: 60,
+                child: Column(
+                  children: [
+                    Container(
                       width: 2,
+                      height: 24,
+                      color: Colors.grey[300],
                     ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: Container(
-                    width: 2,
-                    color: Colors.grey[300],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.fromLTRB(0, 16, 16, 12),
-                  child: Row(
-                    children: [
-                      Text(
-                        _getGroupTitle(key),
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.grey[800],
+                    Container(
+                      width: 12,
+                      height: 12,
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).primaryColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Colors.white,
+                          width: 2,
                         ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.grey.withOpacity(0.3),
+                            blurRadius: 4,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 8),
-                      Text(
-                        '(${records.length})',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
-                        ),
+                    ),
+                    Expanded(
+                      child: Container(
+                        width: 2,
+                        color: Colors.grey[300],
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                ...records.map((record) => _buildHistoryCard(record)),
-                const SizedBox(height: 16),
-              ],
-            ),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.fromLTRB(0, 16, 16, 12),
+                      child: Row(
+                        children: [
+                          Text(
+                            _getGroupTitle(key),
+                            style: TextStyle(
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.grey[800],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '(${records.length})',
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    ...records.map((record) => _buildHistoryCard(record)),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -646,196 +704,208 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Widget _buildHistoryCard(HistoricalRecord record) {
-    // 计算观看进度百分比
-    double progressPercentage = record.totalVideoDuration > 0
-        ? record.videoSeek / record.totalVideoDuration
-        : 0.0;
-
-    // 确保百分比在 0-1 之间
-    progressPercentage = progressPercentage.clamp(0.0, 1.0);
-
-    return Dismissible(
-      key: Key(record.videoSha1),
-      background: Container(
-        color: Colors.red,
-        alignment: Alignment.centerRight,
-        padding: const EdgeInsets.only(right: 16),
-        child: const Icon(Icons.delete, color: Colors.white),
-      ),
-      direction: DismissDirection.endToStart,
-      confirmDismiss: (direction) async {
-        if (_isSelectMode) {
-          _toggleSelect(record.videoSha1);
-          return false;
-        }
-        return true;
-      },
-      onDismissed: (direction) {
-        final groupKey = _selectedDirectory ??
-            (_isTimelineMode
-                ? record.changeTime.toLocal().toString().substring(0, 10)
-                : path.dirname(record.videoPath));
-        _deleteRecord(record, groupKey);
-      },
-      child: Card(
-        elevation: 0,
-        margin: const EdgeInsets.only(right: 16, bottom: 8),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(
-            color: _selectedItems.contains(record.videoSha1)
-                ? Colors.blue
-                : Colors.grey[200]!,
-          ),
-        ),
-        child: InkWell(
-          onTap: _isSelectMode
-              ? () => _toggleSelect(record.videoSha1)
-              : () async {
-                  // 显示加载指示器
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (BuildContext context) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
-                    },
-                  );
-
-                  // 检查文件是否存在
-                  final exists = await _checkFileExists(record.videoPath);
-
-                  // 关闭加载指示器
-                  if (mounted) {
-                    Navigator.pop(context);
-                  }
-
-                  if (!mounted) return;
-
-                  if (exists) {
-                    await Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (context) => VideoPlayer(
-                          path: record.videoPath,
-                          name: record.videoName,
-                        ),
-                      ),
-                    );
-                    if (mounted) {
-                      _loadHistory();
-                    }
-                  } else {
-                    // 显示错误提示
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: const Text('该视频文件已不存在或已被移动'),
-                        action: SnackBarAction(
-                          label: '删除记录',
-                          onPressed: () {
-                            final groupKey = _selectedDirectory ??
-                                (_isTimelineMode
-                                    ? record.changeTime
-                                        .toLocal()
-                                        .toString()
-                                        .substring(0, 10)
-                                    : path.dirname(record.videoPath));
-                            _deleteRecord(record, groupKey);
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.3, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeOutCubic,
+      )),
+      child: FadeTransition(
+        opacity: _controller,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          transform: Matrix4.identity()
+            ..scale(_selectedItems.contains(record.videoSha1) ? 0.98 : 1.0),
+          child: Dismissible(
+            key: Key(record.videoSha1),
+            background: Container(
+              color: Colors.red,
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 16),
+              child: const Icon(Icons.delete, color: Colors.white),
+            ),
+            direction: DismissDirection.endToStart,
+            confirmDismiss: (direction) async {
+              if (_isSelectMode) {
+                _toggleSelect(record.videoSha1);
+                return false;
+              }
+              return true;
+            },
+            onDismissed: (direction) {
+              final groupKey = _selectedDirectory ??
+                  (_isTimelineMode
+                      ? record.changeTime.toLocal().toString().substring(0, 10)
+                      : path.dirname(record.videoPath));
+              _deleteRecord(record, groupKey);
+            },
+            child: Card(
+              elevation: 0,
+              margin: const EdgeInsets.only(right: 16, bottom: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(
+                  color: _selectedItems.contains(record.videoSha1)
+                      ? Colors.blue
+                      : Colors.grey[200]!,
+                ),
+              ),
+              child: InkWell(
+                onTap: _isSelectMode
+                    ? () => _toggleSelect(record.videoSha1)
+                    : () async {
+                        // 显示加载指示器
+                        showDialog(
+                          context: context,
+                          barrierDismissible: false,
+                          builder: (BuildContext context) {
+                            return const Center(
+                              child: CircularProgressIndicator(),
+                            );
                           },
-                        ),
-                      ),
-                    );
+                        );
+
+                        // 检查文件是否存在
+                        final exists = await _checkFileExists(record.videoPath);
+
+                        // 关闭加载指示器
+                        if (mounted) {
+                          Navigator.pop(context);
+                        }
+
+                        if (!mounted) return;
+
+                        if (exists) {
+                          await Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => VideoPlayer(
+                                path: record.videoPath,
+                                name: record.videoName,
+                              ),
+                            ),
+                          );
+                          if (mounted) {
+                            _loadHistory();
+                          }
+                        } else {
+                          // 显示错误提示
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: const Text('该视频文件已不存在或已被移动'),
+                              action: SnackBarAction(
+                                label: '删除记录',
+                                onPressed: () {
+                                  final groupKey = _selectedDirectory ??
+                                      (_isTimelineMode
+                                          ? record.changeTime
+                                              .toLocal()
+                                              .toString()
+                                              .substring(0, 10)
+                                          : path.dirname(record.videoPath));
+                                  _deleteRecord(record, groupKey);
+                                },
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                onLongPress: () {
+                  if (!_isSelectMode) {
+                    _toggleSelectMode();
+                    _toggleSelect(record.videoSha1);
                   }
                 },
-          onLongPress: () {
-            if (!_isSelectMode) {
-              _toggleSelectMode();
-              _toggleSelect(record.videoSha1);
-            }
-          },
-          child: Stack(
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Stack(
                   children: [
-                    Text(
-                      _getDisplayPath(record.videoPath),
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey[600],
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      record.videoName,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(Icons.access_time,
-                            size: 14, color: Colors.grey[600]),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${timeago.format(record.changeTime, locale: 'zh')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.grey[600],
+                    Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _getDisplayPath(record.videoPath),
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey[600],
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: progressPercentage, // 使用计算出的进度
-                      backgroundColor: Colors.grey[200],
-                      valueColor:
-                          AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
-                      minHeight: 4,
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '观看至 ${(progressPercentage * 100).toStringAsFixed(1)}%', // 显示百分比
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.grey[600],
+                          const SizedBox(height: 4),
+                          Text(
+                            record.videoName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Icon(Icons.access_time,
+                                  size: 14, color: Colors.grey[600]),
+                              const SizedBox(width: 4),
+                              Text(
+                                '${timeago.format(record.changeTime, locale: 'zh')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          LinearProgressIndicator(
+                            value: record.totalVideoDuration > 0
+                                ? (record.videoSeek / record.totalVideoDuration)
+                                    .clamp(0.0, 1.0)
+                                : 0.0,
+                            backgroundColor: Colors.grey[200],
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.blue[400]!),
+                            minHeight: 4,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
                       ),
                     ),
+                    if (_isSelectMode)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _selectedItems.contains(record.videoSha1)
+                                ? Colors.blue
+                                : Colors.grey[300],
+                          ),
+                          child: _selectedItems.contains(record.videoSha1)
+                              ? const Icon(
+                                  Icons.check,
+                                  size: 16,
+                                  color: Colors.white,
+                                )
+                              : null,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              if (_isSelectMode)
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: _selectedItems.contains(record.videoSha1)
-                          ? Colors.blue
-                          : Colors.grey[300],
-                    ),
-                    child: _selectedItems.contains(record.videoSha1)
-                        ? const Icon(
-                            Icons.check,
-                            size: 16,
-                            color: Colors.white,
-                          )
-                        : null,
-                  ),
-                ),
-            ],
+            ),
           ),
         ),
       ),

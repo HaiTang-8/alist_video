@@ -12,13 +12,19 @@ class HomePage extends StatefulWidget {
   State<StatefulWidget> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with SingleTickerProviderStateMixin {
   List<FileItem> files = [];
   List<String> currentPath = ['/'];
   int _sortColumnIndex = 0;
   bool _isAscending = true;
+  late AnimationController _animationController;
 
   Future<void> _getList({bool refresh = false}) async {
+    if (refresh) {
+      await _animationController.reverse();
+    }
+
     try {
       var res = await FsApi.list(
           path: currentPath.join('/'),
@@ -43,6 +49,10 @@ class _HomePageState extends State<HomePage> {
         });
       } else {
         _handleError(res.message ?? '获取文件失败');
+      }
+
+      if (refresh) {
+        await _animationController.forward();
       }
     } catch (e) {
       _handleError('操作失败,请检查日志');
@@ -93,7 +103,17 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    _getList();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    );
+    _getList().then((_) => _animationController.forward());
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 
   @override
@@ -117,118 +137,7 @@ class _HomePageState extends State<HomePage> {
       body: Column(
         children: <Widget>[
           // 美化后的面包屑导航栏
-          Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.grey.withOpacity(0.1),
-                  spreadRadius: 1,
-                  blurRadius: 3,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                // 刷新按钮
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(8),
-                      onTap: () => _getList(refresh: true),
-                      child: Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Icon(
-                          Icons.refresh_rounded,
-                          color: Theme.of(context).primaryColor,
-                          size: 20.0,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 16.0),
-                // 面包屑导航
-                Expanded(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        ...List.generate(
-                          currentPath.length,
-                          (index) {
-                            final isLast = index == currentPath.length - 1;
-                            return Row(
-                              children: [
-                                // 面包屑项
-                                InkWell(
-                                  onTap: () {
-                                    setState(() {
-                                      currentPath =
-                                          currentPath.sublist(0, index + 1);
-                                    });
-                                    _getList();
-                                  },
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 12.0,
-                                      vertical: 6.0,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isLast
-                                          ? Theme.of(context)
-                                              .primaryColor
-                                              .withOpacity(0.1)
-                                          : Colors.transparent,
-                                      borderRadius: BorderRadius.circular(6),
-                                    ),
-                                    child: Text(
-                                      currentPath[index] == '/'
-                                          ? '主目录'
-                                          : currentPath[index],
-                                      style: TextStyle(
-                                        color: isLast
-                                            ? Theme.of(context).primaryColor
-                                            : Colors.grey[600],
-                                        fontWeight: isLast
-                                            ? FontWeight.w600
-                                            : FontWeight.normal,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                // 分隔符
-                                if (!isLast)
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 8.0),
-                                    child: Icon(
-                                      Icons.chevron_right_rounded,
-                                      size: 20,
-                                      color: Colors.grey[400],
-                                    ),
-                                  ),
-                              ],
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          _buildBreadcrumb(),
           const Divider(height: 1.0),
           // 美化后的文件列表
           Expanded(
@@ -280,81 +189,156 @@ class _HomePageState extends State<HomePage> {
 
   // 空状态展示
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.folder_open_outlined, size: 80, color: Colors.grey[300]),
-          const SizedBox(height: 16),
-          Text(
-            '文件夹为空',
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-            ),
+    return FadeTransition(
+      opacity: _animationController,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.2),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: _animationController,
+          curve: Curves.easeOutCubic,
+        )),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.folder_open_outlined,
+                  size: 80, color: Colors.grey[300]),
+              const SizedBox(height: 16),
+              Text(
+                '文件夹为空',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 18,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '当前目录下没有文件',
+                style: TextStyle(
+                  color: Colors.grey[400],
+                  fontSize: 14,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            '当前目录下没有文件',
-            style: TextStyle(
-              color: Colors.grey[400],
-              fontSize: 14,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
   // 表头构建
   Widget _buildTableHeader(bool isSmallScreen) {
-    Widget buildSortableHeader(String text, int columnIndex,
-        Comparable Function(FileItem file) getField) {
-      return InkWell(
-        onTap: () {
-          final isAsc = _sortColumnIndex != columnIndex || !_isAscending;
-          _sort(getField, columnIndex, isAsc);
-        },
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, -0.1),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0.1, 0.7, curve: Curves.easeOut),
+      )),
+      child: FadeTransition(
+        opacity: CurvedAnimation(
+          parent: _animationController,
+          curve: const Interval(0.1, 0.7),
+        ),
         child: Row(
           children: [
-            Text(
-              text,
-              style: TextStyle(
-                color: Colors.grey[800],
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+            Expanded(
+              flex: 8,
+              child: InkWell(
+                onTap: () {
+                  final isAsc = _sortColumnIndex != 0 || !_isAscending;
+                  _sort((file) => file.name, 0, isAsc);
+                },
+                child: Row(
+                  children: [
+                    Text(
+                      '文件名称',
+                      style: TextStyle(
+                        color: Colors.grey[800],
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    if (_sortColumnIndex == 0)
+                      Icon(
+                        _isAscending
+                            ? Icons.arrow_upward
+                            : Icons.arrow_downward,
+                        size: 16,
+                        color: Colors.grey[600],
+                      ),
+                  ],
+                ),
               ),
             ),
-            if (_sortColumnIndex == columnIndex)
-              Icon(
-                _isAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                size: 16,
-                color: Colors.grey[600],
+            if (!isSmallScreen) ...[
+              SizedBox(
+                width: 100,
+                child: InkWell(
+                  onTap: () {
+                    final isAsc = _sortColumnIndex != 1 || !_isAscending;
+                    _sort((file) => file.size, 1, isAsc);
+                  },
+                  child: Row(
+                    children: [
+                      Text(
+                        '大小',
+                        style: TextStyle(
+                          color: Colors.grey[800],
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (_sortColumnIndex == 1)
+                        Icon(
+                          _isAscending
+                              ? Icons.arrow_upward
+                              : Icons.arrow_downward,
+                          size: 16,
+                          color: Colors.grey[600],
+                        ),
+                    ],
+                  ),
+                ),
               ),
+              SizedBox(
+                width: 120,
+                child: InkWell(
+                  onTap: () {
+                    final isAsc = _sortColumnIndex != 2 || !_isAscending;
+                    _sort((file) => file.modified.millisecondsSinceEpoch, 2,
+                        isAsc);
+                  },
+                  child: Row(
+                    children: [
+                      Text(
+                        '修改时间',
+                        style: TextStyle(
+                          color: Colors.grey[800],
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (_sortColumnIndex == 2)
+                        Icon(
+                          _isAscending
+                              ? Icons.arrow_upward
+                              : Icons.arrow_downward,
+                          size: 16,
+                          color: Colors.grey[600],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
-      );
-    }
-
-    return Row(
-      children: [
-        Expanded(
-          flex: 8,
-          child: buildSortableHeader('文件名称', 0, (file) => file.name),
-        ),
-        if (!isSmallScreen) ...[
-          SizedBox(
-            width: 100,
-            child: buildSortableHeader('大小', 1, (file) => file.size),
-          ),
-          SizedBox(
-            width: 120,
-            child: buildSortableHeader(
-                '修改时间', 2, (file) => file.modified.millisecondsSinceEpoch),
-          ),
-        ],
-      ],
+      ),
     );
   }
 
@@ -362,85 +346,108 @@ class _HomePageState extends State<HomePage> {
   Widget _buildFileListItem(FileItem file, bool isSmallScreen) {
     final textColor = Colors.grey[800];
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Colors.grey[100]!),
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.2, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: _animationController,
+        curve: Interval(
+          0.2 + (files.indexOf(file) / files.length) * 0.6,
+          1.0,
+          curve: Curves.easeOutCubic,
         ),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () {
-            if (file.type == 1) {
-              setState(() {
-                currentPath.add(file.name);
-              });
-              _getList();
-            } else if (file.type == 2) {
-              _gotoVideo(file);
-            }
-          },
-          hoverColor: Colors.blue.withOpacity(0.05),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16.0,
-              vertical: 12.0,
+      )),
+      child: FadeTransition(
+        opacity: CurvedAnimation(
+          parent: _animationController,
+          curve: Interval(
+            0.2 + (files.indexOf(file) / files.length) * 0.6,
+            1.0,
+          ),
+        ),
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border(
+              bottom: BorderSide(color: Colors.grey[100]!),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                // 文件名称列
-                Expanded(
-                  flex: 8,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      SizedBox(
-                        width: 24,
-                        child: _getIconForFile(file.name),
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () {
+                if (file.type == 1) {
+                  setState(() {
+                    currentPath.add(file.name);
+                  });
+                  _animationController.reset();
+                  _getList().then((_) => _animationController.forward());
+                } else if (file.type == 2) {
+                  _gotoVideo(file);
+                }
+              },
+              hoverColor: Colors.blue.withOpacity(0.05),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 12.0,
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // 文件名称列
+                    Expanded(
+                      flex: 8,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 24,
+                            child: _getIconForFile(file.name),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              file.name,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: textColor,
+                                height: 1.3,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
+                    ),
+                    // 在大屏幕上显示额外信息
+                    if (!isSmallScreen) ...[
+                      SizedBox(
+                        width: 100,
                         child: Text(
-                          file.name,
+                          _formatSize(file.size),
                           style: TextStyle(
                             fontSize: 14,
                             color: textColor,
-                            height: 1.3,
                           ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      SizedBox(
+                        width: 120,
+                        child: Text(
+                          _formatDate(file.modified),
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: textColor,
+                          ),
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
-                // 在大屏幕上显示额外信息
-                if (!isSmallScreen) ...[
-                  SizedBox(
-                    width: 100,
-                    child: Text(
-                      _formatSize(file.size),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: textColor,
-                      ),
-                    ),
-                  ),
-                  SizedBox(
-                    width: 120,
-                    child: Text(
-                      _formatDate(file.modified),
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: textColor,
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+              ),
             ),
           ),
         ),
@@ -495,6 +502,136 @@ class _HomePageState extends State<HomePage> {
       return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  // 面包屑导航动画
+  Widget _buildBreadcrumb() {
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0, -0.2),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(
+        parent: _animationController,
+        curve: const Interval(0, 0.6, curve: Curves.easeOut),
+      )),
+      child: FadeTransition(
+        opacity: CurvedAnimation(
+          parent: _animationController,
+          curve: const Interval(0, 0.6),
+        ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.grey.withOpacity(0.1),
+                spreadRadius: 1,
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              // 刷新按钮
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () => _getList(refresh: true),
+                    child: Padding(
+                      padding: const EdgeInsets.all(8.0),
+                      child: Icon(
+                        Icons.refresh_rounded,
+                        color: Theme.of(context).primaryColor,
+                        size: 20.0,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16.0),
+              // 面包屑导航
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      ...List.generate(
+                        currentPath.length,
+                        (index) {
+                          final isLast = index == currentPath.length - 1;
+                          return Row(
+                            children: [
+                              // 面包屑项
+                              InkWell(
+                                onTap: () {
+                                  setState(() {
+                                    currentPath =
+                                        currentPath.sublist(0, index + 1);
+                                  });
+                                  _getList();
+                                },
+                                borderRadius: BorderRadius.circular(6),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12.0,
+                                    vertical: 6.0,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: isLast
+                                        ? Theme.of(context)
+                                            .primaryColor
+                                            .withOpacity(0.1)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    currentPath[index] == '/'
+                                        ? '主目录'
+                                        : currentPath[index],
+                                    style: TextStyle(
+                                      color: isLast
+                                          ? Theme.of(context).primaryColor
+                                          : Colors.grey[600],
+                                      fontWeight: isLast
+                                          ? FontWeight.w600
+                                          : FontWeight.normal,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              // 分隔符
+                              if (!isLast)
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8.0),
+                                  child: Icon(
+                                    Icons.chevron_right_rounded,
+                                    size: 20,
+                                    color: Colors.grey[400],
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }
 
