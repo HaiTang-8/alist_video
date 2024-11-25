@@ -24,11 +24,13 @@ class _HistoryPageState extends State<HistoryPage> {
   final Set<String> _selectedItems = <String>{};
   HistoricalRecord? _lastDeletedRecord;
   String? _lastDeletedGroupKey;
+  String? _basePath;
 
   @override
   void initState() {
     super.initState();
     _loadHistory();
+    _loadBasePath();
   }
 
   Future<void> _loadHistory() async {
@@ -59,6 +61,20 @@ class _HistoryPageState extends State<HistoryPage> {
       print('Error loading history: $e');
       setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _loadBasePath() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _basePath = prefs.getString('base_path') ?? '/';
+    });
+  }
+
+  String _getDisplayPath(String videoPath) {
+    if (_basePath == null || _basePath == '/') {
+      return videoPath.substring(1);
+    }
+    return '$_basePath${videoPath.substring(1)}';
   }
 
   void _groupByTimeline(List<HistoricalRecord> records) {
@@ -693,7 +709,7 @@ class _HistoryPageState extends State<HistoryPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      record.videoPath.substring(1),
+                      _getDisplayPath(record.videoPath),
                       style: TextStyle(
                         fontSize: 13,
                         color: Colors.grey[600],
