@@ -316,7 +316,14 @@ class _HistoryPageState extends State<HistoryPage> {
                 icon: const Icon(Icons.close),
                 onPressed: _toggleSelectMode,
               )
-            : null,
+            : (!_isTimelineMode && _selectedDirectory != null)
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () {
+                      setState(() => _selectedDirectory = null);
+                    },
+                  )
+                : null,
         title: _isSelectMode
             ? Text('已选择 ${_selectedItems.length} 项')
             : Text(_isTimelineMode
