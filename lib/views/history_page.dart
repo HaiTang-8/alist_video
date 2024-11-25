@@ -323,10 +323,7 @@ class _HistoryPageState extends State<HistoryPage> {
   Future<bool> _checkFileExists(String path) async {
     try {
       final response = await FsApi.get(path: path);
-      if (response.code == 200 && response.data != null) {
-        return response.data!.type == 2; // 检查是否为视频文件
-      }
-      return false;
+      return response.code == 200;
     } catch (e) {
       print('Error checking file: $e');
       return false;

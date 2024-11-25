@@ -152,6 +152,12 @@ class MyApp extends StatelessWidget {
             surface: Colors.white,
             error: Color(0xFFD32F2F),
           ),
+          pageTransitionsTheme: const PageTransitionsTheme(
+            builders: {
+              TargetPlatform.android: CupertinoPageTransitionsBuilder(),
+              TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            },
+          ),
         ),
         home: const LoginPage(),
         builder: EasyLoading.init(),
