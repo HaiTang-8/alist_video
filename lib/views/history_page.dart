@@ -649,6 +649,14 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Widget _buildHistoryCard(HistoricalRecord record) {
+    // 计算观看进度百分比
+    double progressPercentage = record.totalVideoDuration > 0
+        ? record.videoSeek / record.totalVideoDuration
+        : 0.0;
+
+    // 确保百分比在 0-1 之间
+    progressPercentage = progressPercentage.clamp(0.0, 1.0);
+
     return Dismissible(
       key: Key(record.videoSha1),
       background: Container(
@@ -791,7 +799,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                     const SizedBox(height: 8),
                     LinearProgressIndicator(
-                      value: 0.0,
+                      value: progressPercentage, // 使用计算出的进度
                       backgroundColor: Colors.grey[200],
                       valueColor:
                           AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
@@ -799,7 +807,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '观看至 0%',
+                      '观看至 ${(progressPercentage * 100).toStringAsFixed(1)}%', // 显示百分比
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
