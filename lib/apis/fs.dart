@@ -18,4 +18,55 @@ class FsApi {
     });
     return FsResp.fromJson(res.data);
   }
+
+  static Future<FsGetResponse> get({
+    required String path,
+    String password = '',
+  }) async {
+    var res = await WooHttpUtil().post('/api/fs/get', data: {
+      'path': path,
+      'password': password,
+    });
+    return FsGetResponse.fromJson(res.data);
+  }
+}
+
+class FsGetResponse {
+  final int code;
+  final String? message;
+  final FsGetData? data;
+
+  FsGetResponse({
+    required this.code,
+    this.message,
+    this.data,
+  });
+
+  factory FsGetResponse.fromJson(Map<String, dynamic> json) {
+    return FsGetResponse(
+      code: json['code'] as int,
+      message: json['message'] as String?,
+      data: json['data'] != null ? FsGetData.fromJson(json['data']) : null,
+    );
+  }
+}
+
+class FsGetData {
+  final String name;
+  final bool isDir;
+  final int type;
+
+  FsGetData({
+    required this.name,
+    required this.isDir,
+    required this.type,
+  });
+
+  factory FsGetData.fromJson(Map<String, dynamic> json) {
+    return FsGetData(
+      name: json['name'] as String,
+      isDir: json['is_dir'] as bool,
+      type: json['type'] as int,
+    );
+  }
 }

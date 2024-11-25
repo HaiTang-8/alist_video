@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as path;
 import 'package:timeago/timeago.dart' as timeago;
 import 'dart:async';
+import 'package:alist_player/apis/fs.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -316,6 +317,19 @@ class _HistoryPageState extends State<HistoryPage> {
           SnackBar(content: Text('删除失败: $e')),
         );
       }
+    }
+  }
+
+  Future<bool> _checkFileExists(String path) async {
+    try {
+      final response = await FsApi.get(path: path);
+      if (response.code == 200 && response.data != null) {
+        return response.data!.type == 2; // 检查是否为视频文件
+      }
+      return false;
+    } catch (e) {
+      print('Error checking file: $e');
+      return false;
     }
   }
 
@@ -635,15 +649,6 @@ class _HistoryPageState extends State<HistoryPage> {
   }
 
   Widget _buildHistoryCard(HistoricalRecord record) {
-    double progressValue = 0.0;
-    String progressText = '0%';
-
-    if (record.totalVideoDuration > 0) {
-      progressValue =
-          (record.videoSeek / record.totalVideoDuration).clamp(0.0, 1.0);
-      progressText = '${(progressValue * 100).toStringAsFixed(1)}%';
-    }
-
     return Dismissible(
       key: Key(record.videoSha1),
       background: Container(
@@ -682,17 +687,60 @@ class _HistoryPageState extends State<HistoryPage> {
           onTap: _isSelectMode
               ? () => _toggleSelect(record.videoSha1)
               : () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => VideoPlayer(
-                        path: record.videoPath,
-                        name: record.videoName,
-                      ),
-                    ),
+                  // 显示加载指示器
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (BuildContext context) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    },
                   );
+
+                  // 检查文件是否存在
+                  final exists = await _checkFileExists(record.videoPath);
+
+                  // 关闭加载指示器
                   if (mounted) {
-                    _loadHistory();
+                    Navigator.pop(context);
+                  }
+
+                  if (!mounted) return;
+
+                  if (exists) {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => VideoPlayer(
+                          path: record.videoPath,
+                          name: record.videoName,
+                        ),
+                      ),
+                    );
+                    if (mounted) {
+                      _loadHistory();
+                    }
+                  } else {
+                    // 显示错误提示
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: const Text('该视频文件已不存在或已被移动'),
+                        action: SnackBarAction(
+                          label: '删除记录',
+                          onPressed: () {
+                            final groupKey = _selectedDirectory ??
+                                (_isTimelineMode
+                                    ? record.changeTime
+                                        .toLocal()
+                                        .toString()
+                                        .substring(0, 10)
+                                    : path.dirname(record.videoPath));
+                            _deleteRecord(record, groupKey);
+                          },
+                        ),
+                      ),
+                    );
                   }
                 },
           onLongPress: () {
@@ -743,7 +791,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                     const SizedBox(height: 8),
                     LinearProgressIndicator(
-                      value: progressValue,
+                      value: 0.0,
                       backgroundColor: Colors.grey[200],
                       valueColor:
                           AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
@@ -751,7 +799,7 @@ class _HistoryPageState extends State<HistoryPage> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      '观看至 $progressText',
+                      '观看至 0%',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey[600],
