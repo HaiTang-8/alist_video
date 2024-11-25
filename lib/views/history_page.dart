@@ -79,9 +79,12 @@ class _HistoryPageState extends State<HistoryPage> {
   void _groupByDirectory(List<HistoricalRecord> records) {
     _groupedRecords = {};
     for (var record in records) {
-      final dirPath = path.dirname(record.videoPath);
-      _groupedRecords.putIfAbsent(dirPath, () => []);
-      _groupedRecords[dirPath]!.add(record);
+      final pathParts = record.videoPath.split('/');
+      if (pathParts.length >= 2) {
+        final lastDirName = pathParts[pathParts.length - 2];
+        _groupedRecords.putIfAbsent(lastDirName, () => []);
+        _groupedRecords[lastDirName]!.add(record);
+      }
     }
 
     _groupedRecords.forEach((key, list) {
@@ -407,6 +410,9 @@ class _HistoryPageState extends State<HistoryPage> {
         final records = _groupedRecords[dirPath]!;
         final latestRecord = records.first;
 
+        final pathParts = latestRecord.videoPath.split('/');
+        final lastDirName = pathParts[pathParts.length - 1];
+
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: InkWell(
@@ -425,7 +431,7 @@ class _HistoryPageState extends State<HistoryPage> {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          path.basename(dirPath),
+                          lastDirName,
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w600,
