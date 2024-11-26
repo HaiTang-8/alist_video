@@ -75,4 +75,19 @@ class AppConstants {
   static const int maxSeekDuration = 60; // 最大快进/快退时长（秒）
   static const String shortSeekKey = 'short_seek_duration'; // 短按快进时长存储键
   static const String longSeekKey = 'long_seek_duration'; // 长按快进时长存储键
+
+  // 播放速度相关
+  static const List<double> defaultPlaybackSpeeds = [
+    0.5,
+    0.75,
+    1.0,
+    1.25,
+    1.5,
+    2.0
+  ];
+  static const String playbackSpeedsKey = 'playback_speeds'; // 存储自定义播放速度的键
+  static const double minPlaybackSpeed = 0.25; // 最小播放速度
+  static const double maxPlaybackSpeed = 4.0; // 最大播放速度
+  static const double speedStep = 0.25; // 速度调节步长
+  static const int maxPlaybackSpeedCount = 10; // 最大播放速度数量
 }

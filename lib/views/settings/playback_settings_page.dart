@@ -10,27 +10,43 @@ class PlaybackSettingsPage extends StatefulWidget {
 }
 
 class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
-  late int _shortSeekDuration;
-  late int _longSeekDuration;
+  int _shortSeekDuration = AppConstants.defaultShortSeekDuration.inSeconds;
+  int _longSeekDuration = AppConstants.defaultLongSeekDuration.inSeconds;
+  List<double> _playbackSpeeds = AppConstants.defaultPlaybackSpeeds;
   final _shortSeekController = TextEditingController();
   final _longSeekController = TextEditingController();
+  final _speedController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
+    _shortSeekController.text = _shortSeekDuration.toString();
+    _longSeekController.text = _longSeekDuration.toString();
     _loadSettings();
   }
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _shortSeekDuration = prefs.getInt(AppConstants.shortSeekKey) ??
-          AppConstants.defaultShortSeekDuration.inSeconds;
-      _longSeekDuration = prefs.getInt(AppConstants.longSeekKey) ??
-          AppConstants.defaultLongSeekDuration.inSeconds;
 
-      _shortSeekController.text = _shortSeekDuration.toString();
-      _longSeekController.text = _longSeekDuration.toString();
+    final shortSeek = prefs.getInt(AppConstants.shortSeekKey);
+    final longSeek = prefs.getInt(AppConstants.longSeekKey);
+    final speedsString = prefs.getStringList(AppConstants.playbackSpeedsKey);
+
+    setState(() {
+      if (shortSeek != null) {
+        _shortSeekDuration = shortSeek;
+        _shortSeekController.text = shortSeek.toString();
+      }
+
+      if (longSeek != null) {
+        _longSeekDuration = longSeek;
+        _longSeekController.text = longSeek.toString();
+      }
+
+      if (speedsString != null) {
+        _playbackSpeeds = speedsString.map((s) => double.parse(s)).toList()
+          ..sort();
+      }
     });
   }
 
@@ -38,6 +54,12 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt(AppConstants.shortSeekKey, _shortSeekDuration);
     await prefs.setInt(AppConstants.longSeekKey, _longSeekDuration);
+  }
+
+  Future<void> _savePlaybackSpeeds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final speedsString = _playbackSpeeds.map((s) => s.toString()).toList();
+    await prefs.setStringList(AppConstants.playbackSpeedsKey, speedsString);
   }
 
   void _updateShortSeekDuration(String value) {
@@ -64,6 +86,88 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       _longSeekController.text = _longSeekDuration.toString();
     });
     _saveSettings();
+  }
+
+  void _addSpeed(String value) {
+    final speed = double.tryParse(value);
+
+    // 验证输入值
+    if (speed == null) {
+      _showErrorMessage('请输入有效的数字');
+      return;
+    }
+
+    // 验证速度范围
+    if (speed < AppConstants.minPlaybackSpeed ||
+        speed > AppConstants.maxPlaybackSpeed) {
+      _showErrorMessage(
+          '播放速度必须在 ${AppConstants.minPlaybackSpeed}x 到 ${AppConstants.maxPlaybackSpeed}x 之间');
+      return;
+    }
+
+    // 验证是否重复
+    if (_playbackSpeeds.contains(speed)) {
+      _showErrorMessage('该播放速度已存在');
+      return;
+    }
+
+    // 验证数量限制
+    if (_playbackSpeeds.length >= AppConstants.maxPlaybackSpeedCount) {
+      _showErrorMessage('播放速度数量已达到上限（${AppConstants.maxPlaybackSpeedCount}个）');
+      return;
+    }
+
+    // 验证步长
+    if ((speed * 100) % (AppConstants.speedStep * 100) != 0) {
+      _showErrorMessage('播放速度必须是 ${AppConstants.speedStep}x 的倍数');
+      return;
+    }
+
+    // 所有验证通过，添加新速度
+    setState(() {
+      _playbackSpeeds = [..._playbackSpeeds, speed]..sort();
+      _speedController.clear();
+    });
+    _savePlaybackSpeeds();
+
+    // 显示成功提示
+    _showSuccessMessage('添加成功');
+  }
+
+  // 添加错误提示方法
+  void _showErrorMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // 添加成功提示方法
+  void _showSuccessMessage(String message) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _removeSpeed(double speed) {
+    if (speed != AppConstants.defaultPlaybackSpeed) {
+      // 不允许删除 1.0x
+      setState(() {
+        _playbackSpeeds.remove(speed);
+      });
+      _savePlaybackSpeeds();
+    }
   }
 
   @override
@@ -94,6 +198,62 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
             controller: _longSeekController,
             onChanged: _updateLongSeekDuration,
           ),
+          const SizedBox(height: 24),
+          const Text(
+            '播放速度设置',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: _playbackSpeeds.map((speed) {
+              return Chip(
+                label: Text('${speed}x'),
+                deleteIcon: speed == AppConstants.defaultPlaybackSpeed
+                    ? null
+                    : const Icon(Icons.close, size: 18),
+                onDeleted: speed == AppConstants.defaultPlaybackSpeed
+                    ? null
+                    : () => _removeSpeed(speed),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _speedController,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    hintText:
+                        '添加新的播放速度 (${AppConstants.minPlaybackSpeed}-${AppConstants.maxPlaybackSpeed})',
+                    suffixText: 'x',
+                  ),
+                  onSubmitted: _addSpeed,
+                ),
+              ),
+              const SizedBox(width: 16),
+              ElevatedButton(
+                onPressed: () => _addSpeed(_speedController.text),
+                child: const Text('添加'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            '提示：点击速度标签可以删除，1.0x 速度不可删除',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 12,
+            ),
+          ),
         ],
       ),
     );
@@ -112,8 +272,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
         TextField(
           controller: controller,
           keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            border: const OutlineInputBorder(),
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
             hintText:
                 '输入秒数 (${AppConstants.minSeekDuration}-${AppConstants.maxSeekDuration})',
             suffixText: '秒',
@@ -128,6 +288,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   void dispose() {
     _shortSeekController.dispose();
     _longSeekController.dispose();
+    _speedController.dispose();
     super.dispose();
   }
 }

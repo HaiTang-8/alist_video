@@ -50,6 +50,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   late Duration _shortSeekDuration;
   late Duration _longSeekDuration;
 
+  // 将 late 移除，提供默认值
+  List<double> _playbackSpeeds = AppConstants.defaultPlaybackSpeeds;
+
   Future<void> _loadSeekSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -219,6 +222,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   void initState() {
     super.initState();
     _loadSeekSettings();
+    _loadPlaybackSpeeds();
 
     (player.platform as dynamic).setProperty('cache', 'no');
     (player.platform as dynamic).setProperty('cache-secs', '0');
@@ -267,6 +271,17 @@ class VideoPlayerState extends State<VideoPlayer> {
         );
       }
     });
+  }
+
+  Future<void> _loadPlaybackSpeeds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final speedsString = prefs.getStringList(AppConstants.playbackSpeedsKey);
+    if (speedsString != null) {
+      setState(() {
+        _playbackSpeeds = speedsString.map((s) => double.parse(s)).toList()
+          ..sort();
+      });
+    }
   }
 
   // Move the method outside of initState and rename it
@@ -725,7 +740,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         overflow: TextOverflow.ellipsis,
       ),
       onTap: () async {
-        // 先保存当前视频进度，再切换视频
+        // 先保当前视频进，再切换视频
         await _saveCurrentProgress();
         if (mounted) {
           player.jump(index);
@@ -804,7 +819,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: AppConstants.playbackSpeeds.map((speed) {
+                  children: _playbackSpeeds.map((speed) {
                     final isSelected = speed == _currentSpeed;
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -879,7 +894,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                     spacing: AppConstants.speedButtonSpacing,
                     runSpacing: AppConstants.speedButtonSpacing,
                     alignment: WrapAlignment.center,
-                    children: AppConstants.playbackSpeeds.map((speed) {
+                    children: _playbackSpeeds.map((speed) {
                       final isSelected = speed == _currentSpeed;
                       return Material(
                         color: Colors.transparent,
