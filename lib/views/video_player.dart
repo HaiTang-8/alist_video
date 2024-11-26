@@ -42,7 +42,10 @@ class VideoPlayerState extends State<VideoPlayer> {
   bool _isExiting = false;
 
   // 添加一个变量来跟踪当前播放速度
-  double _currentSpeed = 1.0;
+  double _currentSpeed = AppConstants.defaultPlaybackSpeed;
+
+  // 添加一个变量来存储长按前的速度
+  double _previousSpeed = AppConstants.defaultPlaybackSpeed;
 
   // 排序方法
   void _sortPlaylist() async {
@@ -581,10 +584,12 @@ class VideoPlayerState extends State<VideoPlayer> {
                           ]),
                       child: GestureDetector(
                         onLongPressStart: (_) {
-                          controller.player.setRate(2.0);
+                          _previousSpeed = controller.player.state.rate;
+                          controller.player
+                              .setRate(AppConstants.longPressPlaybackSpeed);
                         },
                         onLongPressEnd: (_) {
-                          controller.player.setRate(1.0);
+                          controller.player.setRate(_previousSpeed);
                         },
                         child: Video(
                           controller: controller,
@@ -762,8 +767,8 @@ class VideoPlayerState extends State<VideoPlayer> {
   Widget buildSpeedDialog() {
     final isLandscape =
         MediaQuery.of(context).orientation == Orientation.landscape;
-    final isMobile = MediaQuery.of(context).size.width < 600;
-    final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+    final isMobile =
+        MediaQuery.of(context).size.width < AppConstants.smallScreenWidth;
 
     return StatefulBuilder(
       builder: (context, setState) {
@@ -781,7 +786,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
-                  children: speeds.map((speed) {
+                  children: AppConstants.playbackSpeeds.map((speed) {
                     final isSelected = speed == _currentSpeed;
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
@@ -797,8 +802,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                             }
                           },
                           child: Container(
-                            width: 48,
-                            height: 32,
+                            width: AppConstants.speedButtonWidth,
+                            height: AppConstants.speedButtonHeight,
                             decoration: BoxDecoration(
                               color: isSelected
                                   ? Colors.white.withOpacity(0.2)
@@ -807,12 +812,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                             ),
                             child: Center(
                               child: Text(
-                                speed == 1.0 ? '正常' : '${speed}x',
+                                speed == AppConstants.defaultPlaybackSpeed
+                                    ? AppConstants.normalSpeedText
+                                    : '$speed${AppConstants.speedSuffix}',
                                 style: TextStyle(
                                   color: isSelected
                                       ? Colors.white
                                       : Colors.white70,
-                                  fontSize: 13,
+                                  fontSize: AppConstants.speedIndicatorTextSize,
                                   fontWeight: isSelected
                                       ? FontWeight.w600
                                       : FontWeight.normal,
@@ -836,25 +843,25 @@ class VideoPlayerState extends State<VideoPlayer> {
             ),
             backgroundColor: Colors.white,
             child: Container(
-              width: 300,
-              padding: const EdgeInsets.all(20),
+              width: AppConstants.speedDialogWidth,
+              padding: const EdgeInsets.all(AppConstants.speedDialogPadding),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
                     '播放速度',
                     style: TextStyle(
-                      fontSize: 18,
+                      fontSize: AppConstants.speedDialogTitleSize,
                       fontWeight: FontWeight.w600,
                       color: Colors.grey[800],
                     ),
                   ),
                   const SizedBox(height: 16),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
+                    spacing: AppConstants.speedButtonSpacing,
+                    runSpacing: AppConstants.speedButtonSpacing,
                     alignment: WrapAlignment.center,
-                    children: speeds.map((speed) {
+                    children: AppConstants.playbackSpeeds.map((speed) {
                       final isSelected = speed == _currentSpeed;
                       return Material(
                         color: Colors.transparent,
@@ -868,7 +875,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             }
                           },
                           child: Container(
-                            width: 80,
+                            width: AppConstants.speedButtonWidth,
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             decoration: BoxDecoration(
                               color: isSelected
@@ -884,12 +891,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                             ),
                             child: Center(
                               child: Text(
-                                speed == 1.0 ? '正常' : '${speed}x',
+                                speed == AppConstants.defaultPlaybackSpeed
+                                    ? AppConstants.normalSpeedText
+                                    : '$speed${AppConstants.speedSuffix}',
                                 style: TextStyle(
                                   color: isSelected
                                       ? Colors.blue
                                       : Colors.grey[800],
-                                  fontSize: 14,
+                                  fontSize: AppConstants.speedButtonTextSize,
                                   fontWeight: isSelected
                                       ? FontWeight.w600
                                       : FontWeight.normal,
@@ -937,17 +946,15 @@ class VideoPlayerState extends State<VideoPlayer> {
       VideoShortcutActivator(
         key: LogicalKeyboardKey.arrowRight,
         onPress: () {
-          // 单次点击前进2秒
           final rate = player.state.position + const Duration(seconds: 2);
           player.seek(rate);
         },
         onLongPress: () {
-          // 长按时设置2倍速
-          player.setRate(2.0);
+          _previousSpeed = controller.player.state.rate;
+          player.setRate(AppConstants.longPressPlaybackSpeed);
         },
         onRelease: () {
-          // 松开时恢复正常速度
-          player.setRate(1.0);
+          player.setRate(_previousSpeed);
         },
       ): () {},
 

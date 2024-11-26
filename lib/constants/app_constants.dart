@@ -36,7 +36,20 @@ class AppConstants {
   // 播放器相关
   static const List<double> playbackSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
   static const double defaultPlaybackSpeed = 1.0;
-  static const defaultItemHeight = 72.0; // ListTile的预估高度
+  static const double longPressPlaybackSpeed = 2.0;
+  static const defaultItemHeight = 72.0;
+
+  // 播放速度对话框相关
+  static const double speedDialogWidth = 300.0;
+  static const double speedButtonWidth = 80.0;
+  static const double speedButtonHeight = 32.0;
+  static const double speedDialogPadding = 20.0;
+  static const double speedButtonSpacing = 8.0;
+  static const double speedDialogTitleSize = 18.0;
+  static const double speedButtonTextSize = 14.0;
+  static const double speedIndicatorTextSize = 13.0;
+  static const String normalSpeedText = '正常';
+  static const String speedSuffix = 'x';
 
   // 透明度相关
   static const double shadowOpacity = 0.1;
