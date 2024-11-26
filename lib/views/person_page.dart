@@ -200,61 +200,7 @@ class _PersonPageState extends State<PersonPage> {
           SliverToBoxAdapter(
             child: Column(
               children: [
-                Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Row(
-                    children: [
-                      _buildStatCard(
-                        icon: Icons.history,
-                        title: '观看历史',
-                        count: _watchHistoryCount,
-                        onTap: () {
-                          // TODO: 导航到观看历史页面
-                        },
-                      ),
-                      const SizedBox(width: 16),
-                      _buildStatCard(
-                        icon: Icons.favorite,
-                        title: '我的收藏',
-                        count: _favoriteCount,
-                        onTap: () {
-                          // TODO: 导航到收藏页面
-                        },
-                      ),
-                    ],
-                  ),
-                ),
-                _buildSectionTitle('功能'),
-                _buildMenuItem(
-                  icon: Icons.history,
-                  title: '观看历史',
-                  onTap: () {
-                    // TODO: 导航到观看历史页面
-                  },
-                ),
-                _buildMenuItem(
-                  icon: Icons.favorite,
-                  title: '我的收藏',
-                  onTap: () {
-                    // TODO: 导航到收藏页面
-                  },
-                ),
-                _buildMenuItem(
-                  icon: Icons.download,
-                  title: '离线缓存',
-                  onTap: () {
-                    // TODO: 导航到下载管理页面
-                  },
-                ),
-                const Divider(),
                 _buildSectionTitle('设置'),
-                _buildMenuItem(
-                  icon: Icons.color_lens,
-                  title: '主题设置',
-                  onTap: () {
-                    // TODO: 导航到主题设置页面
-                  },
-                ),
                 _buildMenuItem(
                   icon: Icons.video_settings,
                   title: '播放设置',
@@ -267,20 +213,38 @@ class _PersonPageState extends State<PersonPage> {
                     );
                   },
                 ),
-                _buildMenuItem(
-                  icon: Icons.settings,
-                  title: '通用设置',
-                  onTap: () {
-                    // TODO: 导航到通用设置页面
-                  },
-                ),
                 const Divider(),
                 _buildSectionTitle('其他'),
                 _buildMenuItem(
                   icon: Icons.info_outline,
                   title: '关于',
                   onTap: () {
-                    // TODO: 显示关于对话框
+                    showDialog(
+                      context: context,
+                      builder: (context) => AboutDialog(
+                        applicationName: 'AList Player',
+                        applicationVersion: 'v1.0.0',
+                        applicationIcon: const Icon(
+                          Icons.play_circle_outline,
+                          size: 48,
+                          color: Colors.blue,
+                        ),
+                        children: [
+                          const SizedBox(height: 16),
+                          const Text(
+                              'AList Player 是一个基于 AList 的在线视频播放器，支持在线播放和视频进度记录等功能。'),
+                          const SizedBox(height: 8),
+                          const Text('© 2024 AList Player'),
+                          TextButton(
+                            onPressed: () {
+                              // TODO: 如果需要跳转到项目地址，可以添加 url_launcher 包并在这里实现
+                              Navigator.pop(context);
+                            },
+                            child: const Text('项目地址'),
+                          ),
+                        ],
+                      ),
+                    );
                   },
                 ),
                 _buildMenuItem(
@@ -317,46 +281,6 @@ class _PersonPageState extends State<PersonPage> {
         color: Colors.grey[400],
       ),
       onTap: onTap,
-    );
-  }
-
-  Widget _buildStatCard({
-    required IconData icon,
-    required String title,
-    required int count,
-    required VoidCallback onTap,
-  }) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Card(
-          elevation: 2,
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                Icon(icon, size: 28, color: Theme.of(context).primaryColor),
-                const SizedBox(height: 8),
-                Text(
-                  count.toString(),
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: Colors.grey[600],
-                    fontSize: 14,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 
