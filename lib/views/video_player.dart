@@ -379,6 +379,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
             setState(() => _isExiting = true);
 
+            final navigator = Navigator.of(context);
+            final scaffoldMessenger = ScaffoldMessenger.of(context);
             try {
               // 暂停视频
               await player.pause();
@@ -388,10 +390,10 @@ class VideoPlayerState extends State<VideoPlayer> {
               await player.dispose();
 
               if (!mounted) return;
-              Navigator.of(context).pop();
+              navigator.pop();
             } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
+              if (scaffoldMessenger.mounted) {
+                scaffoldMessenger.showSnackBar(
                   SnackBar(content: Text('退出时发生错误: $e')),
                 );
               }

@@ -12,8 +12,6 @@ class PersonPage extends StatefulWidget {
 
 class _PersonPageState extends State<PersonPage> {
   String _username = '';
-  int _watchHistoryCount = 0;
-  int _favoriteCount = 0;
 
   @override
   void initState() {
@@ -25,8 +23,6 @@ class _PersonPageState extends State<PersonPage> {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _username = prefs.getString('current_username') ?? '';
-      _watchHistoryCount = 0;
-      _favoriteCount = 0;
     });
   }
 
@@ -49,19 +45,18 @@ class _PersonPageState extends State<PersonPage> {
       ),
     );
 
-    if (confirmed == true && mounted) {
+    if (confirmed == true) {
       final prefs = await SharedPreferences.getInstance();
       await Future.wait([
         prefs.remove('current_username'),
         prefs.remove('remember_me'),
         prefs.remove('token'),
       ]);
-      if (mounted) {
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LoginPage()),
-          (route) => false,
-        );
-      }
+      if (!context.mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LoginPage()),
+        (route) => false,
+      );
     }
   }
 
@@ -237,7 +232,6 @@ class _PersonPageState extends State<PersonPage> {
                           const Text('© 2024 AList Player'),
                           TextButton(
                             onPressed: () {
-                              // TODO: 如果需要跳转到项目地址，可以添加 url_launcher 包并在这里实现
                               Navigator.pop(context);
                             },
                             child: const Text('项目地址'),

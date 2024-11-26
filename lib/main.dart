@@ -204,10 +204,11 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _login() async {
     var username = _usernameController.text;
     var password = _passwordController.text;
+
     var res = await LoginApi.login(username: username, password: password);
 
     if (res.code != 200) {
-      if (context.mounted) {
+      if (mounted) {
         toastification.show(
           context: context,
           type: ToastificationType.error,
