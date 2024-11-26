@@ -65,4 +65,14 @@ class AppConstants {
   static const int defaultPerPage = 0;
   static const int defaultHistoryLimit = 50;
   static const int recentHistoryLimit = 10;
+
+  // 播放控制相关
+  static const Duration defaultShortSeekDuration =
+      Duration(seconds: 2); // 默认短按快进/快退时长
+  static const Duration defaultLongSeekDuration =
+      Duration(seconds: 10); // 默认长按快进/快退时长
+  static const int minSeekDuration = 1; // 最小快进/快退时长（秒）
+  static const int maxSeekDuration = 60; // 最大快进/快退时长（秒）
+  static const String shortSeekKey = 'short_seek_duration'; // 短按快进时长存储键
+  static const String longSeekKey = 'long_seek_duration'; // 长按快进时长存储键
 }

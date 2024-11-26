@@ -47,7 +47,24 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加一个变量来存储长按前的速度
   double _previousSpeed = AppConstants.defaultPlaybackSpeed;
 
-  // 排序方法
+  late Duration _shortSeekDuration;
+  late Duration _longSeekDuration;
+
+  Future<void> _loadSeekSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _shortSeekDuration = Duration(
+        seconds: prefs.getInt(AppConstants.shortSeekKey) ??
+            AppConstants.defaultShortSeekDuration.inSeconds,
+      );
+      _longSeekDuration = Duration(
+        seconds: prefs.getInt(AppConstants.longSeekKey) ??
+            AppConstants.defaultLongSeekDuration.inSeconds,
+      );
+    });
+  }
+
+  // 添加排序相关状态
   void _sortPlaylist() async {
     // 记住当前播放的视频名称和位置
     final currentPlayingName =
@@ -201,6 +218,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   @override
   void initState() {
     super.initState();
+    _loadSeekSettings();
 
     (player.platform as dynamic).setProperty('cache', 'no');
     (player.platform as dynamic).setProperty('cache-secs', '0');
@@ -946,7 +964,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       VideoShortcutActivator(
         key: LogicalKeyboardKey.arrowRight,
         onPress: () {
-          final rate = player.state.position + const Duration(seconds: 2);
+          print("_shortSeekDuration, $_shortSeekDuration");
+          final rate = player.state.position + _shortSeekDuration;
           player.seek(rate);
         },
         onLongPress: () {
@@ -971,15 +990,15 @@ class VideoPlayerState extends State<VideoPlayer> {
       const SingleActivator(LogicalKeyboardKey.space): () =>
           player.playOrPause(),
       const SingleActivator(LogicalKeyboardKey.keyJ): () {
-        final rate = player.state.position - const Duration(seconds: 10);
+        final rate = player.state.position - _longSeekDuration;
         player.seek(rate);
       },
       const SingleActivator(LogicalKeyboardKey.keyI): () {
-        final rate = player.state.position + const Duration(seconds: 10);
+        final rate = player.state.position + _longSeekDuration;
         player.seek(rate);
       },
       const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
-        final rate = player.state.position - const Duration(seconds: 2);
+        final rate = player.state.position - _shortSeekDuration;
         player.seek(rate);
       },
       const SingleActivator(LogicalKeyboardKey.arrowUp): () {

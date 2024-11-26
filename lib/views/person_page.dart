@@ -1,4 +1,5 @@
 import 'package:alist_player/main.dart';
+import 'package:alist_player/views/settings/playback_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -11,18 +12,21 @@ class PersonPage extends StatefulWidget {
 
 class _PersonPageState extends State<PersonPage> {
   String _username = '';
+  int _watchHistoryCount = 0;
+  int _favoriteCount = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadUsername();
+    _loadUserData();
   }
 
-  Future<void> _loadUsername() async {
+  Future<void> _loadUserData() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _username = prefs.getString('current_username') ?? '';
-      print(_username);
+      _watchHistoryCount = 0;
+      _favoriteCount = 0;
     });
   }
 
@@ -196,15 +200,89 @@ class _PersonPageState extends State<PersonPage> {
           SliverToBoxAdapter(
             child: Column(
               children: [
-                const SizedBox(height: 20),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Row(
+                    children: [
+                      _buildStatCard(
+                        icon: Icons.history,
+                        title: '观看历史',
+                        count: _watchHistoryCount,
+                        onTap: () {
+                          // TODO: 导航到观看历史页面
+                        },
+                      ),
+                      const SizedBox(width: 16),
+                      _buildStatCard(
+                        icon: Icons.favorite,
+                        title: '我的收藏',
+                        count: _favoriteCount,
+                        onTap: () {
+                          // TODO: 导航到收藏页面
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                _buildSectionTitle('功能'),
                 _buildMenuItem(
-                  icon: Icons.settings,
-                  title: '设置',
+                  icon: Icons.history,
+                  title: '观看历史',
                   onTap: () {
-                    // TODO: 实现设置功能
+                    // TODO: 导航到观看历史页面
                   },
                 ),
-                const SizedBox(height: 20),
+                _buildMenuItem(
+                  icon: Icons.favorite,
+                  title: '我的收藏',
+                  onTap: () {
+                    // TODO: 导航到收藏页面
+                  },
+                ),
+                _buildMenuItem(
+                  icon: Icons.download,
+                  title: '离线缓存',
+                  onTap: () {
+                    // TODO: 导航到下载管理页面
+                  },
+                ),
+                const Divider(),
+                _buildSectionTitle('设置'),
+                _buildMenuItem(
+                  icon: Icons.color_lens,
+                  title: '主题设置',
+                  onTap: () {
+                    // TODO: 导航到主题设置页面
+                  },
+                ),
+                _buildMenuItem(
+                  icon: Icons.video_settings,
+                  title: '播放设置',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PlaybackSettingsPage(),
+                      ),
+                    );
+                  },
+                ),
+                _buildMenuItem(
+                  icon: Icons.settings,
+                  title: '通用设置',
+                  onTap: () {
+                    // TODO: 导航到通用设置页面
+                  },
+                ),
+                const Divider(),
+                _buildSectionTitle('其他'),
+                _buildMenuItem(
+                  icon: Icons.info_outline,
+                  title: '关于',
+                  onTap: () {
+                    // TODO: 显示关于对话框
+                  },
+                ),
                 _buildMenuItem(
                   icon: Icons.exit_to_app,
                   title: '退出登录',
@@ -239,6 +317,60 @@ class _PersonPageState extends State<PersonPage> {
         color: Colors.grey[400],
       ),
       onTap: onTap,
+    );
+  }
+
+  Widget _buildStatCard({
+    required IconData icon,
+    required String title,
+    required int count,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        child: Card(
+          elevation: 2,
+          child: Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              children: [
+                Icon(icon, size: 28, color: Theme.of(context).primaryColor),
+                const SizedBox(height: 8),
+                Text(
+                  count.toString(),
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  style: TextStyle(
+                    color: Colors.grey[600],
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey[800],
+        ),
+      ),
     );
   }
 }
