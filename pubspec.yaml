@@ -50,6 +50,7 @@ dependencies:
   timeago: ^3.7.0
   path: ^1.9.0
   flutter_staggered_animations: ^1.1.1
+  names_launcher: ^0.0.1
 
 dev_dependencies:
   flutter_test:
@@ -122,3 +123,24 @@ flutter_launcher_icons:
   adaptive_icon_background: "#ffffff"
   adaptive_icon_foreground: "assets/icon/1024_logo.png"
   remove_alpha_ios: true
+names_launcher:
+  name: "AlistPlayer"
+  platforms:
+    android:
+      enable: true
+      name: "AlistPlayer"
+    ios:
+      enable: true
+      name: "AlistPlayer"
+    web:
+      enable: true
+      name: "AlistPlayer"
+    macos:
+      enable: false
+      name: "AlistPlayer"
+    windows:
+      enable: false
+      name: "AlistPlayer"
+    linux:
+      enable: false
+      name: "AlistPlayer"
