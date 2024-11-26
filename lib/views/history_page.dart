@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import 'package:timeago/timeago.dart' as timeago;
 import 'dart:async';
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/constants/app_constants.dart';
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -339,13 +340,13 @@ class _HistoryPageState extends State<HistoryPage>
     }
   }
 
-  Future<bool> _checkFileExists(String path) async {
+  Future<(bool, String?)> _checkFileExists(String path) async {
     try {
       final response = await FsApi.get(path: path);
-      return response.code == 200;
+      return (response.code == 200, response.message);
     } catch (e) {
       print('Error checking file: $e');
-      return false;
+      return (false, e.toString());
     }
   }
 
@@ -768,7 +769,8 @@ class _HistoryPageState extends State<HistoryPage>
                         );
 
                         // 检查文件是否存在
-                        final exists = await _checkFileExists(record.videoPath);
+                        final (exists, errorMessage) =
+                            await _checkFileExists(record.videoPath);
 
                         // 关闭加载指示器
                         if (mounted) {
@@ -791,25 +793,40 @@ class _HistoryPageState extends State<HistoryPage>
                             _loadHistory();
                           }
                         } else {
-                          // 显示错误提示
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: const Text('该视频文件已不存在或已被移动'),
-                              action: SnackBarAction(
-                                label: '删除记录',
-                                onPressed: () {
-                                  final groupKey = _selectedDirectory ??
-                                      (_isTimelineMode
-                                          ? record.changeTime
-                                              .toLocal()
-                                              .toString()
-                                              .substring(0, 10)
-                                          : path.dirname(record.videoPath));
-                                  _deleteRecord(record, groupKey);
-                                },
+                          // 检查是否是文件被移动或删除的错误
+                          final isFileMovedOrDeleted = errorMessage
+                                  ?.contains(AppConstants.fileNotFoundError) ??
+                              false;
+
+                          if (isFileMovedOrDeleted) {
+                            // 显示删除记录选项
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: const Text('该视频文件已不存在或已被移动'),
+                                action: SnackBarAction(
+                                  label: '删除记录',
+                                  onPressed: () {
+                                    final groupKey = _selectedDirectory ??
+                                        (_isTimelineMode
+                                            ? record.changeTime
+                                                .toLocal()
+                                                .toString()
+                                                .substring(0, 10)
+                                            : path.dirname(record.videoPath));
+                                    _deleteRecord(record, groupKey);
+                                  },
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          } else {
+                            // 显示一般错误消息
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content:
+                                    Text('访问文件失败: ${errorMessage ?? "未知错误"}'),
+                              ),
+                            );
+                          }
                         }
                       },
                 onLongPress: () {

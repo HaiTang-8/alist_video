@@ -90,4 +90,8 @@ class AppConstants {
   static const double maxPlaybackSpeed = 4.0; // 最大播放速度
   static const double speedStep = 0.25; // 速度调节步长
   static const int maxPlaybackSpeedCount = 10; // 最大播放速度数量
+
+  // 错误消息相关
+  static const String fileNotFoundError =
+      'failed get parent list: failed get dir: failed get parent list: failed get dir: failed get parent list: failed to list objs';
 }
