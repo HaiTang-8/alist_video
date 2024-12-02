@@ -21,11 +21,11 @@ Future<void> main() async {
   try {
     final db = DatabaseHelper.instance;
     await db.init(
-      host: AppConstants.dbHost,
-      port: AppConstants.dbPort,
-      database: AppConstants.dbName,
-      username: AppConstants.dbUser,
-      password: AppConstants.dbPassword,
+      host: AppConstants.defaultDbHost,
+      port: AppConstants.defaultDbPort,
+      database: AppConstants.defaultDbName,
+      username: AppConstants.defaultDbUser,
+      password: AppConstants.defaultDbPassword,
     );
 
     // 测试连接

@@ -1,10 +1,17 @@
 class AppConstants {
-  // 数据库配置
-  static const String dbHost = '81.68.250.223';
-  static const String dbName = 'alist_video';
-  static const String dbUser = 'alist_video';
-  static const String dbPassword = '2jkxXaG3pKs4P6mX';
-  static const int dbPort = 5555;
+  // 数据库配置键名
+  static const String dbHostKey = 'db_host';
+  static const String dbNameKey = 'db_name';
+  static const String dbUserKey = 'db_user';
+  static const String dbPasswordKey = 'db_password';
+  static const String dbPortKey = 'db_port';
+
+  // 数据库默认配置
+  static const String defaultDbHost = '81.68.250.223';
+  static const String defaultDbName = 'alist_video';
+  static const String defaultDbUser = 'alist_video';
+  static const String defaultDbPassword = '2jkxXaG3pKs4P6mX';
+  static const int defaultDbPort = 5555;
 
   // 数据库超时设置
   static const Duration dbConnectTimeout = Duration(seconds: 30);
