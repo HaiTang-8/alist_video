@@ -113,7 +113,6 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   Future<void> _openAndSeekVideo() async {
     try {
-      // 获取 base_path
       final prefs = await SharedPreferences.getInstance();
       final basePath = prefs.getString('base_path') ?? '/';
 
@@ -124,13 +123,10 @@ class VideoPlayerState extends State<VideoPlayer> {
         setState(() {
           List<Media> playMediaList =
               res.data?.content!.where((data) => data.type == 2).map((data) {
-                    // 构建基础URL
                     String baseUrl = AppConstants.baseDownloadUrl;
-                    // 如果 base_path 不是 '/'，则拼接到基础URL后
                     if (basePath != '/') {
                       baseUrl = '$baseUrl$basePath';
                     }
-                    // 拼接完整的视频URL
                     return Media(
                         '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}',
                         extras: {'name': data.name ?? ''});
@@ -138,8 +134,6 @@ class VideoPlayerState extends State<VideoPlayer> {
                   [];
 
           playList.clear();
-          for (var i = 0; i < playMediaList.length; i++) {}
-
           int index = 0;
           for (var element in playMediaList) {
             if (element.extras!['name'] == widget.name) {
@@ -155,6 +149,9 @@ class VideoPlayerState extends State<VideoPlayer> {
           index: playIndex,
         );
         await player.open(playable, play: false);
+
+        // 初始化完成后进行一次排序
+        _sortPlaylist();
       } else {
         // 处理API错误
         if (mounted) {
