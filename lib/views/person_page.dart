@@ -366,7 +366,6 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
   }
 
   Future<void> _saveSettings(BuildContext context) async {
-    // 显示加载状态
     setState(() {
       _isTesting = true;
     });
@@ -387,13 +386,23 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
 
       // 连接成功，保存设置
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(AppConstants.dbHostKey, _hostController.text);
-      await prefs.setString(AppConstants.dbNameKey, _nameController.text);
-      await prefs.setString(AppConstants.dbUserKey, _userController.text);
-      await prefs.setString(
-          AppConstants.dbPasswordKey, _passwordController.text);
-      await prefs.setInt(
-          AppConstants.dbPortKey, int.parse(_portController.text));
+      await Future.wait([
+        prefs.setString(AppConstants.dbHostKey, _hostController.text),
+        prefs.setString(AppConstants.dbNameKey, _nameController.text),
+        prefs.setString(AppConstants.dbUserKey, _userController.text),
+        prefs.setString(AppConstants.dbPasswordKey, _passwordController.text),
+        prefs.setInt(AppConstants.dbPortKey, int.parse(_portController.text)),
+      ]);
+
+      // 使用新的配置重新初始化数据库连接
+      await DatabaseHelper.instance.close(); // 先关闭现有连接
+      await DatabaseHelper.instance.init(
+        host: _hostController.text,
+        port: int.parse(_portController.text),
+        database: _nameController.text,
+        username: _userController.text,
+        password: _passwordController.text,
+      );
 
       if (!mounted) return;
 
@@ -401,7 +410,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('数据库设置已保存'),
+          content: Text('数据库设置已保存并重新连接'),
           backgroundColor: Colors.green,
         ),
       );
@@ -445,7 +454,6 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
         ),
       );
     } finally {
-      // 恢复按钮状态
       if (mounted) {
         setState(() {
           _isTesting = false;
