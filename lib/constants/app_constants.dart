@@ -18,8 +18,10 @@ class AppConstants {
   static const Duration dbQueryTimeout = Duration(seconds: 30);
 
   // API 相关
-  static const String baseUrl = 'https://alist.tt1.top';
-  static const String baseDownloadUrl = 'https://alist.tt1.top/d';
+  static const String baseUrlKey = 'base_url';
+  static const String baseDownloadUrlKey = 'base_download_url';
+  static const String defaultBaseUrl = 'https://alist.tt1.top';
+  static const String defaultBaseDownloadUrl = 'https://alist.tt1.top/d';
   static const Duration apiConnectTimeout = Duration(seconds: 5);
   static const Duration apiReceiveTimeout = Duration(seconds: 3);
 

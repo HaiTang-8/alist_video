@@ -215,6 +215,11 @@ class _PersonPageState extends State<PersonPage> {
                   title: '数据库设置',
                   onTap: () => _showDatabaseSettings(),
                 ),
+                _buildMenuItem(
+                  icon: Icons.api_rounded,
+                  title: 'API 设置',
+                  onTap: () => _showApiSettings(),
+                ),
                 const Divider(),
                 _buildSectionTitle('其他'),
                 _buildMenuItem(
@@ -325,6 +330,25 @@ class _PersonPageState extends State<PersonPage> {
       ),
     );
   }
+
+  Future<void> _showApiSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final currentBaseUrl =
+        prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
+    final currentBaseDownloadUrl =
+        prefs.getString(AppConstants.baseDownloadUrlKey) ??
+            AppConstants.defaultBaseDownloadUrl;
+
+    if (!mounted) return;
+
+    await showDialog(
+      context: context,
+      builder: (context) => ApiSettingsDialog(
+        baseUrl: currentBaseUrl,
+        baseDownloadUrl: currentBaseDownloadUrl,
+      ),
+    );
+  }
 }
 
 class DatabaseSettingsDialog extends StatefulWidget {
@@ -354,6 +378,8 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
   late TextEditingController _passwordController;
   late TextEditingController _portController;
   bool _isTesting = false;
+  final _baseUrlController = TextEditingController();
+  final _baseDownloadUrlController = TextEditingController();
 
   @override
   void initState() {
@@ -363,6 +389,28 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
     _userController = TextEditingController(text: widget.user);
     _passwordController = TextEditingController(text: widget.password);
     _portController = TextEditingController(text: widget.port.toString());
+    _loadSettings();
+  }
+
+  Future<void> _loadSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _hostController.text =
+          prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost;
+      _nameController.text =
+          prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName;
+      _userController.text =
+          prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser;
+      _passwordController.text = prefs.getString(AppConstants.dbPasswordKey) ??
+          AppConstants.defaultDbPassword;
+      _portController.text = prefs.getInt(AppConstants.dbPortKey)?.toString() ??
+          AppConstants.defaultDbPort.toString();
+      _baseUrlController.text = prefs.getString(AppConstants.baseUrlKey) ??
+          AppConstants.defaultBaseUrl;
+      _baseDownloadUrlController.text =
+          prefs.getString(AppConstants.baseDownloadUrlKey) ??
+              AppConstants.defaultBaseDownloadUrl;
+    });
   }
 
   Future<void> _saveSettings(BuildContext context) async {
@@ -392,6 +440,9 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
         prefs.setString(AppConstants.dbUserKey, _userController.text),
         prefs.setString(AppConstants.dbPasswordKey, _passwordController.text),
         prefs.setInt(AppConstants.dbPortKey, int.parse(_portController.text)),
+        prefs.setString(AppConstants.baseUrlKey, _baseUrlController.text),
+        prefs.setString(
+            AppConstants.baseDownloadUrlKey, _baseDownloadUrlController.text),
       ]);
 
       // 使用新的配置重新初始化数据库连接
@@ -604,6 +655,24 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
                 ),
               ],
             ),
+            const Text('API 设置',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _baseUrlController,
+              decoration: const InputDecoration(
+                labelText: '基础 URL',
+                hintText: '例如: https://alist.tt1.top',
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _baseDownloadUrlController,
+              decoration: const InputDecoration(
+                labelText: '下载 URL',
+                hintText: '例如: https://alist.tt1.top/d',
+              ),
+            ),
           ],
         ),
       ),
@@ -663,6 +732,239 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
     _userController.dispose();
     _passwordController.dispose();
     _portController.dispose();
+    _baseUrlController.dispose();
+    _baseDownloadUrlController.dispose();
+    super.dispose();
+  }
+}
+
+class ApiSettingsDialog extends StatefulWidget {
+  final String baseUrl;
+  final String baseDownloadUrl;
+
+  const ApiSettingsDialog({
+    super.key,
+    required this.baseUrl,
+    required this.baseDownloadUrl,
+  });
+
+  @override
+  State<ApiSettingsDialog> createState() => _ApiSettingsDialogState();
+}
+
+class _ApiSettingsDialogState extends State<ApiSettingsDialog> {
+  late TextEditingController _baseUrlController;
+  late TextEditingController _baseDownloadUrlController;
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _baseUrlController = TextEditingController(text: widget.baseUrl);
+    _baseDownloadUrlController =
+        TextEditingController(text: widget.baseDownloadUrl);
+  }
+
+  Future<void> _saveSettings() async {
+    setState(() {
+      _isSaving = true;
+    });
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await Future.wait([
+        prefs.setString(AppConstants.baseUrlKey, _baseUrlController.text),
+        prefs.setString(
+            AppConstants.baseDownloadUrlKey, _baseDownloadUrlController.text),
+      ]);
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('API 设置已保存'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('保存失败: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSaving = false;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: 400,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  Icons.api_rounded,
+                  color: Theme.of(context).primaryColor,
+                  size: 28,
+                ),
+                const SizedBox(width: 12),
+                const Text(
+                  'API 设置',
+                  style: TextStyle(
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '配置 AList API 地址',
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 14,
+              ),
+            ),
+            const SizedBox(height: 24),
+            _buildTextField(
+              controller: _baseUrlController,
+              label: '基础 URL',
+              icon: Icons.link_rounded,
+              hint: '例如: https://alist.example.com',
+            ),
+            const SizedBox(height: 16),
+            _buildTextField(
+              controller: _baseDownloadUrlController,
+              label: '播放 URL',
+              icon: Icons.download_rounded,
+              hint: '例如: https://alist.example.com/d',
+            ),
+            const SizedBox(height: 32),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                  ),
+                  child: Text(
+                    '取消',
+                    style: TextStyle(
+                      color: Colors.grey[600],
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton(
+                  onPressed: _isSaving ? null : _saveSettings,
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 12,
+                    ),
+                    backgroundColor: Theme.of(context).primaryColor,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_isSaving)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      else
+                        const Icon(Icons.save_rounded, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        _isSaving ? '保存中...' : '保存设置',
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required String hint,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: Colors.grey[50],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey[200]!),
+          ),
+          child: TextField(
+            controller: controller,
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: TextStyle(color: Colors.grey[400]),
+              prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
+              border: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+            ),
+            style: const TextStyle(fontSize: 15),
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  void dispose() {
+    _baseUrlController.dispose();
+    _baseDownloadUrlController.dispose();
     super.dispose();
   }
 }

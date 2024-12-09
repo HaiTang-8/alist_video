@@ -15,6 +15,14 @@ class WooHttpUtil {
 
   /// 单例初始
   WooHttpUtil._internal() {
+    _initDio();
+  }
+
+  Future<void> _initDio() async {
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl =
+        prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
+
     // header 头
     Map<String, String> headers = {
       AppConstants.contentType: AppConstants.applicationJson,
@@ -25,7 +33,7 @@ class WooHttpUtil {
 
     // 初始选项
     var options = BaseOptions(
-      baseUrl: AppConstants.baseUrl,
+      baseUrl: baseUrl, // 使用配置的 baseUrl
       headers: headers,
       connectTimeout: AppConstants.apiConnectTimeout,
       receiveTimeout: AppConstants.apiReceiveTimeout,
@@ -35,17 +43,16 @@ class WooHttpUtil {
     // 初始 dio
     _dio = Dio(options);
 
-    // 拦截器 - 日志打印
-    // if (!kReleaseMode) {
-    //   _dio.interceptors.add(PrettyDioLogger(
-    //     requestHeader: true,
-    //     requestBody: true,
-    //     responseHeader: true,
-    //   ));
-    // }
-
     // 拦截器
     _dio.interceptors.add(RequestInterceptors());
+  }
+
+  // 添加更新 baseUrl 的方法
+  Future<void> updateBaseUrl() async {
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl =
+        prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
+    _dio.options.baseUrl = baseUrl;
   }
 
   /// get 请求

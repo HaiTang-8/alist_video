@@ -119,21 +119,30 @@ class VideoPlayerState extends State<VideoPlayer> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final basePath = prefs.getString('base_path') ?? '/';
+      final baseDownloadUrl =
+          prefs.getString(AppConstants.baseDownloadUrlKey) ??
+              AppConstants.defaultBaseDownloadUrl;
 
       var res = await FsApi.list(
-          path: widget.path, password: '', page: 1, perPage: 0, refresh: false);
+        path: widget.path,
+        password: '',
+        page: 1,
+        perPage: 0,
+        refresh: false,
+      );
 
       if (res.code == 200) {
         setState(() {
           List<Media> playMediaList =
               res.data?.content!.where((data) => data.type == 2).map((data) {
-                    String baseUrl = AppConstants.baseDownloadUrl;
+                    String baseUrl = baseDownloadUrl; // 使用配置的下载URL
                     if (basePath != '/') {
                       baseUrl = '$baseUrl$basePath';
                     }
                     return Media(
-                        '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}',
-                        extras: {'name': data.name ?? ''});
+                      '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}',
+                      extras: {'name': data.name ?? ''},
+                    );
                   }).toList() ??
                   [];
 
