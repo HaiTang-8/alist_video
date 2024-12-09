@@ -53,6 +53,10 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 将 late 移除，提供默认值
   List<double> _playbackSpeeds = AppConstants.defaultPlaybackSpeeds;
 
+  // 添加字幕相关状态
+  SubtitleTrack? _currentSubtitle;
+  List<SubtitleTrack> _subtitleTracks = [];
+
   Future<void> _loadSeekSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -267,6 +271,20 @@ class VideoPlayerState extends State<VideoPlayer> {
           ),
         );
       }
+    });
+
+    // 监听字幕轨道变化
+    player.stream.tracks.listen((tracks) {
+      setState(() {
+        _subtitleTracks = tracks.subtitle;
+      });
+    });
+
+    // 监听当前选中的字幕
+    player.stream.track.listen((track) {
+      setState(() {
+        _currentSubtitle = track.subtitle;
+      });
     });
   }
 
@@ -496,6 +514,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
+                      buildSubtitleButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -533,6 +552,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
+                      buildSubtitleButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -589,6 +609,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const MaterialPositionIndicator(),
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
+                            buildSubtitleButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -610,6 +631,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const MaterialPositionIndicator(),
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
+                            buildSubtitleButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -1028,6 +1050,132 @@ class VideoPlayerState extends State<VideoPlayer> {
       const SingleActivator(LogicalKeyboardKey.escape): () =>
           exitFullscreen(context),
     };
+  }
+
+  // 添加字幕切换按钮
+  Widget buildSubtitleButton() {
+    return MaterialCustomButton(
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (context) => Dialog(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Container(
+              width: 300,
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.7, // 限制最大高度
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // 固定的标题部分
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.subtitles,
+                                color: Theme.of(context).primaryColor),
+                            const SizedBox(width: 12),
+                            const Text(
+                              '选择字幕',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '可用字幕轨道',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  // 可滚动的选项部分
+                  Flexible(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          // 关闭字幕选项
+                          _buildSubtitleOption(
+                            SubtitleTrack.no(),
+                            '关闭字幕',
+                          ),
+                          // 可用字幕选项
+                          ..._subtitleTracks
+                              .map((track) => _buildSubtitleOption(
+                                    track,
+                                    track.title ??
+                                        track.language ??
+                                        '字幕 ${track.id}',
+                                  )),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      icon: Icon(
+        _currentSubtitle?.id == 'no' ? Icons.subtitles_off : Icons.subtitles,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  Widget _buildSubtitleOption(SubtitleTrack track, String label) {
+    final isSelected = _currentSubtitle?.id == track.id;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () async {
+          await player.setSubtitleTrack(track);
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        },
+        child: Container(
+          width: double.infinity, // 让每个选项占满宽度
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? Colors.blue : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.blue : Colors.grey[800],
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
