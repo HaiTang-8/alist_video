@@ -1,21 +1,7 @@
 import 'package:alist_player/models/fs_resp/fs_resp.dart';
 import 'package:alist_player/utils/woo_http.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:alist_player/constants/app_constants.dart';
 
 class FsApi {
-  static Future<String> getBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(AppConstants.baseUrlKey) ??
-        AppConstants.defaultBaseUrl;
-  }
-
-  static Future<String> getBaseDownloadUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString(AppConstants.baseDownloadUrlKey) ??
-        AppConstants.defaultBaseDownloadUrl;
-  }
-
   static Future<FsResp> list({
     required String path,
     required String password,
@@ -23,7 +9,6 @@ class FsApi {
     required int perPage,
     required bool refresh,
   }) async {
-    final baseUrl = await getBaseUrl();
     var res = await WooHttpUtil().post('/api/fs/list', data: {
       'path': path,
       'password': password,
