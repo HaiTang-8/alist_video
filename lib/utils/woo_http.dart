@@ -12,13 +12,19 @@ class WooHttpUtil {
   factory WooHttpUtil() => _instance;
 
   late Dio _dio;
+  // 添加一个初始化完成的标志
+  bool _initialized = false;
+  // 添加一个初始化完成的Future
+  Future<void>? _initializationFuture;
 
   /// 单例初始
   WooHttpUtil._internal() {
-    _initDio();
+    _initializationFuture = _initDio();
   }
 
   Future<void> _initDio() async {
+    if (_initialized) return;
+
     final prefs = await SharedPreferences.getInstance();
     final baseUrl =
         prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
@@ -33,7 +39,7 @@ class WooHttpUtil {
 
     // 初始选项
     var options = BaseOptions(
-      baseUrl: baseUrl, // 使用配置的 baseUrl
+      baseUrl: baseUrl,
       headers: headers,
       connectTimeout: AppConstants.apiConnectTimeout,
       receiveTimeout: AppConstants.apiReceiveTimeout,
@@ -45,14 +51,14 @@ class WooHttpUtil {
 
     // 拦截器
     _dio.interceptors.add(RequestInterceptors());
+
+    _initialized = true;
   }
 
-  // 添加更新 baseUrl 的方法
-  Future<void> updateBaseUrl() async {
-    final prefs = await SharedPreferences.getInstance();
-    final baseUrl =
-        prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
-    _dio.options.baseUrl = baseUrl;
+  // 确保初始化完成的方法
+  Future<Dio> _getDio() async {
+    await _initializationFuture;
+    return _dio;
   }
 
   /// get 请求
@@ -63,17 +69,17 @@ class WooHttpUtil {
     CancelToken? cancelToken,
     String? baseUrl,
   }) async {
+    final dio = await _getDio();
     Options requestOptions = options ?? Options();
 
-    // If baseUrl is provided, temporarily update dio's baseUrl
     String? originalBaseUrl;
     if (baseUrl != null) {
-      originalBaseUrl = _dio.options.baseUrl;
-      _dio.options.baseUrl = baseUrl;
+      originalBaseUrl = dio.options.baseUrl;
+      dio.options.baseUrl = baseUrl;
     }
 
     try {
-      Response response = await _dio.get(
+      Response response = await dio.get(
         url,
         queryParameters: params,
         options: requestOptions,
@@ -81,9 +87,8 @@ class WooHttpUtil {
       );
       return response;
     } finally {
-      // Restore original baseUrl if it was changed
       if (baseUrl != null && originalBaseUrl != null) {
-        _dio.options.baseUrl = originalBaseUrl;
+        dio.options.baseUrl = originalBaseUrl;
       }
     }
   }
@@ -96,17 +101,17 @@ class WooHttpUtil {
     CancelToken? cancelToken,
     String? baseUrl,
   }) async {
-    var requestOptions = options ?? Options();
+    final dio = await _getDio();
+    Options requestOptions = options ?? Options();
 
-    // If baseUrl is provided, temporarily update dio's baseUrl
     String? originalBaseUrl;
     if (baseUrl != null) {
-      originalBaseUrl = _dio.options.baseUrl;
-      _dio.options.baseUrl = baseUrl;
+      originalBaseUrl = dio.options.baseUrl;
+      dio.options.baseUrl = baseUrl;
     }
 
     try {
-      Response response = await _dio.post(
+      Response response = await dio.post(
         url,
         data: data ?? {},
         options: requestOptions,
@@ -114,9 +119,8 @@ class WooHttpUtil {
       );
       return response;
     } finally {
-      // Restore original baseUrl if it was changed
       if (baseUrl != null && originalBaseUrl != null) {
-        _dio.options.baseUrl = originalBaseUrl;
+        dio.options.baseUrl = originalBaseUrl;
       }
     }
   }
@@ -153,6 +157,15 @@ class WooHttpUtil {
       cancelToken: cancelToken,
     );
     return response;
+  }
+
+  // 更新 baseUrl 的方法
+  Future<void> updateBaseUrl() async {
+    final dio = await _getDio();
+    final prefs = await SharedPreferences.getInstance();
+    final baseUrl =
+        prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
+    dio.options.baseUrl = baseUrl;
   }
 }
 

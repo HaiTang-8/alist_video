@@ -4,6 +4,7 @@ import 'package:alist_player/views/settings/playback_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/views/storage_page.dart';
 
 class PersonPage extends StatefulWidget {
   const PersonPage({super.key});
@@ -219,6 +220,16 @@ class _PersonPageState extends State<PersonPage> {
                   icon: Icons.api_rounded,
                   title: 'API 设置',
                   onTap: () => _showApiSettings(),
+                ),
+                _buildMenuItem(
+                  icon: Icons.storage_rounded,
+                  title: '存储管理',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const StoragePage(),
+                    ),
+                  ),
                 ),
                 const Divider(),
                 _buildSectionTitle('其他'),
@@ -457,7 +468,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
 
       if (!mounted) return;
 
-      // 显示成功消息并关闭对话框
+      // 显示成功���息并关闭对话框
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -585,7 +596,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
               controller: _userController,
               label: '用户名',
               icon: Icons.person_outline_rounded,
-              hint: '数据库用户名',
+              hint: '���据库用户名',
             ),
             const SizedBox(height: 16),
             _buildTextField(
