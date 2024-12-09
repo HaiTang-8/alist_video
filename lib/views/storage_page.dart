@@ -19,6 +19,13 @@ class _StoragePageState extends State<StoragePage> {
     _loadStorages();
   }
 
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
   Future<void> _loadStorages() async {
     setState(() {
       _isLoading = true;
@@ -26,17 +33,18 @@ class _StoragePageState extends State<StoragePage> {
 
     try {
       final storages = await StorageApi.listStorage();
+      if (!mounted) return;
       setState(() {
         _storages = storages;
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('加载存储列表失败: $e')),
-      );
+      _showMessage('加载存储列表失败: $e');
     } finally {
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -55,14 +63,10 @@ class _StoragePageState extends State<StoragePage> {
             onPressed: () async {
               try {
                 await StorageApi.reloadAllStorage();
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('重新加载所有存储成功')),
-                );
+                _showMessage('重新加载所有存储成功');
                 _loadStorages();
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('重新加载存储失败: $e')),
-                );
+                _showMessage('重新加载存储失败: $e');
               }
             },
           ),
@@ -128,13 +132,7 @@ class _StoragePageState extends State<StoragePage> {
                               }
                               _loadStorages();
                             } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                    '${value ? "启用" : "禁用"}存储失败: $e',
-                                  ),
-                                ),
-                              );
+                              _showMessage('${value ? "启用" : "禁用"}存储失败: $e');
                             }
                           },
                         ),
