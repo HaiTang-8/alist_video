@@ -58,85 +58,117 @@ class _StoragePageState extends State<StoragePage> {
             icon: const Icon(Icons.refresh),
             onPressed: _loadStorages,
           ),
-          IconButton(
-            icon: const Icon(Icons.refresh_outlined),
-            onPressed: () async {
-              try {
-                await StorageApi.reloadAllStorage();
-                _showMessage('重新加载所有存储成功');
-                _loadStorages();
-              } catch (e) {
-                _showMessage('重新加载存储失败: $e');
-              }
-            },
-          ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : ListView.builder(
-              itemCount: _storages.length,
-              itemBuilder: (context, index) {
-                final storage = _storages[index];
-                return Card(
-                  margin: const EdgeInsets.all(8),
-                  child: ListTile(
-                    title: Text(storage.mountPath),
-                    subtitle: Text(storage.driver),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(storage.status),
-                        IconButton(
-                          icon: const Icon(Icons.refresh, size: 20),
-                          onPressed: () async {
-                            if (!mounted) return;
-
-                            final messenger = ScaffoldMessenger.of(context);
-
-                            try {
-                              messenger.clearSnackBars();
-                              messenger.showSnackBar(
-                                const SnackBar(content: Text('正在刷新存储...')),
-                              );
-
-                              final updatedStorage =
-                                  await StorageApi.getStorage(storage.id);
-                              await StorageApi.updateStorage(updatedStorage);
-                              await _loadStorages();
-
-                              if (!mounted) return;
-
-                              messenger.clearSnackBars();
-                              messenger.showSnackBar(
-                                const SnackBar(content: Text('刷新存储成功')),
-                              );
-                            } catch (e) {
-                              if (!mounted) return;
-
-                              messenger.clearSnackBars();
-                              messenger.showSnackBar(
-                                SnackBar(content: Text('刷新存储失败: $e')),
-                              );
-                            }
-                          },
-                        ),
-                        Switch(
-                          value: !storage.disabled,
-                          onChanged: (value) async {
-                            try {
-                              if (value) {
-                                await StorageApi.enableStorage(storage.id);
-                              } else {
-                                await StorageApi.disableStorage(storage.id);
-                              }
-                              _loadStorages();
-                            } catch (e) {
-                              _showMessage('${value ? "启用" : "禁用"}存储失败: $e');
-                            }
-                          },
-                        ),
-                      ],
+          : LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: SizedBox(
+                      width: constraints.maxWidth,
+                      child: DataTable(
+                        columnSpacing: 24.0,
+                        horizontalMargin: 12.0,
+                        columns: const [
+                          DataColumn(
+                              label: Expanded(
+                            child: Text('挂载路径',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          )),
+                          DataColumn(
+                              label: Expanded(
+                            child: Text('存储类型',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          )),
+                          DataColumn(
+                              label: Expanded(
+                            child: Text('备注',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          )),
+                          DataColumn(
+                              label: Expanded(
+                            child: Text('状态',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          )),
+                          DataColumn(
+                              label: Expanded(
+                            child: Text('操作',
+                                style: TextStyle(fontWeight: FontWeight.bold)),
+                          )),
+                        ],
+                        rows: _storages.map((storage) {
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(storage.mountPath)),
+                              DataCell(Text(storage.driver)),
+                              DataCell(Text(storage.remark)),
+                              DataCell(Text(storage.status)),
+                              DataCell(
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.refresh, size: 20),
+                                      onPressed: () async {
+                                        if (!mounted) return;
+                                        final messenger =
+                                            ScaffoldMessenger.of(context);
+                                        try {
+                                          messenger.clearSnackBars();
+                                          messenger.showSnackBar(
+                                            const SnackBar(
+                                                content: Text('正在刷新存储...')),
+                                          );
+                                          final updatedStorage =
+                                              await StorageApi.getStorage(
+                                                  storage.id);
+                                          await StorageApi.updateStorage(
+                                              updatedStorage);
+                                          await _loadStorages();
+                                          if (!mounted) return;
+                                          messenger.clearSnackBars();
+                                          messenger.showSnackBar(
+                                            const SnackBar(
+                                                content: Text('刷新存储成功')),
+                                          );
+                                        } catch (e) {
+                                          if (!mounted) return;
+                                          messenger.clearSnackBars();
+                                          messenger.showSnackBar(
+                                            SnackBar(
+                                                content: Text('刷新存储失败: $e')),
+                                          );
+                                        }
+                                      },
+                                    ),
+                                    Switch(
+                                      value: !storage.disabled,
+                                      onChanged: (value) async {
+                                        try {
+                                          if (value) {
+                                            await StorageApi.enableStorage(
+                                                storage.id);
+                                          } else {
+                                            await StorageApi.disableStorage(
+                                                storage.id);
+                                          }
+                                          _loadStorages();
+                                        } catch (e) {
+                                          _showMessage(
+                                              '${value ? "启用" : "禁用"}存储失败: $e');
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          );
+                        }).toList(),
+                      ),
                     ),
                   ),
                 );
