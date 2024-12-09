@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/apis/storage_api.dart';
 import 'package:alist_player/models/storage_model.dart';
 
@@ -54,6 +57,21 @@ class _StoragePageState extends State<StoragePage> {
       appBar: AppBar(
         title: const Text('存储管理'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.open_in_browser),
+            onPressed: () async {
+              final prefs = await SharedPreferences.getInstance();
+              final baseUrl = prefs.getString(AppConstants.baseUrlKey) ??
+                  AppConstants.defaultBaseUrl;
+              final uri = Uri.parse('$baseUrl/@manage/storages');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              } else {
+                if (!mounted) return;
+                _showMessage('无法打开链接: $baseUrl');
+              }
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadStorages,

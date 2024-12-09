@@ -222,7 +222,7 @@ class _PersonPageState extends State<PersonPage> {
                   onTap: () => _showApiSettings(),
                 ),
                 _buildMenuItem(
-                  icon: Icons.storage_rounded,
+                  icon: Icons.cloud_queue_rounded,
                   title: '存储管理',
                   onTap: () => Navigator.push(
                     context,
@@ -457,7 +457,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
       ]);
 
       // 使用新的配置重新初始化数据库连接
-      await DatabaseHelper.instance.close(); // 先关闭现有连接
+      await DatabaseHelper.instance.close(); // 先关闭现有连��
       await DatabaseHelper.instance.init(
         host: _hostController.text,
         port: int.parse(_portController.text),
@@ -468,7 +468,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
 
       if (!mounted) return;
 
-      // 显示成功���息并关闭对话框
+      // 显示成功息并关闭对话框
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -596,7 +596,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
               controller: _userController,
               label: '用户名',
               icon: Icons.person_outline_rounded,
-              hint: '���据库用户名',
+              hint: '据库用户名',
             ),
             const SizedBox(height: 16),
             _buildTextField(
