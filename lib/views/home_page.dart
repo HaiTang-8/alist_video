@@ -10,10 +10,10 @@ class HomePage extends StatefulWidget {
   final String? initialTitle;
 
   const HomePage({
-    Key? key,
+    super.key,
     this.initialUrl,
     this.initialTitle,
-  }) : super(key: key);
+  });
 
   @override
   State<HomePage> createState() => _HomePageState();
