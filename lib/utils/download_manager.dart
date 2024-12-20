@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class DownloadTask {
   final String path;
@@ -59,15 +60,29 @@ class DownloadTask {
 class DownloadManager {
   static final DownloadManager _instance = DownloadManager._internal();
   factory DownloadManager() => _instance;
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
+
+  DownloadManager._internal() {
+    _initNotifications();
+    _loadTasks();
+  }
+
+  Future<void> _initNotifications() async {
+    const initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initializationSettingsDarwin = DarwinInitializationSettings();
+    const initializationSettings = InitializationSettings(
+      android: initializationSettingsAndroid,
+      iOS: initializationSettingsDarwin,
+      macOS: initializationSettingsDarwin,
+    );
+    await _notifications.initialize(initializationSettings);
+  }
 
   final Map<String, DownloadTask> _tasks = {};
   final _downloadTaskController = ValueNotifier<Map<String, DownloadTask>>({});
   final _dio = Dio();
-
-  DownloadManager._internal() {
-    // 初始化时加载保存的任务
-    _loadTasks();
-  }
 
   // 加载保存的任务
   Future<void> _loadTasks() async {
@@ -208,6 +223,8 @@ class DownloadManager {
         task.status = '已暂停';
       } else {
         task.status = '已完成';
+        // 发送通知
+        _showNotification(task.fileName);
       }
       _updateTask(task);
     } catch (e) {
@@ -345,5 +362,28 @@ class DownloadManager {
     } catch (e) {
       print("Error opening folder: $e");
     }
+  }
+
+  // 添加通知方法
+  void _showNotification(String fileName) async {
+    const androidDetails = AndroidNotificationDetails(
+      'downloads',
+      '下载通知',
+      channelDescription: '显示下载完成通知',
+      importance: Importance.defaultImportance,
+    );
+    const darwinDetails = DarwinNotificationDetails();
+    const details = NotificationDetails(
+      android: androidDetails,
+      iOS: darwinDetails,
+      macOS: darwinDetails,
+    );
+
+    await _notifications.show(
+      DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      '下载完成',
+      '$fileName 已下载完成',
+      details,
+    );
   }
 }
