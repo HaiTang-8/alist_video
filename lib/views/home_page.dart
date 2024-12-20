@@ -53,6 +53,7 @@ class _HomePageState extends State<HomePage>
                       ))
                   .toList() ??
               [];
+          _sort((file) => file.name.toLowerCase(), 0, true);
         });
       } else {
         _handleError(res.message ?? '获取文件失败');
@@ -516,7 +517,7 @@ class _HomePageState extends State<HomePage>
     return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
-  // 面包屑导航动画
+  // ���包屑导航动画
   Widget _buildBreadcrumb() {
     return SlideTransition(
       position: Tween<Offset>(
