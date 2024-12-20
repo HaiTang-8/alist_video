@@ -1,6 +1,7 @@
 import 'dart:ui';
 
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
@@ -26,6 +27,8 @@ class _HomePageState extends State<HomePage>
   int _sortColumnIndex = 0;
   bool _isAscending = true;
   late AnimationController _animationController;
+  bool _isSelectMode = false;
+  final Set<FileItem> _selectedFiles = {};
 
   Future<void> _getList({bool refresh = false}) async {
     if (refresh) {
@@ -146,11 +149,25 @@ class _HomePageState extends State<HomePage>
         elevation: 1,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
+        actions: [
+          if (files.isNotEmpty)
+            IconButton(
+              icon: Icon(_isSelectMode ? Icons.close : Icons.checklist),
+              onPressed: () {
+                setState(() {
+                  _isSelectMode = !_isSelectMode;
+                  _selectedFiles.clear();
+                });
+              },
+            ),
+        ],
       ),
       body: Column(
         children: <Widget>[
           // 美化后的面包屑导航栏
           _buildBreadcrumb(),
+          if (_isSelectMode && _selectedFiles.isNotEmpty)
+            _buildBatchOperationBar(),
           const Divider(height: 1.0),
           // 美化后的文件列表
           Expanded(
@@ -381,7 +398,9 @@ class _HomePageState extends State<HomePage>
         ),
         child: Container(
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: _selectedFiles.contains(file)
+                ? Colors.blue.withOpacity(0.1)
+                : Colors.white,
             border: Border(
               bottom: BorderSide(color: Colors.grey[100]!),
             ),
@@ -390,14 +409,24 @@ class _HomePageState extends State<HomePage>
             color: Colors.transparent,
             child: InkWell(
               onTap: () {
-                if (file.type == 1) {
+                if (_isSelectMode) {
                   setState(() {
-                    currentPath.add(file.name);
+                    if (_selectedFiles.contains(file)) {
+                      _selectedFiles.remove(file);
+                    } else {
+                      _selectedFiles.add(file);
+                    }
                   });
-                  _animationController.reset();
-                  _getList().then((_) => _animationController.forward());
-                } else if (file.type == 2) {
-                  _gotoVideo(file);
+                } else {
+                  if (file.type == 1) {
+                    setState(() {
+                      currentPath.add(file.name);
+                    });
+                    _animationController.reset();
+                    _getList().then((_) => _animationController.forward());
+                  } else if (file.type == 2) {
+                    _gotoVideo(file);
+                  }
                 }
               },
               hoverColor: Colors.blue.withOpacity(0.05),
@@ -407,13 +436,25 @@ class _HomePageState extends State<HomePage>
                   vertical: 12.0,
                 ),
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    // 文件名称列
+                    if (_isSelectMode)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 12),
+                        child: Checkbox(
+                          value: _selectedFiles.contains(file),
+                          onChanged: (checked) {
+                            setState(() {
+                              if (checked == true) {
+                                _selectedFiles.add(file);
+                              } else {
+                                _selectedFiles.remove(file);
+                              }
+                            });
+                          },
+                        ),
+                      ),
                     Expanded(
-                      flex: 8,
                       child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           SizedBox(
                             width: 24,
@@ -435,7 +476,6 @@ class _HomePageState extends State<HomePage>
                         ],
                       ),
                     ),
-                    // 在大屏幕上显示额外信息
                     if (!isSmallScreen) ...[
                       SizedBox(
                         width: 100,
@@ -657,6 +697,42 @@ class _HomePageState extends State<HomePage>
       }
     });
     _getList();
+  }
+
+  Widget _buildBatchOperationBar() {
+    return Container(
+      padding: const EdgeInsets.all(8),
+      color: Colors.grey[100],
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text('已选择 ${_selectedFiles.length} 项'),
+          TextButton.icon(
+            icon: const Icon(Icons.download),
+            label: const Text('批量下载'),
+            onPressed: () {
+              for (var file in _selectedFiles) {
+                if (file.type == 2) {
+                  print('${currentPath.join('/').substring(1)}/${file.name}');
+                  // 只下载文件，不下载文件夹
+                  DownloadManager().addTask(
+                    currentPath.join('/'),
+                    file.name,
+                  );
+                }
+              }
+              setState(() {
+                _isSelectMode = false;
+                _selectedFiles.clear();
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已添加到下载队列')),
+              );
+            },
+          ),
+        ],
+      ),
+    );
   }
 }
 
