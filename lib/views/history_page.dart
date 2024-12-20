@@ -10,6 +10,7 @@ import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:flutter/services.dart';
 import 'home_page.dart';
+import 'package:alist_player/utils/download_manager.dart';
 
 class HistoryEntry {
   final String url;
@@ -978,6 +979,15 @@ class _HistoryPageState extends State<HistoryPage>
                 ),
               );
             });
+          },
+        ),
+        PopupMenuItem(
+          child: const Text('下载视频'),
+          onTap: () {
+            DownloadManager().addTask(record.videoPath, record.videoName);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('已添加到下载队列')),
+            );
           },
         ),
         PopupMenuItem(

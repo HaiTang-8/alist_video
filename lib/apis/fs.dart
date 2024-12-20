@@ -55,11 +55,13 @@ class FsGetData {
   final String name;
   final bool isDir;
   final int type;
+  final String? rawUrl;
 
   FsGetData({
     required this.name,
     required this.isDir,
     required this.type,
+    this.rawUrl,
   });
 
   factory FsGetData.fromJson(Map<String, dynamic> json) {
@@ -67,6 +69,7 @@ class FsGetData {
       name: json['name'] as String,
       isDir: json['is_dir'] as bool,
       type: json['type'] as int,
+      rawUrl: json['raw_url'] as String?,
     );
   }
 }

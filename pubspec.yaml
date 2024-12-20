@@ -52,6 +52,7 @@ dependencies:
   flutter_staggered_animations: ^1.1.1
   names_launcher: ^0.0.1
   url_launcher: ^6.3.1
+  path_provider: ^2.1.2
 
 dev_dependencies:
   flutter_test:

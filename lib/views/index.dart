@@ -1,6 +1,7 @@
 import 'package:alist_player/views/history_page.dart';
 import 'package:alist_player/views/home_page.dart';
 import 'package:alist_player/views/person_page.dart';
+import 'package:alist_player/views/downloads_page.dart';
 import 'package:flutter/material.dart';
 
 class IndexPage extends StatefulWidget {
@@ -22,6 +23,10 @@ class _IndexState extends State<IndexPage> {
       label: "历史记录",
     ),
     const BottomNavigationBarItem(
+      icon: Icon(Icons.download),
+      label: '下载',
+    ),
+    const BottomNavigationBarItem(
       backgroundColor: Colors.red,
       icon: Icon(Icons.person),
       label: "个人中心",
@@ -30,7 +35,12 @@ class _IndexState extends State<IndexPage> {
 
   late int currentIndex;
 
-  final pages = [const HomePage(), const HistoryPage(), const PersonPage()];
+  final List<Widget> _pages = [
+    const HomePage(),
+    const HistoryPage(),
+    const DownloadsPage(),
+    const PersonPage(),
+  ];
 
   @override
   void initState() {
@@ -49,7 +59,7 @@ class _IndexState extends State<IndexPage> {
           _changePage(index);
         },
       ),
-      body: pages[currentIndex],
+      body: _pages[currentIndex],
     );
   }
 

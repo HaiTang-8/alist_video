@@ -517,7 +517,7 @@ class _HomePageState extends State<HomePage>
     return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
-  // ���包屑导航动画
+  // 面包屑导航动画
   Widget _buildBreadcrumb() {
     return SlideTransition(
       position: Tween<Offset>(
