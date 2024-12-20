@@ -3,6 +3,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:flutter/foundation.dart';
 import 'package:alist_player/apis/fs.dart';
 import 'package:dio/dio.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:url_launcher/url_launcher.dart';
 
 class DownloadTask {
   final String path;
@@ -56,17 +59,49 @@ class DownloadTask {
 class DownloadManager {
   static final DownloadManager _instance = DownloadManager._internal();
   factory DownloadManager() => _instance;
-  DownloadManager._internal();
 
   final Map<String, DownloadTask> _tasks = {};
   final _downloadTaskController = ValueNotifier<Map<String, DownloadTask>>({});
   final _dio = Dio();
 
+  DownloadManager._internal() {
+    // 初始化时加载保存的任务
+    _loadTasks();
+  }
+
+  // 加载保存的任务
+  Future<void> _loadTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final tasksJson = prefs.getStringList('download_tasks') ?? [];
+
+    for (final taskStr in tasksJson) {
+      try {
+        final taskMap = json.decode(taskStr);
+        final task = DownloadTask.fromMap(taskMap);
+        if (task.status != '已完成') {
+          task.status = '已暂停';
+        }
+        _tasks[task.path] = task;
+      } catch (e) {
+        print('Error loading task: $e');
+      }
+    }
+    _downloadTaskController.value = Map.from(_tasks);
+  }
+
+  // 保存任务到本地
+  Future<void> _saveTasks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final tasksJson =
+        _tasks.values.map((task) => json.encode(task.toMap())).toList();
+    await prefs.setStringList('download_tasks', tasksJson);
+  }
+
   ValueNotifier<Map<String, DownloadTask>> get tasks => _downloadTaskController;
 
   Future<void> addTask(String path, String fileName) async {
     try {
-      // 检查是否已存在相同的任务
+      // 检查是否已存在相同的���务
       if (_tasks.containsKey(path)) {
         final existingTask = _tasks[path]!;
         if (existingTask.status == '已暂停') {
@@ -184,6 +219,7 @@ class DownloadManager {
   void _updateTask(DownloadTask task) {
     _tasks[task.path] = task;
     _downloadTaskController.value = Map.from(_tasks);
+    _saveTasks(); // 保存更新
   }
 
   Future<void> pauseTask(String path) async {
@@ -202,14 +238,69 @@ class DownloadManager {
     }
   }
 
-  Future<void> removeTask(String path) async {
+  Future<void> removeTask(String path, {bool deleteFile = true}) async {
     final task = _tasks[path];
     if (task != null) {
       task.cancelToken?.cancel('用户删除任务');
       _tasks.remove(path);
       _downloadTaskController.value = Map.from(_tasks);
+      await _saveTasks();
 
-      // 删除文件
+      if (deleteFile) {
+        try {
+          final file = File(task.filePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        } catch (e) {
+          print("Error deleting file: $e");
+        }
+      }
+    }
+  }
+
+  Future<void> renameTask(String path, String newFileName) async {
+    final task = _tasks[path];
+    if (task != null) {
+      final directory = await getApplicationDocumentsDirectory();
+      final newFilePath = '${directory.path}/downloads/$newFileName';
+
+      try {
+        final file = File(task.filePath);
+        if (await file.exists()) {
+          await file.rename(newFilePath);
+        }
+
+        final newTask = DownloadTask(
+          path: task.path,
+          url: task.url,
+          fileName: newFileName,
+          filePath: newFilePath,
+        );
+        newTask.status = task.status;
+        newTask.progress = task.progress;
+        newTask.receivedBytes = task.receivedBytes;
+        newTask.totalBytes = task.totalBytes;
+
+        _tasks[path] = newTask;
+        _downloadTaskController.value = Map.from(_tasks);
+        await _saveTasks();
+      } catch (e) {
+        print("Error renaming file: $e");
+      }
+    }
+  }
+
+  Future<void> restartTask(String path) async {
+    final task = _tasks[path];
+    if (task != null) {
+      task.progress = 0;
+      task.receivedBytes = 0;
+      task.totalBytes = null;
+      task.status = '等待中';
+      task.error = null;
+      _updateTask(task);
+
       try {
         final file = File(task.filePath);
         if (await file.exists()) {
@@ -218,6 +309,8 @@ class DownloadManager {
       } catch (e) {
         print("Error deleting file: $e");
       }
+
+      _startDownload(task);
     }
   }
 
@@ -231,7 +324,22 @@ class DownloadManager {
   Future<void> openFile(String filePath) async {
     final file = File(filePath);
     if (await file.exists()) {
-      // TODO: 实现文件打开功能
+      // TODO: 实现文件打���功能
+    }
+  }
+
+  // 打开文件夹
+  static Future<void> openFolder(String path) async {
+    try {
+      if (Platform.isMacOS) {
+        await Process.run('open', [path]);
+      } else if (Platform.isWindows) {
+        await Process.run('explorer', [path]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [path]);
+      }
+    } catch (e) {
+      print("Error opening folder: $e");
     }
   }
 }
