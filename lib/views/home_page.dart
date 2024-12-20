@@ -6,10 +6,17 @@ import 'package:flutter/material.dart';
 import 'package:toastification/toastification.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  final String? initialUrl;
+  final String? initialTitle;
+
+  const HomePage({
+    Key? key,
+    this.initialUrl,
+    this.initialTitle,
+  }) : super(key: key);
 
   @override
-  State<StatefulWidget> createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage>
@@ -108,6 +115,11 @@ class _HomePageState extends State<HomePage>
       vsync: this,
     );
     _getList().then((_) => _animationController.forward());
+    if (widget.initialUrl != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        loadUrl(widget.initialUrl!, widget.initialTitle);
+      });
+    }
   }
 
   @override
@@ -632,6 +644,18 @@ class _HomePageState extends State<HomePage>
         ),
       ),
     );
+  }
+
+  void loadUrl(String url, String? title) {
+    setState(() {
+      currentPath = url.split('/')..removeWhere((element) => element.isEmpty);
+      if (currentPath.isEmpty) {
+        currentPath = ['/'];
+      } else {
+        currentPath.insert(0, '/');
+      }
+    });
+    _getList();
   }
 }
 

@@ -8,6 +8,15 @@ import 'package:timeago/timeago.dart' as timeago;
 import 'dart:async';
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:flutter/services.dart';
+import 'home_page.dart';
+
+class HistoryEntry {
+  final String url;
+  final String title;
+
+  HistoryEntry({required this.url, required this.title});
+}
 
 class HistoryPage extends StatefulWidget {
   const HistoryPage({super.key});
@@ -710,227 +719,274 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildHistoryCard(HistoricalRecord record) {
-    return SlideTransition(
-      position: Tween<Offset>(
-        begin: const Offset(0.3, 0),
-        end: Offset.zero,
-      ).animate(CurvedAnimation(
-        parent: _controller,
-        curve: Curves.easeOutCubic,
-      )),
-      child: FadeTransition(
-        opacity: _controller,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          transform: Matrix4.identity()
-            ..scale(_selectedItems.contains(record.videoSha1) ? 0.98 : 1.0),
-          child: Dismissible(
-            key: Key(record.videoSha1),
-            background: Container(
-              color: Colors.red,
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 16),
-              child: const Icon(Icons.delete, color: Colors.white),
-            ),
-            direction: DismissDirection.endToStart,
-            confirmDismiss: (direction) async {
-              if (_isSelectMode) {
-                _toggleSelect(record.videoSha1);
-                return false;
-              }
-              return true;
-            },
-            onDismissed: (direction) {
-              final groupKey = _selectedDirectory ??
-                  (_isTimelineMode
-                      ? record.changeTime.toLocal().toString().substring(0, 10)
-                      : path.dirname(record.videoPath));
-              _deleteRecord(record, groupKey);
-            },
-            child: Card(
-              elevation: 0,
-              margin: const EdgeInsets.only(right: 16, bottom: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(
-                  color: _selectedItems.contains(record.videoSha1)
-                      ? Colors.blue
-                      : Colors.grey[200]!,
-                ),
+    return GestureDetector(
+      onSecondaryTapDown: (details) {
+        _showContextMenu(context, details.globalPosition, record);
+      },
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0.3, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(
+          parent: _controller,
+          curve: Curves.easeOutCubic,
+        )),
+        child: FadeTransition(
+          opacity: _controller,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            transform: Matrix4.identity()
+              ..scale(_selectedItems.contains(record.videoSha1) ? 0.98 : 1.0),
+            child: Dismissible(
+              key: Key(record.videoSha1),
+              background: Container(
+                color: Colors.red,
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.only(right: 16),
+                child: const Icon(Icons.delete, color: Colors.white),
               ),
-              child: InkWell(
-                onTap: _isSelectMode
-                    ? () => _toggleSelect(record.videoSha1)
-                    : () async {
-                        // 显示加载指示器
-                        showDialog(
-                          context: context,
-                          barrierDismissible: false,
-                          builder: (BuildContext context) {
-                            return const Center(
-                              child: CircularProgressIndicator(),
-                            );
-                          },
-                        );
-
-                        // 检查文件是否存在
-                        final (exists, errorMessage) =
-                            await _checkFileExists(record.videoPath);
-
-                        // 关闭加载指示器
-                        if (mounted) {
-                          Navigator.pop(context);
-                        }
-
-                        if (!mounted) return;
-
-                        if (exists) {
-                          await Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => VideoPlayer(
-                                path: record.videoPath,
-                                name: record.videoName,
-                              ),
-                            ),
+              direction: DismissDirection.endToStart,
+              confirmDismiss: (direction) async {
+                if (_isSelectMode) {
+                  _toggleSelect(record.videoSha1);
+                  return false;
+                }
+                return true;
+              },
+              onDismissed: (direction) {
+                final groupKey = _selectedDirectory ??
+                    (_isTimelineMode
+                        ? record.changeTime
+                            .toLocal()
+                            .toString()
+                            .substring(0, 10)
+                        : path.dirname(record.videoPath));
+                _deleteRecord(record, groupKey);
+              },
+              child: Card(
+                elevation: 0,
+                margin: const EdgeInsets.only(right: 16, bottom: 8),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  side: BorderSide(
+                    color: _selectedItems.contains(record.videoSha1)
+                        ? Colors.blue
+                        : Colors.grey[200]!,
+                  ),
+                ),
+                child: InkWell(
+                  onTap: _isSelectMode
+                      ? () => _toggleSelect(record.videoSha1)
+                      : () async {
+                          // 显示加载指示器
+                          showDialog(
+                            context: context,
+                            barrierDismissible: false,
+                            builder: (BuildContext context) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            },
                           );
-                          if (mounted) {
-                            _loadHistory();
-                          }
-                        } else {
-                          // 检查是否是文件被移动或删除的错误
-                          final isFileMovedOrDeleted = errorMessage
-                                  ?.contains(AppConstants.fileNotFoundError) ??
-                              false;
 
-                          if (isFileMovedOrDeleted) {
-                            // 显示删除记录选项
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: const Text('该视频文件已不存在或已被移动'),
-                                action: SnackBarAction(
-                                  label: '删除记录',
-                                  onPressed: () {
-                                    final groupKey = _selectedDirectory ??
-                                        (_isTimelineMode
-                                            ? record.changeTime
-                                                .toLocal()
-                                                .toString()
-                                                .substring(0, 10)
-                                            : path.dirname(record.videoPath));
-                                    _deleteRecord(record, groupKey);
-                                  },
-                                ),
-                              ),
-                            );
-                          } else {
-                            // 显示一般错误消息
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content:
-                                    Text('访问文件失败: ${errorMessage ?? "未知错误"}'),
-                              ),
-                            );
+                          // 检查文件是否存在
+                          final (exists, errorMessage) =
+                              await _checkFileExists(record.videoPath);
+
+                          // 关闭加载指示器
+                          if (mounted) {
+                            Navigator.pop(context);
                           }
-                        }
-                      },
-                onLongPress: () {
-                  if (!_isSelectMode) {
-                    _toggleSelectMode();
-                    _toggleSelect(record.videoSha1);
-                  }
-                },
-                child: Stack(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            _getDisplayPath(record.videoPath),
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.grey[600],
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            record.videoName,
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 8),
-                          Row(
-                            children: [
-                              Icon(Icons.access_time,
-                                  size: 14, color: Colors.grey[600]),
-                              const SizedBox(width: 4),
-                              Text(
-                                '${timeago.format(record.changeTime, locale: 'zh')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.grey[600],
+
+                          if (!mounted) return;
+
+                          if (exists) {
+                            await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => VideoPlayer(
+                                  path: record.videoPath,
+                                  name: record.videoName,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          LinearProgressIndicator(
-                            value: record.totalVideoDuration > 0
-                                ? (record.videoSeek / record.totalVideoDuration)
-                                    .clamp(0.0, 1.0)
-                                : 0.0,
-                            backgroundColor: Colors.grey[200],
-                            valueColor: AlwaysStoppedAnimation<Color>(
-                                Colors.blue[400]!),
-                            minHeight: 4,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey[600],
+                            );
+                            if (mounted) {
+                              _loadHistory();
+                            }
+                          } else {
+                            // 检查是否是文件被移动或删除的错误
+                            final isFileMovedOrDeleted = errorMessage?.contains(
+                                    AppConstants.fileNotFoundError) ??
+                                false;
+
+                            if (isFileMovedOrDeleted) {
+                              // 显示删除记录选项
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: const Text('该视频文件已不存在或已被移动'),
+                                  action: SnackBarAction(
+                                    label: '删除记录',
+                                    onPressed: () {
+                                      final groupKey = _selectedDirectory ??
+                                          (_isTimelineMode
+                                              ? record.changeTime
+                                                  .toLocal()
+                                                  .toString()
+                                                  .substring(0, 10)
+                                              : path.dirname(record.videoPath));
+                                      _deleteRecord(record, groupKey);
+                                    },
+                                  ),
+                                ),
+                              );
+                            } else {
+                              // 显示一般错误消息
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content:
+                                      Text('访问文件失败: ${errorMessage ?? "未知错误"}'),
+                                ),
+                              );
+                            }
+                          }
+                        },
+                  onLongPress: () {
+                    if (!_isSelectMode) {
+                      _toggleSelectMode();
+                      _toggleSelect(record.videoSha1);
+                    }
+                  },
+                  child: Stack(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _getDisplayPath(record.videoPath),
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.grey[600],
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_isSelectMode)
-                      Positioned(
-                        right: 8,
-                        top: 8,
-                        child: Container(
-                          width: 24,
-                          height: 24,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            color: _selectedItems.contains(record.videoSha1)
-                                ? Colors.blue
-                                : Colors.grey[300],
-                          ),
-                          child: _selectedItems.contains(record.videoSha1)
-                              ? const Icon(
-                                  Icons.check,
-                                  size: 16,
-                                  color: Colors.white,
-                                )
-                              : null,
+                            const SizedBox(height: 4),
+                            Text(
+                              record.videoName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.access_time,
+                                    size: 14, color: Colors.grey[600]),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${timeago.format(record.changeTime, locale: 'zh')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            LinearProgressIndicator(
+                              value: record.totalVideoDuration > 0
+                                  ? (record.videoSeek /
+                                          record.totalVideoDuration)
+                                      .clamp(0.0, 1.0)
+                                  : 0.0,
+                              backgroundColor: Colors.grey[200],
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                  Colors.blue[400]!),
+                              minHeight: 4,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                  ],
+                      if (_isSelectMode)
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: Container(
+                            width: 24,
+                            height: 24,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: _selectedItems.contains(record.videoSha1)
+                                  ? Colors.blue
+                                  : Colors.grey[300],
+                            ),
+                            child: _selectedItems.contains(record.videoSha1)
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 16,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  void _showContextMenu(
+      BuildContext context, Offset position, HistoricalRecord record) {
+    final RenderBox overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+
+    showMenu(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(40, 40),
+        Offset.zero & overlay.size,
+      ),
+      items: [
+        PopupMenuItem(
+          child: const Text('跳转至文件列表'),
+          onTap: () {
+            Future.delayed(const Duration(milliseconds: 10), () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => HomePage(
+                    initialUrl: record.videoPath,
+                    initialTitle: record.videoName,
+                  ),
+                ),
+              );
+            });
+          },
+        ),
+        PopupMenuItem(
+          child: const Text('复制链接'),
+          onTap: () {
+            Clipboard.setData(ClipboardData(text: record.videoPath));
+          },
+        ),
+      ],
     );
   }
 }
