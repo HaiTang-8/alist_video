@@ -389,8 +389,6 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
   late TextEditingController _passwordController;
   late TextEditingController _portController;
   bool _isTesting = false;
-  final _baseUrlController = TextEditingController();
-  final _baseDownloadUrlController = TextEditingController();
 
   @override
   void initState() {
@@ -400,28 +398,6 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
     _userController = TextEditingController(text: widget.user);
     _passwordController = TextEditingController(text: widget.password);
     _portController = TextEditingController(text: widget.port.toString());
-    _loadSettings();
-  }
-
-  Future<void> _loadSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _hostController.text =
-          prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost;
-      _nameController.text =
-          prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName;
-      _userController.text =
-          prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser;
-      _passwordController.text = prefs.getString(AppConstants.dbPasswordKey) ??
-          AppConstants.defaultDbPassword;
-      _portController.text = prefs.getInt(AppConstants.dbPortKey)?.toString() ??
-          AppConstants.defaultDbPort.toString();
-      _baseUrlController.text = prefs.getString(AppConstants.baseUrlKey) ??
-          AppConstants.defaultBaseUrl;
-      _baseDownloadUrlController.text =
-          prefs.getString(AppConstants.baseDownloadUrlKey) ??
-              AppConstants.defaultBaseDownloadUrl;
-    });
   }
 
   Future<void> _saveSettings(BuildContext context) async {
@@ -451,13 +427,10 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
         prefs.setString(AppConstants.dbUserKey, _userController.text),
         prefs.setString(AppConstants.dbPasswordKey, _passwordController.text),
         prefs.setInt(AppConstants.dbPortKey, int.parse(_portController.text)),
-        prefs.setString(AppConstants.baseUrlKey, _baseUrlController.text),
-        prefs.setString(
-            AppConstants.baseDownloadUrlKey, _baseDownloadUrlController.text),
       ]);
 
       // 使用新的配置重新初始化数据库连接
-      await DatabaseHelper.instance.close(); // 先关闭现有连��
+      await DatabaseHelper.instance.close(); // 先关闭现有连接
       await DatabaseHelper.instance.init(
         host: _hostController.text,
         port: int.parse(_portController.text),
@@ -468,7 +441,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
 
       if (!mounted) return;
 
-      // 显示成功息并关闭对话框
+      // 显示成功消息并关闭对话框
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -596,7 +569,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
               controller: _userController,
               label: '用户名',
               icon: Icons.person_outline_rounded,
-              hint: '据库用户名',
+              hint: '数据库用户名',
             ),
             const SizedBox(height: 16),
             _buildTextField(
@@ -666,24 +639,6 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
                 ),
               ],
             ),
-            const Text('API 设置',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _baseUrlController,
-              decoration: const InputDecoration(
-                labelText: '基础 URL',
-                hintText: '例如: https://alist.tt1.top',
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _baseDownloadUrlController,
-              decoration: const InputDecoration(
-                labelText: '下载 URL',
-                hintText: '例如: https://alist.tt1.top/d',
-              ),
-            ),
           ],
         ),
       ),
@@ -743,8 +698,6 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
     _userController.dispose();
     _passwordController.dispose();
     _portController.dispose();
-    _baseUrlController.dispose();
-    _baseDownloadUrlController.dispose();
     super.dispose();
   }
 }

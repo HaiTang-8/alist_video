@@ -7,11 +7,12 @@ class AppConstants {
   static const String dbPortKey = 'db_port';
 
   // 数据库默认配置
-  static const String defaultDbHost = '81.68.250.223';
+  // static const String defaultDbHost = '81.68.250.223';
+  static const String defaultDbHost = '127.0.0.1';
   static const String defaultDbName = 'alist_video';
-  static const String defaultDbUser = 'alist_video';
-  static const String defaultDbPassword = '2jkxXaG3pKs4P6mX';
-  static const int defaultDbPort = 5555;
+  static const String defaultDbUser = 'postgres';
+  static const String defaultDbPassword = 'wasd..123';
+  static const int defaultDbPort = 5432;
 
   // 数据库超时设置
   static const Duration dbConnectTimeout = Duration(seconds: 30);
@@ -20,8 +21,8 @@ class AppConstants {
   // API 相关
   static const String baseUrlKey = 'base_url';
   static const String baseDownloadUrlKey = 'base_download_url';
-  static const String defaultBaseUrl = 'https://alist.tt1.top';
-  static const String defaultBaseDownloadUrl = 'https://alist.tt1.top/d';
+  static const String defaultBaseUrl = 'http://127.0.0.1:5244';
+  static const String defaultBaseDownloadUrl = 'http://127.0.0.1:5244/d';
   static const Duration apiConnectTimeout = Duration(seconds: 5);
   static const Duration apiReceiveTimeout = Duration(seconds: 3);
 

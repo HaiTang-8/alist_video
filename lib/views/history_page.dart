@@ -48,6 +48,8 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Future<void> _loadHistory() async {
+    if (!mounted) return;
+
     try {
       setState(() => _isLoading = true);
       final prefs = await SharedPreferences.getInstance();
@@ -59,6 +61,8 @@ class _HistoryPageState extends State<HistoryPage>
           userId: _currentUsername!.hashCode,
           limit: 50,
         );
+
+        if (!mounted) return;
 
         final List<HistoricalRecord> historyRecords =
             records.map((r) => HistoricalRecord.fromMap(r)).toList();
@@ -76,6 +80,7 @@ class _HistoryPageState extends State<HistoryPage>
       }
     } catch (e) {
       print('Error loading history: $e');
+      if (!mounted) return;
       setState(() => _isLoading = false);
     }
   }

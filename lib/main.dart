@@ -19,13 +19,18 @@ Future<void> main() async {
   timeago.setLocaleMessages('zh_CN', timeago.ZhCnMessages());
 
   try {
+    final prefs = await SharedPreferences.getInstance();
     final db = DatabaseHelper.instance;
     await db.init(
-      host: AppConstants.defaultDbHost,
-      port: AppConstants.defaultDbPort,
-      database: AppConstants.defaultDbName,
-      username: AppConstants.defaultDbUser,
-      password: AppConstants.defaultDbPassword,
+      host:
+          prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost,
+      port: prefs.getInt(AppConstants.dbPortKey) ?? AppConstants.defaultDbPort,
+      database:
+          prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName,
+      username:
+          prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser,
+      password: prefs.getString(AppConstants.dbPasswordKey) ??
+          AppConstants.defaultDbPassword,
     );
 
     // 测试连接
