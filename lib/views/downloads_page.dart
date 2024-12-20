@@ -238,7 +238,7 @@ class DownloadsPage extends StatelessWidget {
           children: [
             Text('确定要删除 ${task.fileName} 吗？'),
             const SizedBox(height: 16),
-            const Text('请选择删除方式���'),
+            const Text('请选择删除方式：'),
           ],
         ),
         actions: [

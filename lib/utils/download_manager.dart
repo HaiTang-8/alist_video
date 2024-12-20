@@ -101,11 +101,14 @@ class DownloadManager {
 
   Future<void> addTask(String path, String fileName) async {
     try {
-      // 检查是否已存在相同的���务
-      if (_tasks.containsKey(path)) {
-        final existingTask = _tasks[path]!;
+      // 使用 path + fileName 作为唯一标识
+      final taskKey = '$path/$fileName';
+
+      // 检查是否已存在相同的任务
+      if (_tasks.containsKey(taskKey)) {
+        final existingTask = _tasks[taskKey]!;
         if (existingTask.status == '已暂停') {
-          resumeTask(path);
+          resumeTask(taskKey);
         }
         return;
       }
@@ -124,7 +127,7 @@ class DownloadManager {
       await Directory('${directory.path}/downloads').create(recursive: true);
 
       final task = DownloadTask(
-        path: path,
+        path: taskKey, // 使用新的唯一标识
         url: downloadUrl,
         fileName: fileName,
         filePath: filePath,
@@ -137,7 +140,7 @@ class DownloadManager {
         task.status = '已暂停';
       }
 
-      _tasks[path] = task;
+      _tasks[taskKey] = task; // 使用新的唯一标识作为 key
       _downloadTaskController.value = Map.from(_tasks);
 
       if (task.status != '已暂停') {
@@ -145,15 +148,16 @@ class DownloadManager {
         _startDownload(task);
       }
     } catch (e) {
+      final taskKey = '$path/$fileName';
       final task = DownloadTask(
-        path: path,
+        path: taskKey,
         url: path,
         fileName: fileName,
         filePath: '',
       );
       task.status = '错误';
       task.error = e.toString();
-      _tasks[path] = task;
+      _tasks[taskKey] = task;
       _downloadTaskController.value = Map.from(_tasks);
     }
   }
@@ -324,7 +328,7 @@ class DownloadManager {
   Future<void> openFile(String filePath) async {
     final file = File(filePath);
     if (await file.exists()) {
-      // TODO: 实现文件打���功能
+      // TODO: 实现文件打开功能
     }
   }
 
