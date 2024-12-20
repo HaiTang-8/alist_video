@@ -145,14 +145,23 @@ class _DownloadsPageState extends State<DownloadsPage> {
                       if (task.status == '下载中')
                         IconButton(
                           icon: const Icon(Icons.pause),
+                          tooltip: '暂停',
                           onPressed: () =>
                               DownloadManager().pauseTask(task.path),
                         )
                       else if (task.status == '已暂停')
                         IconButton(
                           icon: const Icon(Icons.play_arrow),
+                          tooltip: '继续',
                           onPressed: () =>
                               DownloadManager().resumeTask(task.path),
+                        )
+                      else if (task.status == '错误')
+                        IconButton(
+                          icon: const Icon(Icons.refresh),
+                          tooltip: '重试',
+                          onPressed: () =>
+                              DownloadManager().restartTask(task.path),
                         ),
                     ],
                   ),
@@ -165,16 +174,37 @@ class _DownloadsPageState extends State<DownloadsPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        '${(task.progress * 100).toStringAsFixed(1)}%',
+                        '${_formatSize(task.receivedBytes)}/${_formatSize(task.totalBytes ?? 0)}',
                         style: TextStyle(
                           color: Colors.grey[600],
+                          fontSize: 12,
                         ),
                       ),
-                      Text(
-                        task.status,
-                        style: TextStyle(
-                          color: _getStatusColor(task.status),
+                      if (task.status == '下载中')
+                        Text(
+                          '${_formatSpeed(task.speed ?? 0)}/s',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 12,
+                          ),
                         ),
+                      Row(
+                        children: [
+                          Text(
+                            '${(task.progress * 100).toStringAsFixed(1)}% ',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 12,
+                            ),
+                          ),
+                          Text(
+                            task.status,
+                            style: TextStyle(
+                              color: _getStatusColor(task.status),
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
@@ -185,6 +215,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         task.error!,
                         style: const TextStyle(
                           color: Colors.red,
+                          fontSize: 12,
                         ),
                       ),
                     ),
@@ -212,6 +243,19 @@ class _DownloadsPageState extends State<DownloadsPage> {
         ),
       ),
     );
+  }
+
+  String _formatSize(num bytes) {
+    if (bytes < 1024) return '${bytes.toStringAsFixed(1)} B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  String _formatSpeed(num bytesPerSecond) {
+    return _formatSize(bytesPerSecond);
   }
 
   void _showBatchDeleteDialog(List<DownloadTask> tasks) {

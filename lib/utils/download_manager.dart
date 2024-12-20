@@ -18,6 +18,7 @@ class DownloadTask {
   CancelToken? cancelToken;
   num? totalBytes;
   num receivedBytes = 0;
+  num? speed;
 
   DownloadTask({
     required this.path,
@@ -37,6 +38,7 @@ class DownloadTask {
       'error': error,
       'receivedBytes': receivedBytes,
       'totalBytes': totalBytes,
+      'speed': speed,
     };
   }
 
@@ -52,6 +54,7 @@ class DownloadTask {
     task.error = map['error'];
     task.receivedBytes = map['receivedBytes'] ?? 0;
     task.totalBytes = map['totalBytes'];
+    task.speed = map['speed'];
     return task;
   }
 }
@@ -206,13 +209,26 @@ class DownloadManager {
       final raf = await file.open(mode: FileMode.append);
       var received = task.receivedBytes;
 
+      // 计算下载速度
+      final stopwatch = Stopwatch()..start();
+      var lastReceivedBytes = task.receivedBytes;
+
       await for (final chunk in response.data.stream) {
         if (task.cancelToken?.isCancelled == true) break;
 
         await raf.writeFrom(chunk);
-        received += chunk.length.toInt();
+        received += chunk.length;
         task.receivedBytes = received;
         task.progress = (received / task.totalBytes!).toDouble();
+
+        // 每秒更新一次速度
+        if (stopwatch.elapsedMilliseconds >= 1000) {
+          task.speed = (received - lastReceivedBytes) *
+              (1000 / stopwatch.elapsedMilliseconds);
+          lastReceivedBytes = received;
+          stopwatch.reset();
+        }
+
         _updateTask(task);
       }
 
@@ -363,7 +379,7 @@ class DownloadManager {
     }
   }
 
-  // 添加通知方法
+  // ���加通知方法
   void _showNotification(String fileName) async {
     const androidDetails = AndroidNotificationDetails(
       'downloads',
