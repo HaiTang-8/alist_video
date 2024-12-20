@@ -3,108 +3,272 @@ import 'package:flutter/services.dart';
 import '../utils/download_manager.dart';
 import 'dart:io';
 
-class DownloadsPage extends StatelessWidget {
+class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key});
+
+  @override
+  State<DownloadsPage> createState() => _DownloadsPageState();
+}
+
+class _DownloadsPageState extends State<DownloadsPage> {
+  bool _isSelectMode = false;
+  final Set<String> _selectedTasks = {};
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text('下载管理'),
+        actions: [
+          ValueListenableBuilder<Map<String, DownloadTask>>(
+            valueListenable: DownloadManager().tasks,
+            builder: (context, tasks, child) {
+              if (tasks.isEmpty) return const SizedBox();
+              return IconButton(
+                icon: Icon(_isSelectMode ? Icons.close : Icons.checklist),
+                onPressed: () {
+                  setState(() {
+                    _isSelectMode = !_isSelectMode;
+                    _selectedTasks.clear();
+                  });
+                },
+              );
+            },
+          ),
+        ],
       ),
       body: ValueListenableBuilder<Map<String, DownloadTask>>(
         valueListenable: DownloadManager().tasks,
         builder: (context, tasks, child) {
           if (tasks.isEmpty) {
-            return const Center(
-              child: Text('暂无下载任务'),
-            );
+            return const Center(child: Text('暂无下载任务'));
           }
 
-          return ListView.builder(
-            itemCount: tasks.length,
-            itemBuilder: (context, index) {
-              final task = tasks.values.elementAt(index);
-              return Card(
-                margin: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 8,
-                ),
-                child: InkWell(
-                  onSecondaryTapDown: (details) {
-                    _showContextMenu(context, details.globalPosition, task);
+          return Column(
+            children: [
+              if (_isSelectMode && _selectedTasks.isNotEmpty)
+                _buildBatchOperationBar(tasks),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: tasks.length,
+                  itemBuilder: (context, index) {
+                    final task = tasks.values.elementAt(index);
+                    return _buildTaskItem(task);
                   },
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                task.fileName,
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            if (task.status == '下载中')
-                              IconButton(
-                                icon: const Icon(Icons.pause),
-                                onPressed: () =>
-                                    DownloadManager().pauseTask(task.path),
-                              )
-                            else if (task.status == '已暂停')
-                              IconButton(
-                                icon: const Icon(Icons.play_arrow),
-                                onPressed: () =>
-                                    DownloadManager().resumeTask(task.path),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        LinearProgressIndicator(
-                          value: task.progress,
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              '${(task.progress * 100).toStringAsFixed(1)}%',
-                              style: TextStyle(
-                                color: Colors.grey[600],
-                              ),
-                            ),
-                            Text(
-                              task.status,
-                              style: TextStyle(
-                                color: _getStatusColor(task.status),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (task.error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: Text(
-                              task.error!,
-                              style: const TextStyle(
-                                color: Colors.red,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
                 ),
-              );
-            },
+              ),
+            ],
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildBatchOperationBar(Map<String, DownloadTask> tasks) {
+    final selectedTasks = tasks.entries
+        .where((entry) => _selectedTasks.contains(entry.key))
+        .map((e) => e.value)
+        .toList();
+
+    final hasDownloading = selectedTasks.any((task) => task.status == '下载中');
+    final hasPaused = selectedTasks.any((task) => task.status == '已暂停');
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      color: Colors.grey[100],
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          Text('已选择 ${_selectedTasks.length} 项'),
+          if (hasDownloading)
+            TextButton.icon(
+              icon: const Icon(Icons.pause),
+              label: const Text('全部暂停'),
+              onPressed: () {
+                for (var task in selectedTasks) {
+                  if (task.status == '下载中') {
+                    DownloadManager().pauseTask(task.path);
+                  }
+                }
+              },
+            ),
+          if (hasPaused)
+            TextButton.icon(
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('全部开始'),
+              onPressed: () {
+                for (var task in selectedTasks) {
+                  if (task.status == '已暂停') {
+                    DownloadManager().resumeTask(task.path);
+                  }
+                }
+              },
+            ),
+          TextButton.icon(
+            icon: const Icon(Icons.delete, color: Colors.red),
+            label: const Text('批量删除', style: TextStyle(color: Colors.red)),
+            onPressed: () => _showBatchDeleteDialog(selectedTasks),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTaskItem(DownloadTask task) {
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: InkWell(
+        onSecondaryTapDown: _isSelectMode
+            ? null
+            : (details) {
+                _showContextMenu(context, details.globalPosition, task);
+              },
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          task.fileName,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      if (task.status == '下载中')
+                        IconButton(
+                          icon: const Icon(Icons.pause),
+                          onPressed: () =>
+                              DownloadManager().pauseTask(task.path),
+                        )
+                      else if (task.status == '已暂停')
+                        IconButton(
+                          icon: const Icon(Icons.play_arrow),
+                          onPressed: () =>
+                              DownloadManager().resumeTask(task.path),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  LinearProgressIndicator(
+                    value: task.progress,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '${(task.progress * 100).toStringAsFixed(1)}%',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      Text(
+                        task.status,
+                        style: TextStyle(
+                          color: _getStatusColor(task.status),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (task.error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        task.error!,
+                        style: const TextStyle(
+                          color: Colors.red,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            if (_isSelectMode)
+              Positioned(
+                right: 8,
+                top: 8,
+                child: Checkbox(
+                  value: _selectedTasks.contains(task.path),
+                  onChanged: (checked) {
+                    setState(() {
+                      if (checked == true) {
+                        _selectedTasks.add(task.path);
+                      } else {
+                        _selectedTasks.remove(task.path);
+                      }
+                    });
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBatchDeleteDialog(List<DownloadTask> tasks) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('批量删除下载任务'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('确定要删除选中的 ${tasks.length} 个任务吗？'),
+            const SizedBox(height: 16),
+            const Text('请选择删除方式：'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              for (var task in tasks) {
+                DownloadManager().removeTask(task.path, deleteFile: false);
+              }
+              Navigator.pop(context);
+              setState(() {
+                _isSelectMode = false;
+                _selectedTasks.clear();
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已删除下载记录')),
+              );
+            },
+            child: const Text('仅删除记录'),
+          ),
+          TextButton(
+            onPressed: () {
+              for (var task in tasks) {
+                DownloadManager().removeTask(task.path, deleteFile: true);
+              }
+              Navigator.pop(context);
+              setState(() {
+                _isSelectMode = false;
+                _selectedTasks.clear();
+              });
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已删除记录和文件')),
+              );
+            },
+            child: const Text(
+              '删除记录和文件',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
       ),
     );
   }
