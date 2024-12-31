@@ -26,6 +26,41 @@ class WooHttpUtil {
     _initializationFuture = _initDio();
   }
 
+  /// 打开日志文件夹
+  static Future<void> openLogDirectory() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final logDir = Directory('${dir.path}/logs');
+      if (!await logDir.exists()) {
+        await logDir.create(recursive: true);
+      }
+
+      if (Platform.isWindows) {
+        await Process.run('explorer', [logDir.path]);
+      } else if (Platform.isMacOS) {
+        await Process.run('open', [logDir.path]);
+      } else if (Platform.isLinux) {
+        await Process.run('xdg-open', [logDir.path]);
+      }
+    } catch (e) {
+      EasyLoading.showError('打开日志文件夹失败: $e');
+    }
+  }
+
+  /// 清除日志文件
+  static Future<void> clearLogs() async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final logDir = Directory('${dir.path}/logs');
+      if (await logDir.exists()) {
+        await logDir.delete(recursive: true);
+        EasyLoading.showSuccess('日志清除成功');
+      }
+    } catch (e) {
+      EasyLoading.showError('清除日志失败: $e');
+    }
+  }
+
   Future<void> _initDio() async {
     if (_initialized) return;
 

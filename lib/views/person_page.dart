@@ -1,5 +1,6 @@
 import 'package:alist_player/main.dart';
 import 'package:alist_player/utils/db.dart';
+import 'package:alist_player/utils/woo_http.dart';
 import 'package:alist_player/views/settings/playback_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -269,6 +270,38 @@ class _PersonPageState extends State<PersonPage> {
                   title: '退出登录',
                   textColor: Colors.red,
                   onTap: () => _logout(context),
+                ),
+                const Divider(),
+                const ListTile(
+                  leading: Icon(Icons.folder_open),
+                  title: Text('打开日志文件夹'),
+                  onTap: WooHttpUtil.openLogDirectory,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('清除日志文件'),
+                  onTap: () async {
+                    final result = await showDialog<bool>(
+                      context: context,
+                      builder: (context) => AlertDialog(
+                        title: const Text('确认'),
+                        content: const Text('确定要清除所有日志文件吗？'),
+                        actions: [
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, false),
+                            child: const Text('取消'),
+                          ),
+                          TextButton(
+                            onPressed: () => Navigator.pop(context, true),
+                            child: const Text('确定'),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (result == true) {
+                      await WooHttpUtil.clearLogs();
+                    }
+                  },
                 ),
               ],
             ),
