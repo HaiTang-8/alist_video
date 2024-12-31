@@ -63,7 +63,8 @@ class _StoragePageState extends State<StoragePage> {
               final prefs = await SharedPreferences.getInstance();
               final baseUrl = prefs.getString(AppConstants.baseUrlKey) ??
                   AppConstants.defaultBaseUrl;
-              final uri = Uri.parse('$baseUrl/@manage/storages');
+              final token = prefs.getString(AppConstants.tokenKey) ?? '';
+              final uri = Uri.parse('$baseUrl/@manage/storages?token=$token');
               if (await canLaunchUrl(uri)) {
                 await launchUrl(uri, mode: LaunchMode.externalApplication);
               } else {

@@ -104,4 +104,7 @@ class AppConstants {
   // 错误消息相关
   static const String fileNotFoundError =
       'failed get parent list: failed get dir: failed get parent list: failed get dir: failed get parent list: failed to list objs';
+
+  // 在现有代码中添加这一行
+  static const String tokenKey = 'token';
 }

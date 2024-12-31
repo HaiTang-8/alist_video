@@ -1,10 +1,14 @@
 import 'dart:io';
+import 'package:path_provider/path_provider.dart';
+// ignore: depend_on_referenced_packages
+import 'package:intl/intl.dart';
 
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/error_message_model.dart';
 import 'package:dio/dio.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:alist_player/apis/login.dart';
 
 /// api 请求工具类
 class WooHttpUtil {
@@ -171,9 +175,62 @@ class WooHttpUtil {
 
 /// 拦截
 class RequestInterceptors extends Interceptor {
+  int _retryCount = 0;
+  static const int _maxRetries = 3;
+
+  // 添加重试登录方法
+  Future<bool> _retryLogin() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString('saved_username') ?? '';
+      final password = prefs.getString('saved_password') ?? '';
+
+      if (username.isEmpty || password.isEmpty) {
+        return false;
+      }
+
+      final response =
+          await LoginApi.login(username: username, password: password);
+      if (response.data?.token != null) {
+        await prefs.setString('token', response.data!.token!);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // 添加日志记录方法
+  Future<void> _logRequest(String content) async {
+    try {
+      final dir = await getApplicationDocumentsDirectory();
+      final logDir = Directory('${dir.path}/logs');
+      if (!await logDir.exists()) {
+        await logDir.create(recursive: true);
+      }
+
+      final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+      final logFile = File('${logDir.path}/api_$today.log');
+
+      final timestamp =
+          DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+      await logFile.writeAsString('[$timestamp] $content\n',
+          mode: FileMode.append);
+    } catch (e) {
+      print('写入日志失败: $e');
+    }
+  }
+
   @override
   Future<void> onRequest(
       RequestOptions options, RequestInterceptorHandler handler) async {
+    // 记录请求日志
+    await _logRequest('REQUEST: ${options.method} ${options.uri}\n'
+        'HEADERS: ${options.headers}\n'
+        'DATA: ${options.data}');
+
+    // 原有代码
     EasyLoading.show(status: '加载中...');
     SharedPreferences prefs = await SharedPreferences.getInstance();
     options.headers['Authorization'] = '${prefs.get('token')}';
@@ -181,8 +238,38 @@ class RequestInterceptors extends Interceptor {
   }
 
   @override
-  void onResponse(Response response, ResponseInterceptorHandler handler) {
+  Future<void> onResponse(
+      Response response, ResponseInterceptorHandler handler) async {
+    // 记录响应日志
+    await _logRequest(
+        'RESPONSE: ${response.statusCode} ${response.requestOptions.uri}\n'
+        'DATA: ${response.data}');
+
+    // 原有代码
     EasyLoading.dismiss();
+
+    if (response.data['code'] == 401 && _retryCount < _maxRetries) {
+      _retryCount++;
+      if (await _retryLogin()) {
+        // 重新发起原始请求
+        final dio = Dio();
+        try {
+          final retryResponse = await dio.request(
+            response.requestOptions.path,
+            data: response.requestOptions.data,
+            queryParameters: response.requestOptions.queryParameters,
+            options: Options(
+              method: response.requestOptions.method,
+              headers: response.requestOptions.headers,
+            ),
+          );
+          _retryCount = 0; // 重置计数
+          return handler.next(retryResponse);
+        } catch (e) {
+          // 重试失败，继续处理401错误
+        }
+      }
+    }
 
     if (response.statusCode != 200 && response.statusCode != 201) {
       handler.reject(
@@ -194,6 +281,7 @@ class RequestInterceptors extends Interceptor {
         true,
       );
     } else {
+      _retryCount = 0; // 重置计数
       handler.next(response);
     }
   }
@@ -201,6 +289,12 @@ class RequestInterceptors extends Interceptor {
   @override
   Future<void> onError(
       DioException err, ErrorInterceptorHandler handler) async {
+    // 记录错误日志
+    await _logRequest('ERROR: ${err.type} ${err.requestOptions.uri}\n'
+        'MESSAGE: ${err.message}\n'
+        'STACK: ${err.stackTrace}');
+
+    // 原有代码保持不变
     EasyLoading.dismiss();
 
     final exception = HttpException(err.message ?? "error message");
