@@ -139,11 +139,11 @@ names_launcher:
       enable: true
       name: "AlistPlayer"
     macos:
-      enable: false
+      enable: true
       name: "AlistPlayer"
     windows:
-      enable: false
+      enable: true
       name: "AlistPlayer"
     linux:
-      enable: false
+      enable: true
       name: "AlistPlayer"
