@@ -17,6 +17,18 @@ class VideoPlayer extends StatefulWidget {
   State<VideoPlayer> createState() => VideoPlayerState();
 }
 
+// 将 SubtitleInfo 类移到 VideoPlayerState 类外面
+class SubtitleInfo {
+  final String name;
+  final String path;
+  String? rawUrl;
+
+  SubtitleInfo({
+    required this.name,
+    required this.path,
+  });
+}
+
 class VideoPlayerState extends State<VideoPlayer> {
   // Create a [Player] to control playback.
   late final player = Player();
@@ -56,6 +68,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加字幕相关状态
   SubtitleTrack? _currentSubtitle;
   List<SubtitleTrack> _subtitleTracks = [];
+
+  // 添加一个字幕文件列表
+  final List<SubtitleInfo> _availableSubtitles = [];
 
   Future<void> _loadSeekSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -132,10 +147,11 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       if (res.code == 200) {
+        // 先创建播放列表
         setState(() {
           List<Media> playMediaList =
               res.data?.content!.where((data) => data.type == 2).map((data) {
-                    String baseUrl = baseDownloadUrl; // 使用配置的下载URL
+                    String baseUrl = baseDownloadUrl;
                     if (basePath != '/') {
                       baseUrl = '$baseUrl$basePath';
                     }
@@ -157,6 +173,25 @@ class VideoPlayerState extends State<VideoPlayer> {
           }
         });
 
+        // 收集字幕文件信息
+        final subtitleFiles = res.data?.content
+            ?.where((data) =>
+                data.name?.toLowerCase().endsWith('.srt') == true ||
+                data.name?.toLowerCase().endsWith('.ass') == true ||
+                data.name?.toLowerCase().endsWith('.vtt') == true)
+            .toList();
+
+        if (subtitleFiles != null && subtitleFiles.isNotEmpty) {
+          _availableSubtitles.clear();
+          for (var subtitle in subtitleFiles) {
+            _availableSubtitles.add(SubtitleInfo(
+              name: subtitle.name ?? '',
+              path: '${widget.path.substring(1)}/${subtitle.name}',
+            ));
+          }
+        }
+
+        // 打开视频
         Playable playable = Playlist(
           playList,
           index: playIndex,
@@ -234,11 +269,12 @@ class VideoPlayerState extends State<VideoPlayer> {
     _loadSeekSettings();
     _loadPlaybackSpeeds();
 
-    (player.platform as dynamic).setProperty('cache', 'no');
-    (player.platform as dynamic).setProperty('cache-secs', '0');
-    (player.platform as dynamic).setProperty('demuxer-seekable-cache', 'no');
-    (player.platform as dynamic).setProperty('demuxer-max-back-bytes', '0');
-    (player.platform as dynamic).setProperty('demuxer-donate-buffer', 'no');
+    // // 原有的其他设置
+    // (player.platform as dynamic).setProperty('cache', 'no');
+    // (player.platform as dynamic).setProperty('cache-secs', '0');
+    // (player.platform as dynamic).setProperty('demuxer-seekable-cache', 'no');
+    // (player.platform as dynamic).setProperty('demuxer-max-back-bytes', '0');
+    // (player.platform as dynamic).setProperty('demuxer-donate-buffer', 'no');
 
     _getCurrentUsername();
     _openAndSeekVideo();
@@ -524,6 +560,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
+                      buildTestButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -562,6 +599,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
+                      buildTestButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -619,6 +657,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
                             buildSubtitleButton(),
+                            buildTestButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -641,6 +680,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
                             buildSubtitleButton(),
+                            buildTestButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -1124,12 +1164,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                             '关闭字幕',
                           ),
                           // 可用字幕选项
-                          ..._subtitleTracks
-                              .map((track) => _buildSubtitleOption(
-                                    track,
-                                    track.title ??
-                                        track.language ??
-                                        '字幕 ${track.id}',
+                          ..._availableSubtitles
+                              .map((subtitle) => _buildSubtitleOption(
+                                    SubtitleTrack.uri('', title: subtitle.name),
+                                    subtitle.name,
                                   )),
                         ],
                       ),
@@ -1156,7 +1194,61 @@ class VideoPlayerState extends State<VideoPlayer> {
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () async {
-          await player.setSubtitleTrack(track);
+          // 记住当前的播放状态
+          final wasPlaying = player.state.playing;
+
+          // 暂停播放
+          await player.pause();
+
+          try {
+            if (track.id == 'no') {
+              await player.setSubtitleTrack(track);
+            } else {
+              final subtitleInfo = _availableSubtitles.firstWhere(
+                (s) => s.name == label,
+                orElse: () => SubtitleInfo(name: label, path: ''),
+              );
+
+              if (subtitleInfo.rawUrl == null) {
+                final subtitleRes = await FsApi.get(
+                  path: subtitleInfo.path,
+                  password: '',
+                );
+
+                if (subtitleRes.code == 200 &&
+                    subtitleRes.data?.rawUrl != null) {
+                  subtitleInfo.rawUrl = subtitleRes.data!.rawUrl;
+                } else {
+                  throw Exception('获取字幕链接失败');
+                }
+              }
+
+              await player.setSubtitleTrack(SubtitleTrack.no());
+              await player.setSubtitleTrack(
+                SubtitleTrack.uri(
+                  subtitleInfo.rawUrl!,
+                  title: subtitleInfo.name,
+                ),
+              );
+              print('字幕加载成功: ${subtitleInfo.name}');
+            }
+
+            // 如果之前是播放状态，恢复播放
+            if (wasPlaying) {
+              await player.play();
+            }
+          } catch (e) {
+            print('加载字幕失败: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('加载字幕失败: ${label}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+
           if (mounted) {
             Navigator.pop(context);
           }
@@ -1183,6 +1275,31 @@ class VideoPlayerState extends State<VideoPlayer> {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // 在 buildSpeedButton 方法后添加测试按钮方法
+  Widget buildTestButton() {
+    return MaterialCustomButton(
+      onPressed: () async {
+        try {
+          await player.setSubtitleTrack(SubtitleTrack.no());
+          await player.setSubtitleTrack(
+            SubtitleTrack.uri(
+              // 'https://www.iandevlin.com/html5test/webvtt/upc-video-subtitles-en.vtt',
+              // 'https://ykj-eos-wx2-01.eos-wuxi-3.cmecloud.cn/c68df2a0a0544f59a3d2552f95515e27086?response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27%255B%25E7%25AE%2580%25E4%25BD%2593%25E4%25B8%25AD%25E8%258B%25B1ASS%255DOnly.Murders.in.the.Building.S01E10.WEBDL.FIX%25E5%25AD%2597%25E5%25B9%2595%25E4%25BE%25A0.ass&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20250106T060010Z&X-Amz-SignedHeaders=host&X-Amz-Expires=900&X-Amz-Credential=Y60FITYLOX7N6UJWBOEE%2F20250106%2Fdefault%2Fs3%2Faws4_request&X-Amz-Signature=b135c01025c11385cc08465e15a5b77a4f863b3a66080cf1f669a110d147bdf6',
+              'https://ykj-eos-dg5-01.eos-dongguan-6.cmecloud.cn/827135f9464744f7a4fa286af01d93ef086?response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27%255B%25E7%25B9%2581%25E4%25BD%2593%25E4%25B8%25AD%25E8%258B%25B1ASS%255DOnly.Murders.in.the.Building.S01E10.WEBDL.FIX%25E5%25AD%2597%25E5%25B9%2595%25E4%25BE%25A0.ass&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20250106T060420Z&X-Amz-SignedHeaders=host&X-Amz-Expires=900&X-Amz-Credential=9T1UKBIX6OJSR5XN2F2T%2F20250106%2Fdefault%2Fs3%2Faws4_request&X-Amz-Signature=a0fe5789e02ecb56a1625f80c902a8aae928c111a6a5b71116bc1783476dbaa1',
+            ),
+          );
+          print('测试字幕加载成功');
+        } catch (e) {
+          print('测试字幕加载失败: $e');
+        }
+      },
+      icon: const Icon(
+        Icons.bug_report,
+        color: Colors.white,
       ),
     );
   }
