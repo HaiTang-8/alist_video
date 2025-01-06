@@ -67,7 +67,6 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加字幕相关状态
   SubtitleTrack? _currentSubtitle;
-  List<SubtitleTrack> _subtitleTracks = [];
 
   // 添加一个字幕文件列表
   final List<SubtitleInfo> _availableSubtitles = [];
@@ -326,9 +325,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 监听字幕轨道变化
     player.stream.tracks.listen((tracks) {
-      setState(() {
-        _subtitleTracks = tracks.subtitle;
-      });
+      setState(() {});
     });
 
     // 监听当前选中的字幕
