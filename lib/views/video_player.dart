@@ -72,6 +72,12 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加一个字幕文件列表
   final List<SubtitleInfo> _availableSubtitles = [];
 
+  // 添加搜索控制器
+  final TextEditingController _subtitleSearchController =
+      TextEditingController();
+  // 添加搜索结果状态
+  String _subtitleSearchQuery = '';
+
   Future<void> _loadSeekSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -416,6 +422,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 执行清理
     cleanup();
+
+    _subtitleSearchController.dispose();
   }
 
   @override
@@ -1105,75 +1113,95 @@ class VideoPlayerState extends State<VideoPlayer> {
   Widget buildSubtitleButton() {
     return MaterialCustomButton(
       onPressed: () {
+        // 打开对话框时清空搜索
+        _subtitleSearchController.clear();
+        _subtitleSearchQuery = '';
+
         showDialog(
           context: context,
-          builder: (context) => Dialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Container(
-              width: 300,
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.7, // 限制最大高度
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // 固定的标题部分
-                  Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      children: [
-                        Row(
-                          children: [
-                            Icon(Icons.subtitles,
-                                color: Theme.of(context).primaryColor),
-                            const SizedBox(width: 12),
-                            const Text(
-                              '选择字幕',
-                              style: TextStyle(
-                                fontSize: 20,
-                                fontWeight: FontWeight.bold,
+          builder: (context) => StatefulBuilder(
+            builder: (context, setDialogState) => Dialog(
+              child: Container(
+                width: 400,
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.9,
+                  maxHeight: MediaQuery.of(context).size.height * 0.8,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        children: [
+                          Row(
+                            children: [
+                              Icon(Icons.subtitles,
+                                  color: Theme.of(context).primaryColor),
+                              const SizedBox(width: 12),
+                              const Text('选择字幕',
+                                  style: TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                  )),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          TextField(
+                            controller: _subtitleSearchController,
+                            decoration: InputDecoration(
+                              hintText: '搜索字幕...',
+                              prefixIcon: const Icon(Icons.search),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
                               ),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '可用字幕轨道',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 14,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                _subtitleSearchQuery = value.toLowerCase();
+                              });
+                            },
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Divider(height: 1),
-                  // 可滚动的选项部分
-                  Flexible(
-                    child: SingleChildScrollView(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          // 关闭字幕选项
-                          _buildSubtitleOption(
-                            SubtitleTrack.no(),
-                            '关闭字幕',
-                          ),
-                          // 可用字幕选项
-                          ..._availableSubtitles
-                              .map((subtitle) => _buildSubtitleOption(
-                                    SubtitleTrack.uri('', title: subtitle.name),
-                                    subtitle.name,
-                                  )),
                         ],
                       ),
                     ),
-                  ),
-                ],
+                    const Divider(height: 1),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+                        child: Wrap(
+                          spacing: 12,
+                          runSpacing: 12,
+                          children: [
+                            if (_subtitleSearchQuery.isEmpty)
+                              _buildSubtitleOption(
+                                context,
+                                SubtitleTrack.no(),
+                                '关闭字幕',
+                                setDialogState,
+                              ),
+                            ..._availableSubtitles
+                                .where((subtitle) => subtitle.name
+                                    .toLowerCase()
+                                    .contains(_subtitleSearchQuery))
+                                .map((subtitle) => _buildSubtitleOption(
+                                      context,
+                                      SubtitleTrack.uri('',
+                                          title: subtitle.name),
+                                      subtitle.name,
+                                      setDialogState,
+                                    )),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1186,23 +1214,24 @@ class VideoPlayerState extends State<VideoPlayer> {
     );
   }
 
-  Widget _buildSubtitleOption(SubtitleTrack track, String label) {
-    final isSelected = _currentSubtitle?.id == track.id;
+  Widget _buildSubtitleOption(BuildContext context, SubtitleTrack track,
+      String label, StateSetter setDialogState) {
+    final isSelected = _currentSubtitle?.title == label;
 
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () async {
-          // 记住当前的播放状态
           final wasPlaying = player.state.playing;
-
-          // 暂停播放
           await player.pause();
 
           try {
             if (track.id == 'no') {
               await player.setSubtitleTrack(track);
+              setDialogState(() {
+                _currentSubtitle = track;
+              });
             } else {
               final subtitleInfo = _availableSubtitles.firstWhere(
                 (s) => s.name == label,
@@ -1230,10 +1259,15 @@ class VideoPlayerState extends State<VideoPlayer> {
                   title: subtitleInfo.name,
                 ),
               );
+              setDialogState(() {
+                _currentSubtitle = SubtitleTrack.uri(
+                  subtitleInfo.rawUrl!,
+                  title: subtitleInfo.name,
+                );
+              });
               print('字幕加载成功: ${subtitleInfo.name}');
             }
 
-            // 如果之前是播放状态，恢复播放
             if (wasPlaying) {
               await player.play();
             }
@@ -1254,7 +1288,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           }
         },
         child: Container(
-          width: double.infinity, // 让每个选项占满宽度
+          width: double.infinity,
           padding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 12,
