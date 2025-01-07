@@ -21,11 +21,12 @@ class VideoPlayer extends StatefulWidget {
 class SubtitleInfo {
   final String name;
   final String path;
-  String? rawUrl;
+  final String rawUrl;
 
   SubtitleInfo({
     required this.name,
     required this.path,
+    required this.rawUrl,
   });
 }
 
@@ -178,7 +179,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           }
         });
 
-        // 收集字幕文件信息
+        // 修改字幕文件收集方式
         final subtitleFiles = res.data?.content
             ?.where((data) =>
                 data.name?.toLowerCase().endsWith('.srt') == true ||
@@ -189,9 +190,15 @@ class VideoPlayerState extends State<VideoPlayer> {
         if (subtitleFiles != null && subtitleFiles.isNotEmpty) {
           _availableSubtitles.clear();
           for (var subtitle in subtitleFiles) {
+            String baseUrl = baseDownloadUrl;
+            if (basePath != '/') {
+              baseUrl = '$baseUrl$basePath';
+            }
             _availableSubtitles.add(SubtitleInfo(
               name: subtitle.name ?? '',
               path: '${widget.path.substring(1)}/${subtitle.name}',
+              rawUrl:
+                  '$baseUrl${widget.path.substring(1)}/${subtitle.name}?sign=${subtitle.sign}',
             ));
           }
         }
@@ -1232,23 +1239,14 @@ class VideoPlayerState extends State<VideoPlayer> {
             } else {
               final subtitleInfo = _availableSubtitles.firstWhere(
                 (s) => s.name == label,
-                orElse: () => SubtitleInfo(name: label, path: ''),
+                orElse: () => SubtitleInfo(
+                  name: label,
+                  path: '',
+                  rawUrl: '',
+                ),
               );
 
-              if (subtitleInfo.rawUrl == null) {
-                final subtitleRes = await FsApi.get(
-                  path: subtitleInfo.path,
-                  password: '',
-                );
-
-                if (subtitleRes.code == 200 &&
-                    subtitleRes.data?.rawUrl != null) {
-                  subtitleInfo.rawUrl = subtitleRes.data!.rawUrl;
-                } else {
-                  throw Exception('获取字幕链接失败');
-                }
-              }
-
+              // 直接使用预先生成的 URL
               await player.setSubtitleTrack(SubtitleTrack.no());
               await player.setSubtitleTrack(
                 SubtitleTrack.uri(
