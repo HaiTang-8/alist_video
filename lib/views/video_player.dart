@@ -1250,13 +1250,13 @@ class VideoPlayerState extends State<VideoPlayer> {
               await player.setSubtitleTrack(SubtitleTrack.no());
               await player.setSubtitleTrack(
                 SubtitleTrack.uri(
-                  subtitleInfo.rawUrl!,
+                  subtitleInfo.rawUrl,
                   title: subtitleInfo.name,
                 ),
               );
               setDialogState(() {
                 _currentSubtitle = SubtitleTrack.uri(
-                  subtitleInfo.rawUrl!,
+                  subtitleInfo.rawUrl,
                   title: subtitleInfo.name,
                 );
               });
