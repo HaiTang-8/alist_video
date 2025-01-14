@@ -78,6 +78,11 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加搜索结果状态
   String _subtitleSearchQuery = '';
 
+  // 添加错误管理相关变量
+  final Map<String, DateTime> _shownErrors = {};
+  static const _errorCooldown = Duration(seconds: 5);
+  SnackBar? _currentErrorSnackBar;
+
   Future<void> _loadSeekSettings() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -318,15 +323,10 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
 
+    // 修改错误监听处理
     player.stream.error.listen((error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('播放错误: ${error.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
+        _showErrorMessage(error.toString());
       }
     });
 
@@ -1331,6 +1331,56 @@ class VideoPlayerState extends State<VideoPlayer> {
         color: Colors.white,
       ),
     );
+  }
+
+  // 添加错误处理方法
+  void _showErrorMessage(String error) {
+    // 检查是否是重复错误且在冷却时间内
+    final now = DateTime.now();
+    final lastShown = _shownErrors[error];
+    if (lastShown != null && now.difference(lastShown) < _errorCooldown) {
+      return;
+    }
+
+    // 更新错误显示时间
+    _shownErrors[error] = now;
+
+    // 如果有正在显示的错误提示，先移除它
+    if (_currentErrorSnackBar != null) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    }
+
+    // 创建新的错误提示
+    _currentErrorSnackBar = SnackBar(
+      content: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.white),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '播放错误: $error',
+              style: const TextStyle(color: Colors.white),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+      backgroundColor: Colors.red,
+      duration: const Duration(seconds: 3),
+      action: SnackBarAction(
+        label: '关闭',
+        textColor: Colors.white,
+        onPressed: () {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        },
+      ),
+    );
+
+    // 显示错误提示
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(_currentErrorSnackBar!);
+    }
   }
 }
 
