@@ -29,6 +29,9 @@ class _HomePageState extends State<HomePage>
   late AnimationController _animationController;
   bool _isSelectMode = false;
   final Set<FileItem> _selectedFiles = {};
+  bool _isSearchMode = false;
+  String _searchKeyword = '';
+  int _searchScope = 0;
 
   Future<void> _getList({bool refresh = false}) async {
     if (refresh) {
@@ -53,6 +56,7 @@ class _HomePageState extends State<HomePage>
                         size: data.size ?? 0,
                         modified: DateTime.tryParse(data.modified ?? '') ??
                             DateTime.now(),
+                        parent: data.parent ?? currentPath.join('/'),
                       ))
                   .toList() ??
               [];
@@ -104,11 +108,460 @@ class _HomePageState extends State<HomePage>
   }
 
   void _gotoVideo(FileItem file) {
+    print("path: ${currentPath.join('/')}");
+    print("name: ${file.name}");
+    print("file: ${file}");
     Navigator.of(context).push(MaterialPageRoute(
         builder: (context) => VideoPlayer(
               path: currentPath.join('/'),
               name: file.name,
             )));
+  }
+
+  Future<void> _search() async {
+    try {
+      var res = await FsApi.search(
+        keyword: _searchKeyword,
+        parent: currentPath.join('/'),
+        scope: _searchScope,
+        page: 1,
+        per_page: 100,
+        password: '',
+      );
+      if (res.code == 200) {
+        setState(() {
+          files = res.data?.content
+                  ?.map((data) => FileItem(
+                        type: data.type ?? -1,
+                        sha1: data.hashInfo?.sha1 ?? '',
+                        name: data.name ?? '',
+                        size: data.size ?? 0,
+                        modified: DateTime.tryParse(data.modified ?? '') ??
+                            DateTime.now(),
+                        parent: data.parent ?? currentPath.join('/'),
+                      ))
+                  .toList() ??
+              [];
+        });
+      } else {
+        _handleError(res.message ?? '搜索失败');
+      }
+    } catch (e) {
+      _handleError('搜索失败,请检查网络连接');
+    }
+  }
+
+  // 执行搜索
+  Future<void> _performSearch(
+      StateSetter setState, List<FileItem> searchResults) async {
+    if (_searchKeyword.trim().isEmpty) {
+      setState(() {
+        searchResults.clear();
+      });
+      return;
+    }
+
+    try {
+      print('Searching with scope: $_searchScope');
+      var res = await FsApi.search(
+        keyword: _searchKeyword,
+        parent: currentPath.join('/'),
+        scope: _searchScope,
+        page: 1,
+        per_page: 100,
+        password: '',
+      );
+      if (res.code == 200) {
+        setState(() {
+          searchResults.clear();
+          searchResults.addAll(
+            res.data?.content
+                    ?.map((data) => FileItem(
+                          type: data.type ?? -1,
+                          sha1: data.hashInfo?.sha1 ?? '',
+                          name: data.name ?? '',
+                          size: data.size ?? 0,
+                          modified: DateTime.tryParse(data.modified ?? '') ??
+                              DateTime.now(),
+                          parent: data.parent ?? currentPath.join('/'),
+                        ))
+                    .toList() ??
+                [],
+          );
+        });
+      } else {
+        _handleError(res.message ?? '搜索失败');
+      }
+    } catch (e) {
+      _handleError('搜索失败,请检查网络连接');
+    }
+  }
+
+  void _showSearchDialog() {
+    // 创建一个临时的搜索结果列表，改为类成员变量
+    List<FileItem> dialogSearchResults = [];
+
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          width: 500,
+          height: 600,
+          padding: const EdgeInsets.all(24),
+          child: StatefulBuilder(
+            builder: (context, setState) => Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '搜索',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                TextField(
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: '请输入搜索关键词',
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    _searchKeyword = value;
+                    if (value.trim().isNotEmpty) {
+                      _performSearch(setState, dialogSearchResults);
+                    } else {
+                      setState(() {
+                        dialogSearchResults.clear();
+                      });
+                    }
+                  },
+                ),
+                const SizedBox(height: 24),
+                Container(
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[100],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: _buildFilterOption(
+                          context,
+                          (value) {
+                            setState(() {
+                              _searchScope = value;
+                              if (_searchKeyword.trim().isNotEmpty) {
+                                _performSearch(setState, dialogSearchResults);
+                              }
+                            });
+                          },
+                          0,
+                          '全部',
+                          Icons.apps,
+                        ),
+                      ),
+                      Expanded(
+                        child: _buildFilterOption(
+                          context,
+                          (value) {
+                            setState(() {
+                              _searchScope = value;
+                              if (_searchKeyword.trim().isNotEmpty) {
+                                _performSearch(setState, dialogSearchResults);
+                              }
+                            });
+                          },
+                          1,
+                          '文件夹',
+                          Icons.folder,
+                        ),
+                      ),
+                      Expanded(
+                        child: _buildFilterOption(
+                          context,
+                          (value) {
+                            setState(() {
+                              _searchScope = value;
+                              if (_searchKeyword.trim().isNotEmpty) {
+                                _performSearch(setState, dialogSearchResults);
+                              }
+                            });
+                          },
+                          2,
+                          '文件',
+                          Icons.insert_drive_file,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                if (dialogSearchResults.isNotEmpty) ...[
+                  Text(
+                    '搜索结果 (${dialogSearchResults.length})',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                Expanded(
+                  child: dialogSearchResults.isEmpty
+                      ? Center(
+                          child: Text(
+                            _searchKeyword.isEmpty ? '请输入搜索关键词' : '无搜索结果',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          itemCount: dialogSearchResults.length,
+                          itemBuilder: (context, index) {
+                            final file = dialogSearchResults[index];
+                            return _buildSearchResultItem(
+                              context,
+                              file,
+                              _searchKeyword,
+                            );
+                          },
+                        ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('关闭'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 构建搜索结果项
+  Widget _buildSearchResultItem(
+    BuildContext context,
+    FileItem file,
+    String keyword,
+  ) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          Navigator.pop(context);
+          if (file.type == 1) {
+            // 构建完整路径
+            List<String> newPath = ['/'];
+            if (file.parent.isNotEmpty) {
+              newPath.addAll(file.parent.split('/').where((e) => e.isNotEmpty));
+            }
+            newPath.add(file.name);
+
+            setState(() {
+              currentPath = newPath;
+            });
+            _getList();
+          } else if (file.type == 2) {
+            // 构建视频路径
+            List<String> videoPath = ['/'];
+            if (file.parent.isNotEmpty) {
+              videoPath
+                  .addAll(file.parent.split('/').where((e) => e.isNotEmpty));
+            }
+
+            print("Video path: ${videoPath.join('/')}");
+            print("Video name: ${file.name}");
+
+            Navigator.of(context).push(MaterialPageRoute(
+              builder: (context) => VideoPlayer(
+                path: videoPath.join('/'),
+                name: file.name,
+              ),
+            ));
+          }
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Colors.grey[200]!),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    file.type == 1 ? Icons.folder : Icons.insert_drive_file,
+                    size: 20,
+                    color: file.type == 1 ? Colors.blue : Colors.grey[600],
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildHighlightedText(file.name, keyword),
+                  ),
+                  if (file.type == 2) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      _formatSize(file.size),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(
+                file.parent,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[500],
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 构建高亮文本
+  Widget _buildHighlightedText(String text, String keyword) {
+    if (keyword.isEmpty) {
+      return Text(text);
+    }
+
+    List<TextSpan> spans = [];
+    int start = 0;
+    String lowerText = text.toLowerCase();
+    String lowerKeyword = keyword.toLowerCase();
+
+    while (true) {
+      int index = lowerText.indexOf(lowerKeyword, start);
+      if (index == -1) {
+        spans.add(TextSpan(
+          text: text.substring(start),
+          style: const TextStyle(fontSize: 14),
+        ));
+        break;
+      }
+
+      if (index > start) {
+        spans.add(TextSpan(
+          text: text.substring(start, index),
+          style: const TextStyle(fontSize: 14),
+        ));
+      }
+
+      spans.add(TextSpan(
+        text: text.substring(index, index + keyword.length),
+        style: const TextStyle(
+          fontSize: 14,
+          color: Colors.blue,
+          fontWeight: FontWeight.bold,
+          backgroundColor: Color(0x1A2196F3), // 浅蓝色背景
+        ),
+      ));
+
+      start = index + keyword.length;
+    }
+
+    return RichText(
+      text: TextSpan(
+        style: DefaultTextStyle.of(context).style,
+        children: spans,
+      ),
+    );
+  }
+
+  String _formatSize(int size) {
+    if (size < 1024) return '$size B';
+    if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} KB';
+    if (size < 1024 * 1024 * 1024) {
+      return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+
+  Widget _buildFilterOption(
+    BuildContext context,
+    Function(int) onValueChanged,
+    int value,
+    String label,
+    IconData icon,
+  ) {
+    final isSelected = _searchScope == value;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          print('Filter changed to: $value');
+          onValueChanged(value);
+        },
+        child: Container(
+          height: double.infinity,
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isSelected
+                ? Border.all(color: Theme.of(context).primaryColor, width: 1)
+                : null,
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.grey.withOpacity(0.1),
+                      spreadRadius: 1,
+                      blurRadius: 1,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: isSelected
+                    ? Theme.of(context).primaryColor
+                    : Colors.grey[600],
+              ),
+              const SizedBox(width: 4),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: isSelected
+                      ? Theme.of(context).primaryColor
+                      : Colors.grey[600],
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -139,27 +592,52 @@ class _HomePageState extends State<HomePage>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          'Alist Player',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        title: _isSearchMode
+            ? Text(
+                '搜索: $_searchKeyword',
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              )
+            : const Text(
+                'Alist Player',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
         elevation: 1,
         backgroundColor: Colors.white,
         foregroundColor: Colors.black87,
         actions: [
-          if (files.isNotEmpty)
+          if (_isSearchMode)
             IconButton(
-              icon: Icon(_isSelectMode ? Icons.close : Icons.checklist),
+              icon: const Icon(Icons.close),
               onPressed: () {
                 setState(() {
-                  _isSelectMode = !_isSelectMode;
-                  _selectedFiles.clear();
+                  _isSearchMode = false;
+                  _searchKeyword = '';
                 });
+                _getList();
               },
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: _showSearchDialog,
             ),
+            if (files.isNotEmpty)
+              IconButton(
+                icon: Icon(_isSelectMode ? Icons.close : Icons.checklist),
+                onPressed: () {
+                  setState(() {
+                    _isSelectMode = !_isSelectMode;
+                    _selectedFiles.clear();
+                  });
+                },
+              ),
+          ],
         ],
       ),
       body: Column(
@@ -548,15 +1026,6 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  String _formatSize(int size) {
-    if (size < 1024) return '$size B';
-    if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} KB';
-    if (size < 1024 * 1024 * 1024) {
-      return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
-  }
-
   // 面包屑导航动画
   Widget _buildBreadcrumb() {
     return SlideTransition(
@@ -742,11 +1211,14 @@ class FileItem {
   final DateTime modified;
   final int type;
   final String sha1;
+  final String parent;
 
-  FileItem(
-      {required this.name,
-      required this.size,
-      required this.modified,
-      required this.type,
-      required this.sha1});
+  FileItem({
+    required this.name,
+    required this.size,
+    required this.modified,
+    required this.type,
+    required this.sha1,
+    required this.parent,
+  });
 }

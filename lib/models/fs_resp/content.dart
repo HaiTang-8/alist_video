@@ -11,6 +11,7 @@ class Content {
   int? type;
   String? hashinfo;
   HashInfo? hashInfo;
+  String? parent;
 
   Content({
     this.name,
@@ -23,6 +24,7 @@ class Content {
     this.type,
     this.hashinfo,
     this.hashInfo,
+    this.parent,
   });
 
   factory Content.fromJson(Map<String, dynamic> json) => Content(
@@ -38,6 +40,7 @@ class Content {
         hashInfo: json['hash_info'] == null
             ? null
             : HashInfo.fromJson(json['hash_info'] as Map<String, dynamic>),
+        parent: json['parent'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -51,5 +54,6 @@ class Content {
         'type': type,
         'hashinfo': hashinfo,
         'hash_info': hashInfo?.toJson(),
+        'parent': parent,
       };
 }

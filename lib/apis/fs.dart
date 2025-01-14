@@ -29,6 +29,25 @@ class FsApi {
     });
     return FsGetResponse.fromJson(res.data);
   }
+
+  static Future<FsResp> search({
+    required String keyword,
+    required String parent,
+    required int scope,
+    required int page,
+    required int per_page,
+    required String password,
+  }) async {
+    var res = await WooHttpUtil().post('/api/fs/search', data: {
+      'keywords': keyword,
+      'parent': parent,
+      'scope': scope,
+      'page': page,
+      'per_page': per_page,
+      'password': password,
+    });
+    return FsResp.fromJson(res.data);
+  }
 }
 
 class FsGetResponse {
