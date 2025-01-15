@@ -1,11 +1,9 @@
 import 'package:alist_player/main.dart';
-import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/woo_http.dart';
 import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:alist_player/views/settings/playback_settings_page.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/views/storage_page.dart';
 
 class PersonPage extends StatefulWidget {
