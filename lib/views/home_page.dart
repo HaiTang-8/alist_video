@@ -118,39 +118,6 @@ class _HomePageState extends State<HomePage>
             )));
   }
 
-  Future<void> _search() async {
-    try {
-      var res = await FsApi.search(
-        keyword: _searchKeyword,
-        parent: currentPath.join('/'),
-        scope: _searchScope,
-        page: 1,
-        per_page: 100,
-        password: '',
-      );
-      if (res.code == 200) {
-        setState(() {
-          files = res.data?.content
-                  ?.map((data) => FileItem(
-                        type: data.type ?? -1,
-                        sha1: data.hashInfo?.sha1 ?? '',
-                        name: data.name ?? '',
-                        size: data.size ?? 0,
-                        modified: DateTime.tryParse(data.modified ?? '') ??
-                            DateTime.now(),
-                        parent: data.parent ?? currentPath.join('/'),
-                      ))
-                  .toList() ??
-              [];
-        });
-      } else {
-        _handleError(res.message ?? '搜索失败');
-      }
-    } catch (e) {
-      _handleError('搜索失败,请检查网络连接');
-    }
-  }
-
   // 执行搜索
   Future<void> _performSearch(
       StateSetter setState, List<FileItem> searchResults) async {
@@ -203,151 +170,158 @@ class _HomePageState extends State<HomePage>
 
     showDialog(
       context: context,
-      builder: (context) => Dialog(
-        child: Container(
-          width: 500,
-          height: 600,
-          padding: const EdgeInsets.all(24),
-          child: StatefulBuilder(
-            builder: (context, setState) => Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '搜索',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+      builder: (context) {
+        // 获取屏幕尺寸
+        final size = MediaQuery.of(context).size;
+        final dialogWidth = size.width * 0.8;
+        final dialogHeight = size.height * 0.8;
+
+        return Dialog(
+          child: Container(
+            width: dialogWidth,
+            height: dialogHeight,
+            padding: const EdgeInsets.all(24),
+            child: StatefulBuilder(
+              builder: (context, setState) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '搜索',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 24),
-                TextField(
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: '请输入搜索关键词',
-                    prefixIcon: Icon(Icons.search),
-                    border: OutlineInputBorder(),
+                  const SizedBox(height: 24),
+                  TextField(
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      hintText: '请输入搜索关键词',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      _searchKeyword = value;
+                      if (value.trim().isNotEmpty) {
+                        _performSearch(setState, dialogSearchResults);
+                      } else {
+                        setState(() {
+                          dialogSearchResults.clear();
+                        });
+                      }
+                    },
                   ),
-                  onChanged: (value) {
-                    _searchKeyword = value;
-                    if (value.trim().isNotEmpty) {
-                      _performSearch(setState, dialogSearchResults);
-                    } else {
-                      setState(() {
-                        dialogSearchResults.clear();
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[100],
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(height: 24),
+                  Container(
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[100],
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildFilterOption(
+                            context,
+                            (value) {
+                              setState(() {
+                                _searchScope = value;
+                                if (_searchKeyword.trim().isNotEmpty) {
+                                  _performSearch(setState, dialogSearchResults);
+                                }
+                              });
+                            },
+                            0,
+                            '全部',
+                            Icons.apps,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildFilterOption(
+                            context,
+                            (value) {
+                              setState(() {
+                                _searchScope = value;
+                                if (_searchKeyword.trim().isNotEmpty) {
+                                  _performSearch(setState, dialogSearchResults);
+                                }
+                              });
+                            },
+                            1,
+                            '文件夹',
+                            Icons.folder,
+                          ),
+                        ),
+                        Expanded(
+                          child: _buildFilterOption(
+                            context,
+                            (value) {
+                              setState(() {
+                                _searchScope = value;
+                                if (_searchKeyword.trim().isNotEmpty) {
+                                  _performSearch(setState, dialogSearchResults);
+                                }
+                              });
+                            },
+                            2,
+                            '文件',
+                            Icons.insert_drive_file,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Row(
+                  const SizedBox(height: 16),
+                  if (dialogSearchResults.isNotEmpty) ...[
+                    Text(
+                      '搜索结果 (${dialogSearchResults.length})',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Expanded(
+                    child: dialogSearchResults.isEmpty
+                        ? Center(
+                            child: Text(
+                              _searchKeyword.isEmpty ? '请输入搜索关键词' : '无搜索结果',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 14,
+                              ),
+                            ),
+                          )
+                        : ListView.builder(
+                            itemCount: dialogSearchResults.length,
+                            itemBuilder: (context, index) {
+                              final file = dialogSearchResults[index];
+                              return _buildSearchResultItem(
+                                context,
+                                file,
+                                _searchKeyword,
+                              );
+                            },
+                          ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Expanded(
-                        child: _buildFilterOption(
-                          context,
-                          (value) {
-                            setState(() {
-                              _searchScope = value;
-                              if (_searchKeyword.trim().isNotEmpty) {
-                                _performSearch(setState, dialogSearchResults);
-                              }
-                            });
-                          },
-                          0,
-                          '全部',
-                          Icons.apps,
-                        ),
-                      ),
-                      Expanded(
-                        child: _buildFilterOption(
-                          context,
-                          (value) {
-                            setState(() {
-                              _searchScope = value;
-                              if (_searchKeyword.trim().isNotEmpty) {
-                                _performSearch(setState, dialogSearchResults);
-                              }
-                            });
-                          },
-                          1,
-                          '文件夹',
-                          Icons.folder,
-                        ),
-                      ),
-                      Expanded(
-                        child: _buildFilterOption(
-                          context,
-                          (value) {
-                            setState(() {
-                              _searchScope = value;
-                              if (_searchKeyword.trim().isNotEmpty) {
-                                _performSearch(setState, dialogSearchResults);
-                              }
-                            });
-                          },
-                          2,
-                          '文件',
-                          Icons.insert_drive_file,
-                        ),
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('关闭'),
                       ),
                     ],
                   ),
-                ),
-                const SizedBox(height: 16),
-                if (dialogSearchResults.isNotEmpty) ...[
-                  Text(
-                    '搜索结果 (${dialogSearchResults.length})',
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey[600],
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                 ],
-                Expanded(
-                  child: dialogSearchResults.isEmpty
-                      ? Center(
-                          child: Text(
-                            _searchKeyword.isEmpty ? '请输入搜索关键词' : '无搜索结果',
-                            style: TextStyle(
-                              color: Colors.grey[600],
-                              fontSize: 14,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          itemCount: dialogSearchResults.length,
-                          itemBuilder: (context, index) {
-                            final file = dialogSearchResults[index];
-                            return _buildSearchResultItem(
-                              context,
-                              file,
-                              _searchKeyword,
-                            );
-                          },
-                        ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('关闭'),
-                    ),
-                  ],
-                ),
-              ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 

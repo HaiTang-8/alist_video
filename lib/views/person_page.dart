@@ -422,6 +422,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
   late TextEditingController _passwordController;
   late TextEditingController _portController;
   bool _isTesting = false;
+  bool _showPassword = false;
 
   @override
   void initState() {
@@ -610,7 +611,19 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
               label: '密码',
               icon: Icons.lock_outline_rounded,
               hint: '数据库密码',
-              obscureText: true,
+              obscureText: !_showPassword,
+              suffixIcon: IconButton(
+                icon: Icon(
+                  _showPassword ? Icons.visibility_off : Icons.visibility,
+                  color: Colors.grey[400],
+                  size: 20,
+                ),
+                onPressed: () {
+                  setState(() {
+                    _showPassword = !_showPassword;
+                  });
+                },
+              ),
             ),
             const SizedBox(height: 32),
             Row(
@@ -685,6 +698,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
     required String hint,
     bool obscureText = false,
     TextInputType? keyboardType,
+    Widget? suffixIcon,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -711,6 +725,7 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
               hintText: hint,
               hintStyle: TextStyle(color: Colors.grey[400]),
               prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
+              suffixIcon: suffixIcon,
               border: InputBorder.none,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
