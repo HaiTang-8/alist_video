@@ -1,45 +1,12 @@
-import 'package:alist_player/apis/login.dart';
-import 'package:alist_player/constants/app_constants.dart';
-import 'package:alist_player/utils/db.dart';
-import 'package:alist_player/views/index.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
-import 'package:flutter_svg/svg.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:alist_player/views/index.dart';
+import 'package:alist_player/apis/login.dart';
+import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:toastification/toastification.dart';
-import 'package:timeago/timeago.dart' as timeago;
 
-Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  MediaKit.ensureInitialized();
-
-  // 添加中文语言支持
-  timeago.setLocaleMessages('zh', timeago.ZhMessages());
-  timeago.setLocaleMessages('zh_CN', timeago.ZhCnMessages());
-
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final db = DatabaseHelper.instance;
-    await db.init(
-      host:
-          prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost,
-      port: prefs.getInt(AppConstants.dbPortKey) ?? AppConstants.defaultDbPort,
-      database:
-          prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName,
-      username:
-          prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser,
-      password: prefs.getString(AppConstants.dbPasswordKey) ??
-          AppConstants.defaultDbPassword,
-    );
-
-    // 测试连接
-    await db.query('SELECT 1');
-    print('Database connection test successful');
-  } catch (e) {
-    print('Database initialization failed: $e');
-  }
-
+void main() {
   runApp(const MyApp());
 }
 
@@ -50,7 +17,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return ToastificationWrapper(
       child: MaterialApp(
-        title: 'AList Video',
+        title: 'AList Player',
         theme: ThemeData(
           useMaterial3: true,
           fontFamily: 'Microsoft YaHei',
@@ -182,6 +149,8 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _rememberMe = false;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
@@ -191,213 +160,276 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _loadSavedCredentials() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedUsername = prefs.getString('saved_username');
-    final savedPassword = prefs.getString('saved_password');
-    final rememberMe = prefs.getBool('remember_me') ?? false;
-
-    if (savedUsername != null && savedPassword != null && rememberMe) {
-      setState(() {
-        _usernameController.text = savedUsername;
-        _passwordController.text = savedPassword;
-        _rememberMe = rememberMe;
-      });
-      // Auto login if credentials are saved
-      _login();
-    }
+    setState(() {
+      _rememberMe = prefs.getBool('remember_me') ?? false;
+      if (_rememberMe) {
+        _usernameController.text = prefs.getString('username') ?? '';
+        _passwordController.text = prefs.getString('password') ?? '';
+      }
+    });
   }
 
   Future<void> _login() async {
-    var username = _usernameController.text;
-    var password = _passwordController.text;
+    if (_usernameController.text.isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请输入用户名和密码'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
 
-    var res = await LoginApi.login(username: username, password: password);
+    setState(() {
+      _isLoading = true;
+    });
 
-    if (res.code != 200) {
-      if (mounted) {
-        toastification.show(
-          context: context,
-          type: ToastificationType.error,
-          title: Text(res.message ?? '登录失败'),
-          autoCloseDuration: const Duration(seconds: 3),
+    try {
+      final res = await LoginApi.login(
+        username: _usernameController.text,
+        password: _passwordController.text,
+      );
+
+      if (res.code == 200) {
+        final prefs = await SharedPreferences.getInstance();
+        if (_rememberMe) {
+          await prefs.setString('username', _usernameController.text);
+          await prefs.setString('password', _passwordController.text);
+        } else {
+          await prefs.remove('username');
+          await prefs.remove('password');
+        }
+        await prefs.setBool('remember_me', _rememberMe);
+        await prefs.setString('current_username', _usernameController.text);
+        await prefs.setString('token', res.data!.token!);
+
+        // 获取并保存 base_path
+        try {
+          final userInfo = await LoginApi.me();
+          await prefs.setString('base_path', userInfo.basePath);
+        } catch (e) {
+          print('Failed to fetch user info: $e');
+        }
+
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => const IndexPage()),
+        );
+      } else {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('登录失败：${res.message}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
-    } else {
-      SharedPreferences prefs = await SharedPreferences.getInstance();
-      await prefs.setString('token', res.data!.token!);
-
-      // Save credentials if remember me is checked
-      if (_rememberMe) {
-        await prefs.setString('saved_username', username);
-        await prefs.setString('saved_password', password);
-        await prefs.setBool('remember_me', true);
-      } else {
-        // Clear saved credentials if remember me is unchecked
-        await prefs.remove('saved_username');
-        await prefs.remove('saved_password');
-        await prefs.setBool('remember_me', false);
-      }
-
-      // 保存当前登录的用户名
-      await prefs.setString('current_username', username);
-
-      // 获取并保存 base_path
-      try {
-        final userInfo = await LoginApi.me();
-        await prefs.setString('base_path', userInfo.basePath);
-      } catch (e) {
-        print('Failed to fetch user info: $e');
-      }
-
+    } catch (e) {
       if (!mounted) return;
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (context) => const IndexPage()),
-        (route) => false,
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('登录失败：$e'),
+          backgroundColor: Colors.red,
+        ),
       );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
-  }
-
-  void _clear() async {
-    _usernameController.clear();
-    _passwordController.clear();
-    setState(() {
-      _rememberMe = false;
-    });
-    // Clear saved credentials
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('saved_username');
-    await prefs.remove('saved_password');
-    await prefs.setBool('remember_me', false);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        children: [
-          Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  Color(0xFF2C68D5), // 主色调
-                  Color(0xFF64B5F6), // 次色调
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Theme.of(context).primaryColor,
+              Theme.of(context).primaryColor.withOpacity(0.8),
+              Theme.of(context).primaryColor.withOpacity(0.6),
+            ],
           ),
-          Center(
-            child: Container(
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            child: Padding(
               padding: const EdgeInsets.all(24.0),
-              margin: const EdgeInsets.symmetric(horizontal: 24.0),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16.0),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.1),
-                    blurRadius: 20.0,
-                    spreadRadius: 5.0,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SvgPicture.asset(
-                        'assets/images/logo.svg',
-                        width: 32,
-                        height: 32,
-                      ),
-                      const SizedBox(width: 8.0),
-                      const Text(
-                        '登录到 AList',
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
+                  // Logo and Title
+                  const Icon(
+                    Icons.play_circle_outline,
+                    size: 80,
+                    color: Colors.white,
                   ),
-                  const SizedBox(height: 16.0),
-                  TextField(
-                    controller: _usernameController,
-                    decoration: const InputDecoration(
-                      labelText: 'Username',
-                      border: OutlineInputBorder(),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'AList Player',
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
-                  const SizedBox(height: 16.0),
-                  TextField(
-                    controller: _passwordController,
-                    decoration: const InputDecoration(
-                      labelText: 'Password',
-                      border: OutlineInputBorder(),
+                  const SizedBox(height: 48),
+                  // Login Form
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 10,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
                     ),
-                    obscureText: true,
-                  ),
-                  const SizedBox(height: 16.0),
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _rememberMe,
-                        onChanged: (value) {
-                          setState(() {
-                            _rememberMe = value!;
-                          });
-                        },
-                      ),
-                      const Text('记住账号'),
-                      const Spacer(),
-                    ],
-                  ),
-                  const SizedBox(height: 16.0),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _clear,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.grey[100],
-                            foregroundColor: const Color(0xFF2C68D5),
-                            padding: const EdgeInsets.all(15.0),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12.0),
-                            ),
-                            elevation: 0,
+                    constraints: const BoxConstraints(maxWidth: 400),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const Text(
+                          '欢迎回来',
+                          style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
                           ),
-                          child: const Text('清除'),
                         ),
-                      ),
-                      const SizedBox(width: 16.0),
-                      Expanded(
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2C68D5),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.all(15.0),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12.0),
-                            ),
-                            elevation: 0,
+                        const SizedBox(height: 8),
+                        Text(
+                          '请登录您的账号',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 14,
                           ),
-                          onPressed: _login,
-                          child: const Text('登录'),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 24),
+                        // Username TextField
+                        TextField(
+                          controller: _usernameController,
+                          decoration: InputDecoration(
+                            labelText: '用户名',
+                            prefixIcon: const Icon(Icons.person_outline),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Password TextField
+                        TextField(
+                          controller: _passwordController,
+                          obscureText: _obscurePassword,
+                          decoration: InputDecoration(
+                            labelText: '密码',
+                            prefixIcon: const Icon(Icons.lock_outline),
+                            suffixIcon: IconButton(
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                              ),
+                              onPressed: () {
+                                setState(() {
+                                  _obscurePassword = !_obscurePassword;
+                                });
+                              },
+                            ),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Remember Me Checkbox
+                        Row(
+                          children: [
+                            Checkbox(
+                              value: _rememberMe,
+                              onChanged: (value) {
+                                setState(() {
+                                  _rememberMe = value ?? false;
+                                });
+                              },
+                            ),
+                            const Text('记住我'),
+                            const Spacer(),
+                            TextButton(
+                              onPressed: () {},
+                              child: const Text('忘记密码？'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        // Login Button
+                        ElevatedButton(
+                          onPressed: _isLoading ? null : _login,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.white),
+                                  ),
+                                )
+                              : const Text(
+                                  '登录',
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                        ),
+                        const SizedBox(height: 16),
+                        // Settings Row
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () =>
+                                  DatabaseSettingsDialog.show(context),
+                              icon: const Icon(Icons.storage),
+                              label: const Text('数据库设置'),
+                            ),
+                            const SizedBox(width: 16),
+                            TextButton.icon(
+                              onPressed: () => ApiSettingsDialog.show(context),
+                              icon: const Icon(Icons.api_rounded),
+                              label: const Text('API 设置'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 16.0),
                 ],
               ),
             ),
           ),
-        ],
+        ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
   }
 }
