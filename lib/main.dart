@@ -5,8 +5,37 @@ import 'package:alist_player/views/index.dart';
 import 'package:alist_player/apis/login.dart';
 import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:toastification/toastification.dart';
+import 'package:alist_player/utils/db.dart';
+import 'package:alist_player/constants/app_constants.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 初始化数据库连接
+  final prefs = await SharedPreferences.getInstance();
+  final dbHost =
+      prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost;
+  final dbName =
+      prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName;
+  final dbUser =
+      prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser;
+  final dbPassword = prefs.getString(AppConstants.dbPasswordKey) ??
+      AppConstants.defaultDbPassword;
+  final dbPort =
+      prefs.getInt(AppConstants.dbPortKey) ?? AppConstants.defaultDbPort;
+
+  try {
+    await DatabaseHelper.instance.init(
+      host: dbHost,
+      port: dbPort,
+      database: dbName,
+      username: dbUser,
+      password: dbPassword,
+    );
+  } catch (e) {
+    print('数据库初始化失败: $e');
+  }
+
   runApp(const MyApp());
 }
 
@@ -165,6 +194,13 @@ class _LoginPageState extends State<LoginPage> {
       if (_rememberMe) {
         _usernameController.text = prefs.getString('username') ?? '';
         _passwordController.text = prefs.getString('password') ?? '';
+        // 如果有保存的凭证，自动登录
+        if (_usernameController.text.isNotEmpty &&
+            _passwordController.text.isNotEmpty) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _login();
+          });
+        }
       }
     });
   }
