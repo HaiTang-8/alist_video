@@ -118,10 +118,10 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     }
 
     // 验证步长
-    if ((speed * 100) % (AppConstants.speedStep * 100) != 0) {
-      _showErrorMessage('播放速度必须是 ${AppConstants.speedStep}x 的倍数');
-      return;
-    }
+    // if ((speed * 100) % (AppConstants.speedStep * 100) != 0) {
+    //   _showErrorMessage('播放速度必须是 ${AppConstants.speedStep}x 的倍数');
+    //   return;
+    // }
 
     // 所有验证通过，添加新速度
     setState(() {
