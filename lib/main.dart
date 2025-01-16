@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/views/index.dart';
 import 'package:alist_player/apis/login.dart';
@@ -7,9 +8,13 @@ import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:toastification/toastification.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:timeago/timeago.dart' as timeago;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  MediaKit.ensureInitialized();
+  timeago.setLocaleMessages('zh', timeago.ZhMessages());
+  timeago.setLocaleMessages('zh_CN', timeago.ZhCnMessages());
 
   // 初始化数据库连接
   final prefs = await SharedPreferences.getInstance();
