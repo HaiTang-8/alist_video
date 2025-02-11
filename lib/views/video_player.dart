@@ -37,6 +37,10 @@ class VideoPlayerState extends State<VideoPlayer> {
   // Create a [VideoController] to handle video output from [Player].
   late final controller = VideoController(player);
 
+  // 添加播放速度的ValueNotifier
+  late final ValueNotifier<double> _rateNotifier =
+      ValueNotifier<double>(AppConstants.defaultPlaybackSpeed);
+
   List<Media> playList = [];
   int playIndex = 0;
   late int currentPlayingIndex = 0;
@@ -78,13 +82,27 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加搜索结果状态
   String _subtitleSearchQuery = '';
 
-  // 添加错误管理相关变量
+  // 处理错误管理相关变量
   final Map<String, DateTime> _shownErrors = {};
   static const _errorCooldown = Duration(seconds: 5);
   SnackBar? _currentErrorSnackBar;
 
-  Future<void> _loadSeekSettings() async {
+  // 添加自定义播放速度相关变量
+  double _customPlaybackSpeed = AppConstants.defaultCustomPlaybackSpeed;
+  bool _isCustomSpeedEnabled = false;
+
+  Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+
+    // 加载自定义播放速度
+    final customSpeed = prefs.getDouble(AppConstants.customPlaybackSpeedKey);
+    if (customSpeed != null) {
+      setState(() {
+        _customPlaybackSpeed = customSpeed;
+      });
+    }
+
+    // 加载其他设置
     setState(() {
       _shortSeekDuration = Duration(
         seconds: prefs.getInt(AppConstants.shortSeekKey) ??
@@ -283,8 +301,16 @@ class VideoPlayerState extends State<VideoPlayer> {
   @override
   void initState() {
     super.initState();
-    _loadSeekSettings();
+    _loadSettings();
     _loadPlaybackSpeeds();
+
+    // 监听播放速度变化
+    player.stream.rate.listen((rate) {
+      _rateNotifier.value = rate;
+      setState(() {
+        _currentSpeed = rate;
+      });
+    });
 
     // // 原有的其他设置
     // (player.platform as dynamic).setProperty('cache', 'no');
@@ -428,6 +454,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     cleanup();
 
     _subtitleSearchController.dispose();
+    _rateNotifier.dispose();
   }
 
   @override
@@ -1036,22 +1063,25 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 修改 buildSpeedButton 中的显示方法
   Widget buildSpeedButton() {
-    return StatefulBuilder(
-      builder: (context, setState) => MaterialCustomButton(
-        onPressed: () {
-          showDialog(
-            context: context,
-            barrierColor: Colors.black54,
-            builder: (context) => buildSpeedDialog(),
+    return MaterialCustomButton(
+      onPressed: () {
+        showDialog(
+          context: context,
+          barrierColor: Colors.black54,
+          builder: (context) => buildSpeedDialog(),
+        );
+      },
+      icon: ValueListenableBuilder<double>(
+        valueListenable: _rateNotifier,
+        builder: (context, rate, _) {
+          return Text(
+            '${rate}x',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+            ),
           );
         },
-        icon: Text(
-          '${_currentSpeed}x',
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-          ),
-        ),
       ),
     );
   }
@@ -1073,6 +1103,26 @@ class VideoPlayerState extends State<VideoPlayer> {
           player.setRate(_previousSpeed);
         },
       ): () {},
+
+      // 添加P键快捷键
+      const SingleActivator(LogicalKeyboardKey.keyP): () async {
+        if (_isCustomSpeedEnabled) {
+          await player.setRate(_previousSpeed);
+          _isCustomSpeedEnabled = false;
+          setState(() {
+            _currentSpeed = _previousSpeed;
+          });
+          _rateNotifier.value = _previousSpeed;
+        } else {
+          _previousSpeed = player.state.rate;
+          await player.setRate(_customPlaybackSpeed);
+          _isCustomSpeedEnabled = true;
+          setState(() {
+            _currentSpeed = _customPlaybackSpeed;
+          });
+          _rateNotifier.value = _customPlaybackSpeed;
+        }
+      },
 
       // 其他快捷键
       const SingleActivator(LogicalKeyboardKey.mediaPlay): () => player.play(),

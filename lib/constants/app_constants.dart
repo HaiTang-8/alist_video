@@ -100,6 +100,9 @@ class AppConstants {
   static const double maxPlaybackSpeed = 4.0; // 最大播放速度
   static const double speedStep = 0.25; // 速度调节步长
   static const int maxPlaybackSpeedCount = 10; // 最大播放速度数量
+  static const String customPlaybackSpeedKey =
+      'custom_playback_speed'; // 存储自定义快捷播放速度的键
+  static const double defaultCustomPlaybackSpeed = 2.0; // 默认自定义快捷播放速度
 
   // 错误消息相关
   static const String fileNotFoundError =

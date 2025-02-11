@@ -13,15 +13,18 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   int _shortSeekDuration = AppConstants.defaultShortSeekDuration.inSeconds;
   int _longSeekDuration = AppConstants.defaultLongSeekDuration.inSeconds;
   List<double> _playbackSpeeds = AppConstants.defaultPlaybackSpeeds;
+  double _customPlaybackSpeed = AppConstants.defaultCustomPlaybackSpeed;
   final _shortSeekController = TextEditingController();
   final _longSeekController = TextEditingController();
   final _speedController = TextEditingController();
+  final _customSpeedController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _shortSeekController.text = _shortSeekDuration.toString();
     _longSeekController.text = _longSeekDuration.toString();
+    _customSpeedController.text = _customPlaybackSpeed.toString();
     _loadSettings();
   }
 
@@ -31,6 +34,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     final shortSeek = prefs.getInt(AppConstants.shortSeekKey);
     final longSeek = prefs.getInt(AppConstants.longSeekKey);
     final speedsString = prefs.getStringList(AppConstants.playbackSpeedsKey);
+    final customSpeed = prefs.getDouble(AppConstants.customPlaybackSpeedKey);
 
     setState(() {
       if (shortSeek != null) {
@@ -47,6 +51,11 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
         _playbackSpeeds = speedsString.map((s) => double.parse(s)).toList()
           ..sort();
       }
+
+      if (customSpeed != null) {
+        _customPlaybackSpeed = customSpeed;
+        _customSpeedController.text = customSpeed.toString();
+      }
     });
   }
 
@@ -60,6 +69,12 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     final prefs = await SharedPreferences.getInstance();
     final speedsString = _playbackSpeeds.map((s) => s.toString()).toList();
     await prefs.setStringList(AppConstants.playbackSpeedsKey, speedsString);
+  }
+
+  Future<void> _saveCustomPlaybackSpeed() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(
+        AppConstants.customPlaybackSpeedKey, _customPlaybackSpeed);
   }
 
   void _updateShortSeekDuration(String value) {
@@ -134,6 +149,28 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _showSuccessMessage('添加成功');
   }
 
+  void _updateCustomPlaybackSpeed(String value) {
+    final speed = double.tryParse(value);
+    if (speed == null) {
+      _showErrorMessage('请输入有效的数字');
+      return;
+    }
+
+    if (speed < AppConstants.minPlaybackSpeed ||
+        speed > AppConstants.maxPlaybackSpeed) {
+      _showErrorMessage(
+          '播放速度必须在 ${AppConstants.minPlaybackSpeed}x 到 ${AppConstants.maxPlaybackSpeed}x 之间');
+      return;
+    }
+
+    setState(() {
+      _customPlaybackSpeed = speed;
+      _customSpeedController.text = speed.toString();
+    });
+    _saveCustomPlaybackSpeed();
+    _showSuccessMessage('保存成功');
+  }
+
   // 添加错误提示方法
   void _showErrorMessage(String message) {
     if (!mounted) return;
@@ -205,6 +242,18 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
               fontSize: 16,
               fontWeight: FontWeight.bold,
             ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _customSpeedController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+              labelText: '快捷键切换播放速度 (按P键切换)',
+              hintText: '输入自定义播放速度',
+              suffixText: 'x',
+            ),
+            onSubmitted: _updateCustomPlaybackSpeed,
           ),
           const SizedBox(height: 16),
           Wrap(
@@ -289,6 +338,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _shortSeekController.dispose();
     _longSeekController.dispose();
     _speedController.dispose();
+    _customSpeedController.dispose();
     super.dispose();
   }
 }
