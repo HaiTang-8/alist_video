@@ -224,6 +224,15 @@ class VideoPlayerState extends State<VideoPlayer> {
                   '$baseUrl${widget.path.substring(1)}/${subtitle.name}?sign=${subtitle.sign}',
             ));
           }
+
+          // 打印找到的外部字幕文件
+          print('找到的外部字幕文件:');
+          for (int i = 0; i < _availableSubtitles.length; i++) {
+            final subtitle = _availableSubtitles[i];
+            print('  [$i] 名称: ${subtitle.name}, 路径: ${subtitle.path}');
+          }
+        } else {
+          print('未找到外部字幕文件');
         }
 
         // 打开视频
@@ -359,6 +368,29 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 监听字幕轨道变化
     player.stream.tracks.listen((tracks) {
       setState(() {});
+
+      // 打印当前视频的字幕轨道列表
+      print('当前视频字幕轨道列表:');
+      if (tracks.subtitle.isEmpty) {
+        print('  没有找到内嵌字幕轨道');
+      } else {
+        for (int i = 0; i < tracks.subtitle.length; i++) {
+          final track = tracks.subtitle[i];
+          print(
+              '  [$i] ID: ${track.id}, 标题: ${track.title}, 语言: ${track.language}');
+        }
+      }
+
+      // 打印外部加载的字幕文件
+      print('外部字幕文件列表:');
+      if (_availableSubtitles.isEmpty) {
+        print('  没有找到外部字幕文件');
+      } else {
+        for (int i = 0; i < _availableSubtitles.length; i++) {
+          final subtitle = _availableSubtitles[i];
+          print('  [$i] 名称: ${subtitle.name}, 路径: ${subtitle.path}');
+        }
+      }
     });
 
     // 监听当前选中的字幕
@@ -366,6 +398,16 @@ class VideoPlayerState extends State<VideoPlayer> {
       setState(() {
         _currentSubtitle = track.subtitle;
       });
+
+      // 打印当前选中的字幕信息
+      if (track.subtitle == null) {
+        print('当前未选择字幕');
+      } else if (track.subtitle?.id == 'no') {
+        print('当前已关闭字幕');
+      } else {
+        print(
+            '当前选中的字幕: ID=${track.subtitle?.id}, 标题=${track.subtitle?.title}, 语言=${track.subtitle?.language}');
+      }
     });
   }
 
@@ -599,7 +641,6 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
-                      buildTestButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -638,7 +679,6 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
-                      buildTestButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -696,7 +736,6 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
                             buildSubtitleButton(),
-                            buildTestButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -719,7 +758,6 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
                             buildSubtitleButton(),
-                            buildTestButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -1175,6 +1213,9 @@ class VideoPlayerState extends State<VideoPlayer> {
           context: context,
           builder: (context) => StatefulBuilder(
             builder: (context, setDialogState) => Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
               child: Container(
                 width: 400,
                 constraints: BoxConstraints(
@@ -1228,28 +1269,89 @@ class VideoPlayerState extends State<VideoPlayer> {
                     Flexible(
                       child: SingleChildScrollView(
                         padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                        child: Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (_subtitleSearchQuery.isEmpty)
-                              _buildSubtitleOption(
-                                context,
-                                SubtitleTrack.no(),
-                                '关闭字幕',
-                                setDialogState,
+                              Padding(
+                                padding: const EdgeInsets.only(
+                                  top: 16,
+                                  bottom: 8,
+                                ),
+                                child: _buildSubtitleOption(
+                                  context,
+                                  SubtitleTrack.no(),
+                                  '关闭字幕',
+                                  setDialogState,
+                                ),
                               ),
+
+                            // 添加内嵌字幕选项
+                            if (player.state.tracks.subtitle.isNotEmpty)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 16, bottom: 8),
+                                child: Text(
+                                  '内嵌字幕',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                              ),
+
+                            ...player.state.tracks.subtitle.where((track) {
+                              final title = track.title?.toLowerCase() ?? '';
+                              final language =
+                                  track.language?.toLowerCase() ?? '';
+                              return _subtitleSearchQuery.isEmpty ||
+                                  title.contains(_subtitleSearchQuery) ||
+                                  language.contains(_subtitleSearchQuery);
+                            }).map((track) {
+                              final displayName =
+                                  track.title?.isNotEmpty == true
+                                      ? track.title!
+                                      : track.language?.isNotEmpty == true
+                                          ? track.language!
+                                          : '字幕 ${track.id}';
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: _buildSubtitleOption(
+                                  context,
+                                  track,
+                                  displayName,
+                                  setDialogState,
+                                ),
+                              );
+                            }),
+
+                            // 添加外部字幕选项标题
+                            if (_availableSubtitles.isNotEmpty)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(top: 16, bottom: 8),
+                                child: Text(
+                                  '外部字幕文件',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                              ),
+
                             ..._availableSubtitles
                                 .where((subtitle) => subtitle.name
                                     .toLowerCase()
                                     .contains(_subtitleSearchQuery))
-                                .map((subtitle) => _buildSubtitleOption(
-                                      context,
-                                      SubtitleTrack.uri('',
-                                          title: subtitle.name),
-                                      subtitle.name,
-                                      setDialogState,
-                                    )),
+                                .map((subtitle) => Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 8.0),
+                                      child: _buildExternalSubtitleOption(
+                                        context,
+                                        subtitle,
+                                        setDialogState,
+                                      ),
+                                    ))
                           ],
                         ),
                       ),
@@ -1268,9 +1370,89 @@ class VideoPlayerState extends State<VideoPlayer> {
     );
   }
 
+  // 添加外部字幕处理方法
+  Widget _buildExternalSubtitleOption(
+      BuildContext context, SubtitleInfo subtitle, StateSetter setDialogState) {
+    final isSelected = _currentSubtitle?.title == subtitle.name;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () async {
+          final wasPlaying = player.state.playing;
+          await player.pause();
+
+          try {
+            print('正在加载外部字幕: ${subtitle.name}');
+            print('字幕URL: ${subtitle.rawUrl}');
+
+            // 直接使用预先生成的 URL
+            await player.setSubtitleTrack(SubtitleTrack.no());
+            await player.setSubtitleTrack(
+              SubtitleTrack.uri(
+                subtitle.rawUrl,
+                title: subtitle.name,
+              ),
+            );
+            setDialogState(() {
+              _currentSubtitle = SubtitleTrack.uri(
+                subtitle.rawUrl,
+                title: subtitle.name,
+              );
+            });
+            print('外部字幕加载成功: ${subtitle.name}');
+
+            if (wasPlaying) {
+              await player.play();
+            }
+          } catch (e) {
+            print('加载外部字幕失败: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('加载字幕失败: ${subtitle.name}'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? Colors.blue : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Text(
+            subtitle.name,
+            style: TextStyle(
+              color: isSelected ? Colors.blue : Colors.grey[800],
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSubtitleOption(BuildContext context, SubtitleTrack track,
       String label, StateSetter setDialogState) {
-    final isSelected = _currentSubtitle?.title == label;
+    final isSelected = track.id == 'no'
+        ? _currentSubtitle?.id == 'no'
+        : _currentSubtitle?.id == track.id;
 
     return Material(
       color: Colors.transparent,
@@ -1286,31 +1468,15 @@ class VideoPlayerState extends State<VideoPlayer> {
               setDialogState(() {
                 _currentSubtitle = track;
               });
+              print('已关闭字幕');
             } else {
-              final subtitleInfo = _availableSubtitles.firstWhere(
-                (s) => s.name == label,
-                orElse: () => SubtitleInfo(
-                  name: label,
-                  path: '',
-                  rawUrl: '',
-                ),
-              );
-
-              // 直接使用预先生成的 URL
-              await player.setSubtitleTrack(SubtitleTrack.no());
-              await player.setSubtitleTrack(
-                SubtitleTrack.uri(
-                  subtitleInfo.rawUrl,
-                  title: subtitleInfo.name,
-                ),
-              );
+              // 内嵌字幕直接设置
+              print('正在加载内嵌字幕: $label (ID: ${track.id})');
+              await player.setSubtitleTrack(track);
               setDialogState(() {
-                _currentSubtitle = SubtitleTrack.uri(
-                  subtitleInfo.rawUrl,
-                  title: subtitleInfo.name,
-                );
+                _currentSubtitle = track;
               });
-              print('字幕加载成功: ${subtitleInfo.name}');
+              print('内嵌字幕加载成功: $label (ID: ${track.id})');
             }
 
             if (wasPlaying) {
@@ -1354,31 +1520,6 @@ class VideoPlayerState extends State<VideoPlayer> {
             ),
           ),
         ),
-      ),
-    );
-  }
-
-  // 在 buildSpeedButton 方法后添加测试按钮方法
-  Widget buildTestButton() {
-    return MaterialCustomButton(
-      onPressed: () async {
-        try {
-          await player.setSubtitleTrack(SubtitleTrack.no());
-          await player.setSubtitleTrack(
-            SubtitleTrack.uri(
-              // 'https://www.iandevlin.com/html5test/webvtt/upc-video-subtitles-en.vtt',
-              // 'https://ykj-eos-wx2-01.eos-wuxi-3.cmecloud.cn/c68df2a0a0544f59a3d2552f95515e27086?response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27%255B%25E7%25AE%2580%25E4%25BD%2593%25E4%25B8%25AD%25E8%258B%25B1ASS%255DOnly.Murders.in.the.Building.S01E10.WEBDL.FIX%25E5%25AD%2597%25E5%25B9%2595%25E4%25BE%25A0.ass&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20250106T060010Z&X-Amz-SignedHeaders=host&X-Amz-Expires=900&X-Amz-Credential=Y60FITYLOX7N6UJWBOEE%2F20250106%2Fdefault%2Fs3%2Faws4_request&X-Amz-Signature=b135c01025c11385cc08465e15a5b77a4f863b3a66080cf1f669a110d147bdf6',
-              'https://ykj-eos-dg5-01.eos-dongguan-6.cmecloud.cn/827135f9464744f7a4fa286af01d93ef086?response-content-disposition=attachment%3B%20filename%2A%3DUTF-8%27%27%255B%25E7%25B9%2581%25E4%25BD%2593%25E4%25B8%25AD%25E8%258B%25B1ASS%255DOnly.Murders.in.the.Building.S01E10.WEBDL.FIX%25E5%25AD%2597%25E5%25B9%2595%25E4%25BE%25A0.ass&X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=20250106T060420Z&X-Amz-SignedHeaders=host&X-Amz-Expires=900&X-Amz-Credential=9T1UKBIX6OJSR5XN2F2T%2F20250106%2Fdefault%2Fs3%2Faws4_request&X-Amz-Signature=a0fe5789e02ecb56a1625f80c902a8aae928c111a6a5b71116bc1783476dbaa1',
-            ),
-          );
-          print('测试字幕加载成功');
-        } catch (e) {
-          print('测试字幕加载失败: $e');
-        }
-      },
-      icon: const Icon(
-        Icons.bug_report,
-        color: Colors.white,
       ),
     );
   }
