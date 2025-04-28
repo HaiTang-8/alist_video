@@ -400,14 +400,14 @@ class VideoPlayerState extends State<VideoPlayer> {
       });
 
       // 打印当前选中的字幕信息
-      if (track.subtitle == null) {
-        print('当前未选择字幕');
-      } else if (track.subtitle?.id == 'no') {
-        print('当前已关闭字幕');
-      } else {
-        print(
-            '当前选中的字幕: ID=${track.subtitle?.id}, 标题=${track.subtitle?.title}, 语言=${track.subtitle?.language}');
-      }
+      // if (track.subtitle == null) {
+      //   print('当前未选择字幕');
+      // } else if (track.subtitle?.id == 'no') {
+      //   print('当前已关闭字幕');
+      // } else {
+      //   print(
+      //       '当前选中的字幕: ID=${track.subtitle?.id}, 标题=${track.subtitle?.title}, 语言=${track.subtitle?.language}');
+      // }
     });
   }
 
