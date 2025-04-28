@@ -641,6 +641,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
+                      buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -679,6 +680,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
+                      buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -736,6 +738,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
                             buildSubtitleButton(),
+                            buildKeyboardShortcutsButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -758,6 +761,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                             const Spacer(), // 将全屏按钮推到最右边
                             buildSpeedButton(),
                             buildSubtitleButton(),
+                            buildKeyboardShortcutsButton(),
                             const MaterialFullscreenButton(
                               iconSize: 28,
                             ),
@@ -1572,6 +1576,155 @@ class VideoPlayerState extends State<VideoPlayer> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(_currentErrorSnackBar!);
     }
+  }
+
+  // 添加快捷键说明按钮
+  Widget buildKeyboardShortcutsButton() {
+    return MaterialCustomButton(
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (context) => _buildKeyboardShortcutsDialog(),
+        );
+      },
+      icon: const Icon(
+        Icons.keyboard,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  // 构建快捷键说明对话框
+  Widget _buildKeyboardShortcutsDialog() {
+    return Dialog(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Container(
+        width: 500,
+        constraints: BoxConstraints(
+          maxWidth: MediaQuery.of(context).size.width * 0.9,
+          maxHeight: MediaQuery.of(context).size.height * 0.8,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Row(
+                children: [
+                  Icon(Icons.keyboard, color: Theme.of(context).primaryColor),
+                  const SizedBox(width: 12),
+                  const Text('快捷键说明',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      )),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildShortcutCategory('播放控制'),
+                    _buildShortcutItem('空格', '播放/暂停'),
+                    _buildShortcutItem(
+                        'P', '切换自定义播放速度(${_customPlaybackSpeed}x)'),
+                    _buildShortcutItem(
+                        '→', '短跳进 (${_shortSeekDuration.inSeconds}秒)'),
+                    _buildShortcutItem(
+                        '←', '短跳回 (${_shortSeekDuration.inSeconds}秒)'),
+                    _buildShortcutItem(
+                        'I', '长跳进 (${_longSeekDuration.inSeconds}秒)'),
+                    _buildShortcutItem(
+                        'J', '长跳回 (${_longSeekDuration.inSeconds}秒)'),
+                    _buildShortcutCategory('音量控制'),
+                    _buildShortcutItem('↑', '增加音量'),
+                    _buildShortcutItem('↓', '降低音量'),
+                    _buildShortcutCategory('视频控制'),
+                    _buildShortcutItem('F', '切换全屏'),
+                    _buildShortcutItem('ESC', '退出全屏'),
+                    _buildShortcutCategory('其他功能'),
+                    _buildShortcutItem('长按→', '临时加速播放'),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('关闭'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 构建快捷键分类标题
+  Widget _buildShortcutCategory(String title) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          color: Colors.blue,
+        ),
+      ),
+    );
+  }
+
+  // 构建快捷键条目
+  Widget _buildShortcutItem(String key, String description) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.grey[200],
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.grey[400]!),
+            ),
+            child: Text(
+              key,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontFamily: 'monospace',
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                description,
+                style: const TextStyle(fontSize: 15),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 
