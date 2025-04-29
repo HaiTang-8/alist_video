@@ -91,6 +91,15 @@ class VideoPlayerState extends State<VideoPlayer> {
   double _customPlaybackSpeed = AppConstants.defaultCustomPlaybackSpeed;
   bool _isCustomSpeedEnabled = false;
 
+  // 添加倍速提示控制器
+  final ValueNotifier<bool> _showSpeedIndicator = ValueNotifier<bool>(false);
+  final ValueNotifier<double> _indicatorSpeedValue = ValueNotifier<double>(1.0);
+  Timer? _speedIndicatorTimer;
+
+  // 添加Overlay相关变量
+  OverlayEntry? _speedIndicatorOverlay;
+  final GlobalKey _videoKey = GlobalKey();
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -497,6 +506,10 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     _subtitleSearchController.dispose();
     _rateNotifier.dispose();
+    _showSpeedIndicator.dispose();
+    _indicatorSpeedValue.dispose();
+    _speedIndicatorTimer?.cancel();
+    _hideSpeedIndicatorOverlay();
   }
 
   @override
@@ -653,7 +666,60 @@ class VideoPlayerState extends State<VideoPlayer> {
                     volumeGesture: true,
                     brightnessGesture: true,
                     visibleOnMount: false,
-                    primaryButtonBar: [],
+                    primaryButtonBar: [
+                      // 添加在顶部显示的倍速提示
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _showSpeedIndicator,
+                        builder: (context, isVisible, _) {
+                          if (!isVisible) return const SizedBox.shrink();
+                          return Center(
+                            child: ValueListenableBuilder<double>(
+                              valueListenable: _indicatorSpeedValue,
+                              builder: (context, speed, _) {
+                                return AnimatedOpacity(
+                                  opacity: isVisible ? 1.0 : 0.0,
+                                  duration: const Duration(milliseconds: 300),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.7),
+                                      borderRadius: BorderRadius.circular(20),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: Colors.black.withOpacity(0.3),
+                                          blurRadius: 10,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.speed,
+                                          color: Colors.white,
+                                          size: 24,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          '${speed}x',
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          );
+                        },
+                      ),
+                    ],
                     seekBarAlignment: Alignment.topCenter,
                     seekBarMargin:
                         const EdgeInsets.only(bottom: 15, left: 10, right: 10),
@@ -685,9 +751,24 @@ class VideoPlayerState extends State<VideoPlayer> {
                         iconSize: 22,
                       ),
                     ]),
-                child: Video(
-                  controller: controller,
-                  controls: MaterialVideoControls,
+                child: Stack(
+                  children: [
+                    Video(
+                      controller: controller,
+                      controls: MaterialVideoControls,
+                    ),
+
+                    // 非全屏模式下的倍速提示组件
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _showSpeedIndicator,
+                      builder: (context, isVisible, _) {
+                        return _SpeedIndicatorOverlay(
+                          isVisible: isVisible,
+                          speedValue: _indicatorSpeedValue,
+                        );
+                      },
+                    ),
+                  ],
                 ),
               ),
               if (_isLoading)
@@ -746,7 +827,64 @@ class VideoPlayerState extends State<VideoPlayer> {
                       fullscreen: MaterialDesktopVideoControlsThemeData(
                           displaySeekBar: true,
                           visibleOnMount: false,
-                          primaryButtonBar: [],
+                          primaryButtonBar: [
+                            // 添加在顶部显示的倍速提示
+                            ValueListenableBuilder<bool>(
+                              valueListenable: _showSpeedIndicator,
+                              builder: (context, isVisible, _) {
+                                if (!isVisible) return const SizedBox.shrink();
+                                return Center(
+                                  child: ValueListenableBuilder<double>(
+                                    valueListenable: _indicatorSpeedValue,
+                                    builder: (context, speed, _) {
+                                      return AnimatedOpacity(
+                                        opacity: isVisible ? 1.0 : 0.0,
+                                        duration:
+                                            const Duration(milliseconds: 300),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 16, vertical: 8),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                Colors.black.withOpacity(0.7),
+                                            borderRadius:
+                                                BorderRadius.circular(20),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withOpacity(0.3),
+                                                blurRadius: 10,
+                                                spreadRadius: 1,
+                                              ),
+                                            ],
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(
+                                                Icons.speed,
+                                                color: Colors.white,
+                                                size: 24,
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                '${speed}x',
+                                                style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
                           keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
                           seekBarMargin: const EdgeInsets.only(
                               bottom: 10, left: 0, right: 0),
@@ -766,19 +904,35 @@ class VideoPlayerState extends State<VideoPlayer> {
                               iconSize: 28,
                             ),
                           ]),
-                      child: GestureDetector(
-                        onLongPressStart: (_) {
-                          _previousSpeed = controller.player.state.rate;
-                          controller.player
-                              .setRate(AppConstants.longPressPlaybackSpeed);
-                        },
-                        onLongPressEnd: (_) {
-                          controller.player.setRate(_previousSpeed);
-                        },
-                        child: Video(
-                          controller: controller,
-                          controls: MaterialDesktopVideoControls,
-                        ),
+                      child: Stack(
+                        children: [
+                          GestureDetector(
+                            key: _videoKey,
+                            onLongPressStart: (_) {
+                              _previousSpeed = controller.player.state.rate;
+                              controller.player
+                                  .setRate(AppConstants.longPressPlaybackSpeed);
+
+                              // 显示全局倍速提示，指定为长按模式
+                              _showSpeedIndicatorOverlay(
+                                  AppConstants.longPressPlaybackSpeed,
+                                  isLongPress: true);
+                            },
+                            onLongPressEnd: (_) {
+                              controller.player.setRate(_previousSpeed);
+
+                              // 设置定时器，延迟2秒后隐藏提示
+                              _speedIndicatorTimer?.cancel();
+                              _speedIndicatorTimer = Timer(
+                                  const Duration(seconds: 2),
+                                  () => _hideSpeedIndicatorOverlay());
+                            },
+                            child: Video(
+                              controller: controller,
+                              controls: MaterialDesktopVideoControls,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     if (_isLoading)
@@ -981,6 +1135,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                           onTap: () async {
                             await player.setRate(speed);
                             setState(() => _currentSpeed = speed);
+
+                            // 显示倍速提示
+                            _showSpeedIndicatorOverlay(speed);
+
                             if (mounted && context.mounted) {
                               Navigator.pop(context);
                             }
@@ -1054,6 +1212,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                           onTap: () async {
                             await player.setRate(speed);
                             setState(() => _currentSpeed = speed);
+
+                            // 显示倍速提示
+                            _showSpeedIndicatorOverlay(speed);
+
                             if (mounted && context.mounted) {
                               Navigator.pop(context);
                             }
@@ -1140,9 +1302,18 @@ class VideoPlayerState extends State<VideoPlayer> {
         onLongPress: () {
           _previousSpeed = controller.player.state.rate;
           player.setRate(AppConstants.longPressPlaybackSpeed);
+
+          // 显示倍速提示
+          _showSpeedIndicatorOverlay(AppConstants.longPressPlaybackSpeed,
+              isLongPress: true);
         },
         onRelease: () {
           player.setRate(_previousSpeed);
+
+          // 设置定时器，延迟2秒后隐藏提示
+          _speedIndicatorTimer?.cancel();
+          _speedIndicatorTimer = Timer(
+              const Duration(seconds: 2), () => _hideSpeedIndicatorOverlay());
         },
       ): () {},
 
@@ -1155,6 +1326,9 @@ class VideoPlayerState extends State<VideoPlayer> {
             _currentSpeed = _previousSpeed;
           });
           _rateNotifier.value = _previousSpeed;
+
+          // 显示倍速提示
+          _showSpeedIndicatorOverlay(_previousSpeed);
         } else {
           _previousSpeed = player.state.rate;
           await player.setRate(_customPlaybackSpeed);
@@ -1163,6 +1337,9 @@ class VideoPlayerState extends State<VideoPlayer> {
             _currentSpeed = _customPlaybackSpeed;
           });
           _rateNotifier.value = _customPlaybackSpeed;
+
+          // 显示倍速提示
+          _showSpeedIndicatorOverlay(_customPlaybackSpeed);
         }
       },
 
@@ -1726,6 +1903,97 @@ class VideoPlayerState extends State<VideoPlayer> {
       ),
     );
   }
+
+  // 显示全局倍速提示
+  void _showSpeedIndicatorOverlay(double speed, {bool isLongPress = false}) {
+    // 先移除已有的提示
+    _hideSpeedIndicatorOverlay();
+
+    // 创建新overlay
+    _speedIndicatorOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 80,
+        width: MediaQuery.of(context).size.width,
+        child: Material(
+          color: Colors.transparent,
+          child: Center(
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 300),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Transform.scale(
+                    scale: 0.8 + (value * 0.2),
+                    child: child,
+                  ),
+                );
+              },
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.black.withAlpha(179), // 0.7 * 255 = 178.5 ≈ 179
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withAlpha(102), // 0.4 * 255 = 102
+                      blurRadius: 15,
+                      spreadRadius: 2,
+                    )
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // 根据长按状态显示不同的图标
+                    isLongPress
+                        ? const Icon(
+                            Icons.fast_forward_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          )
+                        : const Icon(
+                            Icons.speed,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                    const SizedBox(width: 12),
+                    Text(
+                      '${speed}x',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    // 添加到overlay
+    if (mounted) {
+      Overlay.of(context).insert(_speedIndicatorOverlay!);
+
+      // 设置定时器，2秒后移除
+      _speedIndicatorTimer?.cancel();
+      _speedIndicatorTimer = Timer(const Duration(seconds: 2), () {
+        _hideSpeedIndicatorOverlay();
+      });
+    }
+  }
+
+  // 隐藏全局倍速提示
+  void _hideSpeedIndicatorOverlay() {
+    _speedIndicatorOverlay?.remove();
+    _speedIndicatorOverlay = null;
+  }
 }
 
 class VideoShortcutActivator extends ShortcutActivator {
@@ -1787,5 +2055,137 @@ class VideoShortcutActivator extends ShortcutActivator {
   @override
   String debugDescribeKeys() {
     return key.debugName ?? 'unknown';
+  }
+}
+
+// 添加倍速提示组件
+class _SpeedIndicatorOverlay extends StatefulWidget {
+  final bool isVisible;
+  final ValueNotifier<double> speedValue;
+
+  const _SpeedIndicatorOverlay({
+    required this.isVisible,
+    required this.speedValue,
+  });
+
+  @override
+  State<_SpeedIndicatorOverlay> createState() => _SpeedIndicatorOverlayState();
+}
+
+class _SpeedIndicatorOverlayState extends State<_SpeedIndicatorOverlay>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _animationController;
+  late Animation<double> _scaleAnimation;
+  late Animation<double> _opacityAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.elasticOut,
+      ),
+    );
+
+    _opacityAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _animationController,
+        curve: Curves.easeIn,
+      ),
+    );
+  }
+
+  @override
+  void didUpdateWidget(_SpeedIndicatorOverlay oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isVisible && !oldWidget.isVisible) {
+      _animationController.forward(from: 0.0);
+    } else if (!widget.isVisible && oldWidget.isVisible) {
+      _animationController.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.isVisible && _animationController.isDismissed) {
+      return const SizedBox.shrink();
+    }
+
+    return Positioned.fill(
+      child: Stack(
+        children: [
+          // 在全屏和非全屏模式下添加倍速提示
+          Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(top: 50.0),
+              child: AnimatedBuilder(
+                animation: _animationController,
+                builder: (context, child) {
+                  return Opacity(
+                    opacity: _opacityAnimation.value,
+                    child: Transform.scale(
+                      scale: _scaleAnimation.value,
+                      child: child,
+                    ),
+                  );
+                },
+                child: ValueListenableBuilder<double>(
+                  valueListenable: widget.speedValue,
+                  builder: (context, speed, _) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.7),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.3),
+                            blurRadius: 10,
+                            spreadRadius: 1,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.speed,
+                            color: Colors.white,
+                            size: 24,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            '${speed}x',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
