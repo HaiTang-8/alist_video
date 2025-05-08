@@ -481,4 +481,134 @@ class DatabaseHelper {
       return null;
     }
   }
+
+  // 添加收藏目录
+  Future<int> addFavoriteDirectory({
+    required String path,
+    required String name,
+    required int userId,
+  }) async {
+    try {
+      print('Adding favorite directory - path: $path, name: $name, userId: $userId');
+      
+      // 先检查是否已存在
+      final existingCheck = await query('''
+        SELECT COUNT(*) as count FROM t_favorite_directories 
+        WHERE path = @path AND user_id = @userId
+      ''', {
+        'path': path,
+        'userId': userId,
+      });
+      
+      final alreadyExists = (existingCheck.first['count'] as int) > 0;
+      print('Directory already exists in favorites: $alreadyExists');
+      
+      if (alreadyExists) {
+        // 如果已存在，返回现有记录的ID
+        final existing = await query('''
+          SELECT id FROM t_favorite_directories 
+          WHERE path = @path AND user_id = @userId
+          LIMIT 1
+        ''', {
+          'path': path,
+          'userId': userId,
+        });
+        
+        final existingId = existing.first['id'] as int;
+        print('Using existing favorite directory id: $existingId');
+        return existingId;
+      }
+      
+      const sql = '''
+        INSERT INTO t_favorite_directories 
+        (path, name, user_id, created_at)
+        VALUES (@path, @name, @userId, CURRENT_TIMESTAMP)
+        RETURNING id
+      ''';
+
+      final result = await query(sql, {
+        'path': path,
+        'name': name,
+        'userId': userId,
+      });
+
+      final newId = result.first['id'] as int;
+      print('Added favorite directory with id: $newId');
+      return newId;
+    } catch (e) {
+      print('Failed to add favorite directory: $e');
+      rethrow;
+    }
+  }
+
+  // 获取用户的所有收藏目录
+  Future<List<Map<String, dynamic>>> getFavoriteDirectories(int userId) async {
+    try {
+      print('Fetching favorite directories for userId: $userId');
+      
+      final results = await query('''
+        SELECT * FROM t_favorite_directories 
+        WHERE user_id = @userId
+        ORDER BY created_at DESC
+      ''', {
+        'userId': userId,
+      });
+
+      print('Found ${results.length} favorite directories');
+      if (results.isNotEmpty) {
+        // 打印第一条记录的详细信息
+        print('First record: ${results.first}');
+      }
+
+      return results;
+    } catch (e) {
+      print('Failed to get favorite directories: $e');
+      rethrow;
+    }
+  }
+
+  // 检查目录是否已收藏
+  Future<bool> isFavoriteDirectory({
+    required String path,
+    required int userId,
+  }) async {
+    try {
+      print('Checking if directory is favorite - path: $path, userId: $userId');
+      
+      final results = await query('''
+        SELECT COUNT(*) as count FROM t_favorite_directories 
+        WHERE path = @path AND user_id = @userId
+      ''', {
+        'path': path,
+        'userId': userId,
+      });
+
+      final count = results.first['count'] as int;
+      print('Directory favorite status: ${count > 0}');
+      
+      return count > 0;
+    } catch (e) {
+      print('Failed to check favorite directory: $e');
+      rethrow;
+    }
+  }
+
+  // 删除收藏目录
+  Future<void> removeFavoriteDirectory({
+    required String path,
+    required int userId,
+  }) async {
+    try {
+      await query('''
+        DELETE FROM t_favorite_directories 
+        WHERE path = @path AND user_id = @userId
+      ''', {
+        'path': path,
+        'userId': userId,
+      });
+    } catch (e) {
+      print('Failed to remove favorite directory: $e');
+      rethrow;
+    }
+  }
 }

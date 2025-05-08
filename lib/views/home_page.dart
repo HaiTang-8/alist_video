@@ -1,9 +1,11 @@
 import 'dart:ui';
 
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
 
 class HomePage extends StatefulWidget {
@@ -32,6 +34,8 @@ class _HomePageState extends State<HomePage>
   bool _isSearchMode = false;
   String _searchKeyword = '';
   int _searchScope = 0;
+  String? _currentUsername;
+  bool _isFavorite = false;
 
   Future<void> _getList({bool refresh = false}) async {
     if (refresh) {
@@ -62,6 +66,9 @@ class _HomePageState extends State<HomePage>
               [];
           _sort((file) => file.name.toLowerCase(), 0, true);
         });
+        
+        // 检查当前目录是否已收藏
+        _checkFavoriteStatus();
       } else {
         _handleError(res.message ?? '获取文件失败');
       }
@@ -71,6 +78,66 @@ class _HomePageState extends State<HomePage>
       }
     } catch (e) {
       _handleError('操作失败,请检查日志');
+    }
+  }
+
+  // 检查当前目录是否已收藏
+  Future<void> _checkFavoriteStatus() async {
+    if (_currentUsername == null) return;
+    
+    try {
+      final currentDirectory = currentPath.join('/');
+      final isFavorite = await DatabaseHelper.instance.isFavoriteDirectory(
+        path: currentDirectory,
+        userId: _currentUsername!.hashCode,
+      );
+      
+      setState(() {
+        _isFavorite = isFavorite;
+      });
+    } catch (e) {
+      print('Failed to check favorite status: $e');
+    }
+  }
+
+  // 收藏/取消收藏当前目录
+  Future<void> _toggleFavorite() async {
+    if (_currentUsername == null) return;
+    
+    final currentDirectory = currentPath.join('/');
+    final directoryName = currentPath.last == '/' ? '主目录' : currentPath.last;
+    
+    try {
+      if (_isFavorite) {
+        // 取消收藏
+        await DatabaseHelper.instance.removeFavoriteDirectory(
+          path: currentDirectory,
+          userId: _currentUsername!.hashCode,
+        );
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已取消收藏')),
+        );
+      } else {
+        // 添加收藏
+        await DatabaseHelper.instance.addFavoriteDirectory(
+          path: currentDirectory,
+          name: directoryName,
+          userId: _currentUsername!.hashCode,
+        );
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('已添加到收藏夹')),
+        );
+      }
+      
+      setState(() {
+        _isFavorite = !_isFavorite;
+      });
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('操作失败: $e')),
+      );
     }
   }
 
@@ -545,12 +612,20 @@ class _HomePageState extends State<HomePage>
       duration: const Duration(milliseconds: 600),
       vsync: this,
     );
+    _loadCurrentUser();
     _getList().then((_) => _animationController.forward());
     if (widget.initialUrl != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         loadUrl(widget.initialUrl!, widget.initialTitle);
       });
     }
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _currentUsername = prefs.getString('current_username');
+    });
   }
 
   @override
@@ -597,6 +672,14 @@ class _HomePageState extends State<HomePage>
               },
             )
           else ...[
+            // 收藏夹按钮
+            IconButton(
+              icon: Icon(
+                _isFavorite ? Icons.star : Icons.star_border,
+                color: _isFavorite ? Colors.amber : null,
+              ),
+              onPressed: _toggleFavorite,
+            ),
             IconButton(
               icon: const Icon(Icons.search),
               onPressed: _showSearchDialog,

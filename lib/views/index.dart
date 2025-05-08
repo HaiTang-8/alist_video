@@ -1,3 +1,4 @@
+import 'package:alist_player/views/favorites_page.dart';
 import 'package:alist_player/views/history_page.dart';
 import 'package:alist_player/views/home_page.dart';
 import 'package:alist_player/views/person_page.dart';
@@ -21,6 +22,7 @@ class _IndexState extends State<IndexPage> {
         index: _selectedIndex,
         children: const [
           HomePage(),
+          FavoritesPage(),
           HistoryPage(),
           DownloadsPage(),
           PersonPage(),
@@ -39,6 +41,10 @@ class _IndexState extends State<IndexPage> {
               const BottomNavigationBarItem(
                 icon: Icon(Icons.home),
                 label: '首页',
+              ),
+              const BottomNavigationBarItem(
+                icon: Icon(Icons.star),
+                label: '收藏',
               ),
               const BottomNavigationBarItem(
                 icon: Icon(Icons.history),
