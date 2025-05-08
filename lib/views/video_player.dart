@@ -98,6 +98,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加Overlay相关变量
   OverlayEntry? _speedIndicatorOverlay;
+  OverlayEntry? _videoInfoOverlay;
   final GlobalKey _videoKey = GlobalKey();
 
   Future<void> _loadSettings() async {
@@ -510,6 +511,9 @@ class VideoPlayerState extends State<VideoPlayer> {
     _indicatorSpeedValue.dispose();
     _speedIndicatorTimer?.cancel();
     _hideSpeedIndicatorOverlay();
+
+    // 清理键盘事件处理器
+    VideoShortcutActivator.dispose();
   }
 
   @override
@@ -595,7 +599,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                         shadows: [
                           Shadow(
                             blurRadius: 4,
-                            color: Colors.black.withOpacity(0.3),
+                            color: Colors.black.withValues(alpha: 0.3),
                             offset: const Offset(0, 1),
                           ),
                         ],
@@ -683,11 +687,13 @@ class VideoPlayerState extends State<VideoPlayer> {
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 16, vertical: 8),
                                     decoration: BoxDecoration(
-                                      color: Colors.black.withOpacity(0.7),
+                                      color:
+                                          Colors.black.withValues(alpha: 0.7),
                                       borderRadius: BorderRadius.circular(20),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(0.3),
+                                          color: Colors.black
+                                              .withValues(alpha: 0.3),
                                           blurRadius: 10,
                                           spreadRadius: 1,
                                         ),
@@ -845,14 +851,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 16, vertical: 8),
                                           decoration: BoxDecoration(
-                                            color:
-                                                Colors.black.withOpacity(0.7),
+                                            color: Colors.black
+                                                .withValues(alpha: 0.7),
                                             borderRadius:
                                                 BorderRadius.circular(20),
                                             boxShadow: [
                                               BoxShadow(
                                                 color: Colors.black
-                                                    .withOpacity(0.3),
+                                                    .withValues(alpha: 0.3),
                                                 blurRadius: 10,
                                                 spreadRadius: 1,
                                               ),
@@ -982,13 +988,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                   ),
                   decoration: BoxDecoration(
                     color: isPlaying
-                        ? Colors.blue.withOpacity(AppConstants.hoverOpacity)
+                        ? Colors.blue
+                            .withValues(alpha: AppConstants.hoverOpacity)
                         : Colors.white,
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
                       BoxShadow(
-                        color:
-                            Colors.grey.withOpacity(AppConstants.shadowOpacity),
+                        color: Colors.grey
+                            .withValues(alpha: AppConstants.shadowOpacity),
                         spreadRadius: AppConstants.defaultSpreadRadius,
                         blurRadius: AppConstants.defaultBlurRadius,
                       ),
@@ -1052,7 +1059,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           scrollToCurrentItem();
         }
       },
-      hoverColor: Colors.blue.withOpacity(0.05),
+      hoverColor: Colors.blue.withValues(alpha: 0.05),
     );
   }
 
@@ -1064,7 +1071,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.grey.withOpacity(0.1),
+            color: Colors.grey.withValues(alpha: 0.1),
             spreadRadius: 1,
             blurRadius: 1,
           ),
@@ -1316,6 +1323,11 @@ class VideoPlayerState extends State<VideoPlayer> {
               const Duration(seconds: 2), () => _hideSpeedIndicatorOverlay());
         },
       ): () {},
+
+      // 添加Tab键快捷键，显示视频流信息
+      const SingleActivator(LogicalKeyboardKey.tab): () {
+        _toggleVideoInfoOverlay();
+      },
 
       // 添加P键快捷键
       const SingleActivator(LogicalKeyboardKey.keyP): () async {
@@ -1610,7 +1622,9 @@ class VideoPlayerState extends State<VideoPlayer> {
             vertical: 12,
           ),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.grey[100],
+            color: isSelected
+                ? Colors.blue.withValues(alpha: 0.1)
+                : Colors.grey[100],
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isSelected ? Colors.blue : Colors.grey[300]!,
@@ -1686,7 +1700,9 @@ class VideoPlayerState extends State<VideoPlayer> {
             vertical: 12,
           ),
           decoration: BoxDecoration(
-            color: isSelected ? Colors.blue.withOpacity(0.1) : Colors.grey[100],
+            color: isSelected
+                ? Colors.blue.withValues(alpha: 0.1)
+                : Colors.grey[100],
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: isSelected ? Colors.blue : Colors.grey[300]!,
@@ -1828,6 +1844,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                     _buildShortcutItem('ESC', '退出全屏'),
                     _buildShortcutCategory('其他功能'),
                     _buildShortcutItem('长按→', '临时加速播放'),
+                    _buildShortcutItem('Tab', '显示/隐藏视频流信息'),
                   ],
                 ),
               ),
@@ -1994,6 +2011,302 @@ class VideoPlayerState extends State<VideoPlayer> {
     _speedIndicatorOverlay?.remove();
     _speedIndicatorOverlay = null;
   }
+
+  // 切换视频信息显示
+  void _toggleVideoInfoOverlay() {
+    if (_videoInfoOverlay != null) {
+      _hideVideoInfoOverlay();
+    } else {
+      _showVideoInfoOverlay();
+    }
+  }
+
+  // 显示视频信息
+  void _showVideoInfoOverlay() {
+    // 先移除已有的提示
+    _hideVideoInfoOverlay();
+
+    // 创建新overlay
+    _videoInfoOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 20,
+        left: 20,
+        child: Material(
+          color: Colors.transparent,
+          child: StreamBuilder<void>(
+            // 使用一个定时器来定期刷新视频信息
+            stream: Stream.periodic(const Duration(milliseconds: 500)),
+            builder: (context, _) {
+              // 获取视频信息
+              final videoParams = player.state.videoParams;
+              final audioBitrate = player.state.audioBitrate;
+              
+              // 基础信息（不依赖于MPV属性的Future）
+              final position = player.state.position;
+              final duration = player.state.duration;
+              final rate = player.state.rate;
+              final volume = player.state.volume;
+              final width = videoParams.w ?? 0;
+              final height = videoParams.h ?? 0;
+              final pixelFormat = videoParams.pixelformat ?? 'unknown';
+              final double aspect = videoParams.aspect ?? 0.0;
+              final colorMatrix = videoParams.colormatrix ?? 'unknown';
+              final primaries = videoParams.primaries ?? 'unknown';
+              final currentMedia = player.state.playlist.medias.isNotEmpty &&
+                      player.state.playlist.index >= 0
+                  ? player.state.playlist.medias[player.state.playlist.index]
+                  : null;
+              final currentUrl = currentMedia?.uri ?? 'unknown';
+
+              // 使用FutureBuilder获取更多视频信息
+              return FutureBuilder<Map<String, String>>(
+                future: _getExtendedVideoInfo(),
+                builder: (context, snapshot) {
+                  // 获取扩展视频信息
+                  final extInfo = snapshot.data ?? {};
+                  final videoBitrateStr = extInfo['videoBitrate'] ?? 'N/A';
+                  final codecInfo = extInfo['videoCodec'] ?? 'N/A';
+                  final videoFps = extInfo['videoFps'] ?? 'N/A';
+                  
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '视频流信息',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '分辨率: ${width}x$height',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '帧率: $videoFps',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '编码: $codecInfo',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '像素格式: $pixelFormat',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '宽高比: ${aspect.toStringAsFixed(2)}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '视频码率: $videoBitrateStr',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '色彩矩阵: $colorMatrix',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '色彩原色: $primaries',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '播放速度: ${rate}x',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '音量: ${volume.toStringAsFixed(0)}%',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        Text(
+                          '进度: ${_formatDuration(position)}/${_formatDuration(duration)}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '当前URL: ${_truncateString(currentUrl, 40)}',
+                          style: const TextStyle(color: Colors.white, fontSize: 10),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    // 添加到overlay
+    if (mounted) {
+      Overlay.of(context).insert(_videoInfoOverlay!);
+    }
+  }
+
+  // 隐藏视频信息
+  void _hideVideoInfoOverlay() {
+    _videoInfoOverlay?.remove();
+    _videoInfoOverlay = null;
+  }
+
+  // 格式化时间
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    } else {
+      return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+  }
+
+  // 截断字符串
+  String _truncateString(String text, int maxLength) {
+    if (text.length <= maxLength) {
+      return text;
+    }
+    return '${text.substring(0, maxLength)}...';
+  }
+
+  // 安全获取播放器属性
+  Future<dynamic> _getPlayerProperty(String property, [dynamic defaultValue]) async {
+    try {
+      final value = await (player.platform as dynamic).getProperty(property);
+      return value;
+    } catch (e) {
+      return defaultValue;
+    }
+  }
+
+  // 获取扩展的视频信息
+  Future<Map<String, String>> _getExtendedVideoInfo() async {
+    final result = <String, String>{};
+    
+    try {
+      // 检查是否有下面这些属性
+      final mpvProperties = [
+        // 视频码率相关
+        'video-bitrate', 'video-params/bitrate', 'stats/video/bitrate',
+        'packet-video-bitrate', 'estimated-vf-fps', 'container-fps',
+        // 视频编码相关
+        'video-codec', 'video-format', 'video-codec-name', 
+        'current-tracks/video/codec', 'current-tracks/video/demux-fps'
+      ];
+      
+      // 收集所有可用的MPV属性
+      final debugValues = <String, dynamic>{};
+      for (final prop in mpvProperties) {
+        try {
+          final value = await _getPlayerProperty(prop, null);
+          if (value != null) {
+            debugValues[prop] = value;
+          }
+        } catch (e) {
+          // 忽略单个属性的错误
+        }
+      }
+      
+      // 尝试获取视频帧率
+      String fps = 'N/A';
+      for (final prop in ['container-fps', 'estimated-vf-fps', 'current-tracks/video/demux-fps']) {
+        final value = debugValues[prop];
+        if (value != null) {
+          if (value is num) {
+            fps = value.toStringAsFixed(2);
+            break;
+          } else if (value is String && double.tryParse(value) != null) {
+            fps = double.parse(value).toStringAsFixed(2);
+            break;
+          }
+        }
+      }
+      result['videoFps'] = '$fps fps';
+      
+      // 尝试获取视频编码
+      String codec = 'N/A';
+      for (final prop in ['video-codec', 'video-format', 'video-codec-name', 'current-tracks/video/codec']) {
+        final value = debugValues[prop];
+        if (value != null && value is String && value.isNotEmpty) {
+          codec = value;
+          break;
+        }
+      }
+      result['videoCodec'] = codec;
+      
+      // 尝试从已知属性获取视频码率
+      for (final prop in ['video-bitrate', 'video-params/bitrate', 'stats/video/bitrate', 'packet-video-bitrate']) {
+        final value = debugValues[prop];
+        if (value != null) {
+          double? bitrate;
+          if (value is num) {
+            bitrate = value.toDouble();
+          } else if (value is String) {
+            bitrate = double.tryParse(value);
+          }
+          
+          if (bitrate != null && bitrate > 0) {
+            final mbps = bitrate / 1000000;
+            result['videoBitrate'] = '${mbps.toStringAsFixed(2)} Mbps';
+            return result;
+          }
+        }
+      }
+      
+      // 如果找不到直接的码率值，尝试计算
+      final fileSize = await _getPlayerProperty('file-size', null);
+      final duration = player.state.duration.inSeconds;
+      
+      if (fileSize != null && duration > 0) {
+        double? fileSizeBytes;
+        
+        if (fileSize is num) {
+          fileSizeBytes = fileSize.toDouble();
+        } else if (fileSize is String) {
+          fileSizeBytes = double.tryParse(fileSize);
+        }
+        
+        if (fileSizeBytes != null && fileSizeBytes > 0) {
+          // 计算总码率
+          final totalBitrate = (fileSizeBytes * 8) / duration;
+          // 减去音频码率（如果有）
+          final audioBitrateValue = player.state.audioBitrate ?? 0;
+          // 估算视频码率
+          final estimatedVideoBitrate = (totalBitrate - audioBitrateValue * 1000) / 1000000;
+          if (estimatedVideoBitrate > 0) {
+            result['videoBitrate'] = '约 ${estimatedVideoBitrate.toStringAsFixed(2)} Mbps (估算)';
+            return result;
+          }
+        }
+      }
+      
+      // 打印调试信息
+      print('MPV视频属性: $debugValues');
+      result['videoBitrate'] = 'N/A (无法读取)';
+    } catch (e) {
+      print('获取扩展视频信息错误: $e');
+      result['videoBitrate'] = 'N/A (错误)';
+    }
+    
+    return result;
+  }
 }
 
 class VideoShortcutActivator extends ShortcutActivator {
@@ -2009,39 +2322,50 @@ class VideoShortcutActivator extends ShortcutActivator {
     this.onRelease,
   });
 
-  static DateTime? _pressStartTime;
-  static bool _isLongPress = false;
-  static Timer? _pressTimer;
+  // Track key states per key to avoid conflicts between different keys
+  static final Map<LogicalKeyboardKey, DateTime?> _pressStartTimes = {};
+  static final Map<LogicalKeyboardKey, bool> _isLongPressMap = {};
+  static final Map<LogicalKeyboardKey, Timer?> _pressTimers = {};
   static const _longPressThreshold = Duration(milliseconds: 500);
 
   @override
   bool accepts(KeyEvent event, HardwareKeyboard state) {
     if (event is KeyDownEvent && event.logicalKey == key) {
-      _pressStartTime = DateTime.now();
-      _isLongPress = false;
+      // Check if key is already pressed to avoid duplicate KeyDownEvents
+      if (_pressStartTimes.containsKey(key)) {
+        return false; // Skip duplicate key down events
+      }
+
+      _pressStartTimes[key] = DateTime.now();
+      _isLongPressMap[key] = false;
 
       // 使用Timer延迟判断是否为短按
-      _pressTimer?.cancel();
-      _pressTimer = Timer(_longPressThreshold, () {
-        if (_pressStartTime != null) {
-          _isLongPress = true;
+      _pressTimers[key]?.cancel();
+      _pressTimers[key] = Timer(_longPressThreshold, () {
+        if (_pressStartTimes[key] != null) {
+          _isLongPressMap[key] = true;
           onLongPress?.call();
         }
       });
+      return true; // 返回true表示已处理此事件
     } else if (event is KeyUpEvent && event.logicalKey == key) {
-      _pressTimer?.cancel();
+      _pressTimers[key]?.cancel();
 
-      if (_isLongPress) {
+      if (_isLongPressMap[key] == true) {
         onRelease?.call();
-      } else if (_pressStartTime != null &&
-          DateTime.now().difference(_pressStartTime!) < _longPressThreshold) {
+      } else if (_pressStartTimes[key] != null &&
+          DateTime.now().difference(_pressStartTimes[key]!) <
+              _longPressThreshold) {
         onPress?.call();
       }
 
-      _pressStartTime = null;
-      _isLongPress = false;
+      // Clear key state on key up
+      _pressStartTimes.remove(key);
+      _isLongPressMap.remove(key);
+      _pressTimers.remove(key);
+      return true; // 返回true表示已处理此事件
     }
-    return false;
+    return false; // 不是我们关心的事件
   }
 
   @override
@@ -2055,6 +2379,16 @@ class VideoShortcutActivator extends ShortcutActivator {
   @override
   String debugDescribeKeys() {
     return key.debugName ?? 'unknown';
+  }
+
+  // Clean up method to be called when disposing the widget
+  static void dispose() {
+    for (final timer in _pressTimers.values) {
+      timer?.cancel();
+    }
+    _pressStartTimes.clear();
+    _isLongPressMap.clear();
+    _pressTimers.clear();
   }
 }
 
@@ -2149,11 +2483,11 @@ class _SpeedIndicatorOverlayState extends State<_SpeedIndicatorOverlay>
                       padding: const EdgeInsets.symmetric(
                           horizontal: 16, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.black.withOpacity(0.7),
+                        color: Colors.black.withValues(alpha: 0.7),
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.3),
+                            color: Colors.black.withValues(alpha: 0.3),
                             blurRadius: 10,
                             spreadRadius: 1,
                           ),
