@@ -1,6 +1,7 @@
 import 'package:alist_player/models/favorite_directory.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/views/home_page.dart';
+import 'package:alist_player/views/index.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
@@ -268,14 +269,8 @@ class _FavoritesPageState extends State<FavoritesPage>
   }
 
   void _navigateToDirectory(FavoriteDirectory directory) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => HomePage(
-          initialUrl: directory.path,
-          initialTitle: directory.name,
-        ),
-      ),
-    );
+    // 使用IndexPage静态方法进行导航，保留底部导航栏
+    IndexPage.navigateToHome(context, directory.path, directory.name);
   }
 
   @override

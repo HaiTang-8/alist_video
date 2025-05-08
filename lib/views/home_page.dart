@@ -613,11 +613,49 @@ class _HomePageState extends State<HomePage>
       vsync: this,
     );
     _loadCurrentUser();
-    _getList().then((_) => _animationController.forward());
+    
+    print('HomePage.initState: initialUrl=${widget.initialUrl}, initialTitle=${widget.initialTitle}');
+    
+    // 如果传入了初始URL，先使用该URL
     if (widget.initialUrl != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        loadUrl(widget.initialUrl!, widget.initialTitle);
+      setState(() {
+        currentPath = widget.initialUrl!.split('/')
+          ..removeWhere((element) => element.isEmpty);
+        if (currentPath.isEmpty) {
+          currentPath = ['/'];
+        } else {
+          currentPath.insert(0, '/');
+        }
       });
+      print('HomePage.initState: 已设置路径 currentPath=${currentPath.join('/')}');
+      _getList().then((_) => _animationController.forward());
+    } else {
+      // 否则加载默认路径
+      print('HomePage.initState: 使用默认路径 [/]');
+      _getList().then((_) => _animationController.forward());
+    }
+  }
+
+  @override
+  void didUpdateWidget(HomePage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    print('HomePage.didUpdateWidget: 旧initialUrl=${oldWidget.initialUrl}, 新initialUrl=${widget.initialUrl}');
+    
+    // 当widget更新且initialUrl有变化时，重新加载目录
+    if (widget.initialUrl != oldWidget.initialUrl && widget.initialUrl != null) {
+      setState(() {
+        currentPath = widget.initialUrl!.split('/')
+          ..removeWhere((element) => element.isEmpty);
+        if (currentPath.isEmpty) {
+          currentPath = ['/'];
+        } else {
+          currentPath.insert(0, '/');
+        }
+      });
+      print('HomePage.didUpdateWidget: 路径已更新 currentPath=${currentPath.join('/')}');
+      _animationController.reset();
+      _getList().then((_) => _animationController.forward());
     }
   }
 
