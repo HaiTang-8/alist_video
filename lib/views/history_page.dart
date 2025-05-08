@@ -553,7 +553,7 @@ class _HistoryPageState extends State<HistoryPage>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        '最近观看：${timeago.format(latestRecord.changeTime, locale: 'zh')}',
+                        '最近观看：${timeago.format(latestRecord.changeTime, locale: 'zh_CN')}',
                         style: TextStyle(
                           fontSize: 13,
                           color: Colors.grey[600],
@@ -889,7 +889,7 @@ class _HistoryPageState extends State<HistoryPage>
                                     size: 14, color: Colors.grey[600]),
                                 const SizedBox(width: 4),
                                 Text(
-                                  '${timeago.format(record.changeTime, locale: 'zh')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                                  '${timeago.format(record.changeTime, locale: 'zh_CN')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: Colors.grey[600],
