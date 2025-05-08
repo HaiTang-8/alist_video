@@ -101,6 +101,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   OverlayEntry? _videoInfoOverlay;
   final GlobalKey _videoKey = GlobalKey();
 
+  // 添加标志以跟踪进度是否已保存
+  bool _progressSaved = false;
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -285,11 +288,15 @@ class VideoPlayerState extends State<VideoPlayer> {
     if (!mounted ||
         _currentUsername == null ||
         playList.isEmpty ||
-        _isLoading) {
+        _isLoading ||
+        _progressSaved) {  // 添加检查，避免重复保存
       return;
     }
 
     try {
+      // 设置标志表示进度已开始保存
+      _progressSaved = true;
+      
       final currentPosition = player.state.position;
       final duration = player.state.duration; // 获取视频总时长
       final currentVideo = playList[currentPlayingIndex];
@@ -489,10 +496,12 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 创建一个异步函数来处理清理工作
     Future<void> cleanup() async {
       try {
-        // 等待进度保存成
-        await _saveCurrentProgress();
+        // 等待进度保存成功
+        if (!_progressSaved) {  // 只有在进度还未保存的情况下才保存
+          await _saveCurrentProgress();
+        }
 
-        // 放器关闭完成
+        // 播放器关闭完成
         await player.dispose();
 
         // 其他资源清理
@@ -543,7 +552,9 @@ class VideoPlayerState extends State<VideoPlayer> {
               // 暂停视频
               await player.pause();
               // 等待进度保存
-              await _saveCurrentProgress();
+              if (!_progressSaved) {  // 只有在进度还未保存的情况下才保存
+                await _saveCurrentProgress();
+              }
               // 等播放器关闭
               await player.dispose();
 
@@ -2039,7 +2050,6 @@ class VideoPlayerState extends State<VideoPlayer> {
             builder: (context, _) {
               // 获取视频信息
               final videoParams = player.state.videoParams;
-              final audioBitrate = player.state.audioBitrate;
               
               // 基础信息（不依赖于MPV属性的Future）
               final position = player.state.position;
