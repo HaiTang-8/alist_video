@@ -104,6 +104,11 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加标志以跟踪进度是否已保存
   bool _progressSaved = false;
 
+  // 添加无边框模式状态
+  bool _isFramelessMode = false;
+  // 添加填充模式状态
+  bool _isStretchMode = false;
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -537,6 +542,11 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 判断是否是移动端布局（小于 600dp 使用移动端布局）
     final isMobile = screenWidth < 600;
 
+    // 在无边框模式下，直接返回桌面端布局
+    if (_isFramelessMode) {
+      return _buildDesktopLayout();
+    }
+
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -552,9 +562,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               // 暂停视频
               await player.pause();
               // 等待进度保存
-              if (!_progressSaved) {  // 只有在进度还未保存的情况下才保存
-                await _saveCurrentProgress();
-              }
+              await _saveCurrentProgress();
               // 等播放器关闭
               await player.dispose();
 
@@ -805,6 +813,14 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 桌面端布局
   Widget _buildDesktopLayout() {
+    if (_isFramelessMode) {
+      // 无边框模式下只显示视频播放器，占满整个屏幕
+      return Material(
+        color: Colors.black,
+        child: _buildVideoPlayer(isFrameless: true, stretch: _isStretchMode),
+      );
+    }
+    
     return Row(
       children: [
         // 左侧视频播放器
@@ -815,149 +831,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             child: MouseRegion(
               child: AspectRatio(
                 aspectRatio: 16 / 9,
-                child: Stack(
-                  children: [
-                    // Wrap [Video] widget with [MaterialDesktopVideoControlsTheme].
-                    MaterialDesktopVideoControlsTheme(
-                      normal: MaterialDesktopVideoControlsThemeData(
-                          displaySeekBar: true,
-                          visibleOnMount: false,
-                          primaryButtonBar: [],
-                          seekBarMargin: const EdgeInsets.only(
-                              bottom: 10, left: 0, right: 0),
-                          bottomButtonBarMargin: const EdgeInsets.only(
-                              bottom: 0, left: 0, right: 0, top: 0),
-                          bottomButtonBar: [
-                            const MaterialDesktopSkipPreviousButton(),
-                            const MaterialPlayOrPauseButton(),
-                            const MaterialSkipNextButton(),
-                            const MaterialDesktopVolumeButton(),
-                            const MaterialPositionIndicator(),
-                            const Spacer(), // 将全屏按钮推到最右边
-                            buildSpeedButton(),
-                            buildSubtitleButton(),
-                            buildKeyboardShortcutsButton(),
-                            const MaterialFullscreenButton(
-                              iconSize: 28,
-                            ),
-                          ]),
-                      fullscreen: MaterialDesktopVideoControlsThemeData(
-                          displaySeekBar: true,
-                          visibleOnMount: false,
-                          primaryButtonBar: [
-                            // 添加在顶部显示的倍速提示
-                            ValueListenableBuilder<bool>(
-                              valueListenable: _showSpeedIndicator,
-                              builder: (context, isVisible, _) {
-                                if (!isVisible) return const SizedBox.shrink();
-                                return Center(
-                                  child: ValueListenableBuilder<double>(
-                                    valueListenable: _indicatorSpeedValue,
-                                    builder: (context, speed, _) {
-                                      return AnimatedOpacity(
-                                        opacity: isVisible ? 1.0 : 0.0,
-                                        duration:
-                                            const Duration(milliseconds: 300),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 16, vertical: 8),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black
-                                                .withValues(alpha: 0.7),
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: Colors.black
-                                                    .withValues(alpha: 0.3),
-                                                blurRadius: 10,
-                                                spreadRadius: 1,
-                                              ),
-                                            ],
-                                          ),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              const Icon(
-                                                Icons.speed,
-                                                color: Colors.white,
-                                                size: 24,
-                                              ),
-                                              const SizedBox(width: 8),
-                                              Text(
-                                                '${speed}x',
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 18,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
-                                );
-                              },
-                            ),
-                          ],
-                          keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
-                          seekBarMargin: const EdgeInsets.only(
-                              bottom: 10, left: 0, right: 0),
-                          bottomButtonBarMargin: const EdgeInsets.only(
-                              bottom: 0, left: 0, right: 0, top: 0),
-                          bottomButtonBar: [
-                            const MaterialDesktopSkipPreviousButton(),
-                            const MaterialPlayOrPauseButton(),
-                            const MaterialSkipNextButton(),
-                            const MaterialDesktopVolumeButton(),
-                            const MaterialPositionIndicator(),
-                            const Spacer(), // 将全屏按钮推到最右边
-                            buildSpeedButton(),
-                            buildSubtitleButton(),
-                            buildKeyboardShortcutsButton(),
-                            const MaterialFullscreenButton(
-                              iconSize: 28,
-                            ),
-                          ]),
-                      child: Stack(
-                        children: [
-                          GestureDetector(
-                            key: _videoKey,
-                            onLongPressStart: (_) {
-                              _previousSpeed = controller.player.state.rate;
-                              controller.player
-                                  .setRate(AppConstants.longPressPlaybackSpeed);
-
-                              // 显示全局倍速提示，指定为长按模式
-                              _showSpeedIndicatorOverlay(
-                                  AppConstants.longPressPlaybackSpeed,
-                                  isLongPress: true);
-                            },
-                            onLongPressEnd: (_) {
-                              controller.player.setRate(_previousSpeed);
-
-                              // 设置定时器，延迟2秒后隐藏提示
-                              _speedIndicatorTimer?.cancel();
-                              _speedIndicatorTimer = Timer(
-                                  const Duration(seconds: 2),
-                                  () => _hideSpeedIndicatorOverlay());
-                            },
-                            child: Video(
-                              controller: controller,
-                              controls: MaterialDesktopVideoControls,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (_isLoading)
-                      const Center(
-                        child: CircularProgressIndicator(),
-                      ),
-                  ],
-                ),
+                child: _buildVideoPlayer(isFrameless: false, stretch: false),
               ),
             ),
           ),
@@ -968,6 +842,207 @@ class VideoPlayerState extends State<VideoPlayer> {
           child: _buildPlaylist(),
         ),
       ],
+    );
+  }
+  
+  // 提取视频播放器组件
+  Widget _buildVideoPlayer({bool isFrameless = false, bool stretch = false}) {
+    // 视频内容包装器
+    Widget videoContent = Stack(
+      children: [
+        GestureDetector(
+          key: _videoKey,
+          onLongPressStart: (_) {
+            _previousSpeed = controller.player.state.rate;
+            controller.player.setRate(AppConstants.longPressPlaybackSpeed);
+
+            // 显示全局倍速提示，指定为长按模式
+            _showSpeedIndicatorOverlay(AppConstants.longPressPlaybackSpeed,
+                isLongPress: true);
+          },
+          onLongPressEnd: (_) {
+            controller.player.setRate(_previousSpeed);
+
+            // 设置定时器，延迟2秒后隐藏提示
+            _speedIndicatorTimer?.cancel();
+            _speedIndicatorTimer = Timer(
+                const Duration(seconds: 2), () => _hideSpeedIndicatorOverlay());
+          },
+          child: Video(
+            controller: controller,
+            controls: MaterialDesktopVideoControls,
+          ),
+        ),
+      ],
+    );
+
+    // 如果不是拉伸模式且处于无边框模式，则使用Center和AspectRatio包装
+    if (!stretch && isFrameless) {
+      videoContent = Center(
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: videoContent,
+        ),
+      );
+    }
+
+    return Stack(
+      children: [
+        // Wrap [Video] widget with [MaterialDesktopVideoControlsTheme].
+        MaterialDesktopVideoControlsTheme(
+          normal: MaterialDesktopVideoControlsThemeData(
+              displaySeekBar: true,
+              visibleOnMount: false,
+              primaryButtonBar: [],
+              seekBarMargin: const EdgeInsets.only(
+                  bottom: 10, left: 0, right: 0),
+              bottomButtonBarMargin: const EdgeInsets.only(
+                  bottom: 0, left: 0, right: 0, top: 0),
+              bottomButtonBar: [
+                const MaterialDesktopSkipPreviousButton(),
+                const MaterialPlayOrPauseButton(),
+                const MaterialSkipNextButton(),
+                const MaterialDesktopVolumeButton(),
+                const MaterialPositionIndicator(),
+                const Spacer(), // 将全屏按钮推到最右边
+                buildSpeedButton(),
+                buildSubtitleButton(),
+                buildKeyboardShortcutsButton(),
+                buildFramelessButton(), // 始终显示无边框按钮
+                // 在无边框模式下显示拉伸切换按钮
+                if (isFrameless) buildStretchButton(),
+                const MaterialFullscreenButton(
+                  iconSize: 28,
+                ),
+              ],
+              keyboardShortcuts: _buildDesktopKeyboardShortcuts(), // 添加到normal模式
+            ),
+          fullscreen: MaterialDesktopVideoControlsThemeData(
+              displaySeekBar: true,
+              visibleOnMount: false,
+              primaryButtonBar: [
+                // 添加在顶部显示的倍速提示
+                ValueListenableBuilder<bool>(
+                  valueListenable: _showSpeedIndicator,
+                  builder: (context, isVisible, _) {
+                    if (!isVisible) return const SizedBox.shrink();
+                    return Center(
+                      child: ValueListenableBuilder<double>(
+                        valueListenable: _indicatorSpeedValue,
+                        builder: (context, speed, _) {
+                          return AnimatedOpacity(
+                            opacity: isVisible ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 300),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withValues(alpha: 0.7),
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.3),
+                                    blurRadius: 10,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.speed,
+                                    color: Colors.white,
+                                    size: 24,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${speed}x',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    );
+                  },
+                ),
+              ],
+              keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
+              seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
+              bottomButtonBarMargin: const EdgeInsets.only(
+                  bottom: 0, left: 0, right: 0, top: 0),
+              bottomButtonBar: [
+                const MaterialDesktopSkipPreviousButton(),
+                const MaterialPlayOrPauseButton(),
+                const MaterialSkipNextButton(),
+                const MaterialDesktopVolumeButton(),
+                const MaterialPositionIndicator(),
+                const Spacer(), // 将全屏按钮推到最右边
+                buildSpeedButton(),
+                buildSubtitleButton(),
+                buildKeyboardShortcutsButton(),
+                buildFramelessButton(), // 始终显示无边框按钮
+                // 在无边框模式下显示拉伸切换按钮
+                if (isFrameless) buildStretchButton(),
+                const MaterialFullscreenButton(
+                  iconSize: 28,
+                ),
+              ]),
+          child: videoContent,
+        ),
+        if (_isLoading)
+          const Center(
+            child: CircularProgressIndicator(),
+          ),
+      ],
+    );
+  }
+  
+  // 添加无边框播放按钮
+  Widget buildFramelessButton() {
+    return MaterialCustomButton(
+      onPressed: () {
+        setState(() {
+          // 切换无边框模式状态
+          _isFramelessMode = !_isFramelessMode;
+          // 进入无边框模式时默认设置为拉伸填充
+          if (_isFramelessMode) {
+            _isStretchMode = true;
+          }
+        });
+      },
+      icon: Tooltip(
+        message: _isFramelessMode ? '退出无边框' : '无边框播放',
+        child: Icon(
+          _isFramelessMode ? Icons.fullscreen_exit : Icons.fit_screen,
+          color: Colors.white,
+        ),
+      ),
+    );
+  }
+  
+  // 添加视频拉伸切换按钮
+  Widget buildStretchButton() {
+    return MaterialCustomButton(
+      onPressed: () {
+        setState(() {
+          _isStretchMode = !_isStretchMode;
+        });
+      },
+      icon: Tooltip(
+        message: _isStretchMode ? '原始比例' : '拉伸填充',
+        child: Icon(
+          _isStretchMode ? Icons.aspect_ratio : Icons.crop_free,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 
