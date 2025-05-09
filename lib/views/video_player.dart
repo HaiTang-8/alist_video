@@ -1,12 +1,14 @@
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
+import 'package:alist_player/utils/download_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:media_kit/media_kit.dart'; // Provides [Player], [Media], [Playlist] etc.
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
+import 'dart:io'; // Add this import for File class
 
 class VideoPlayer extends StatefulWidget {
   final String path;
@@ -109,6 +111,21 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加填充模式状态
   bool _isStretchMode = false;
 
+  // Add a map to store local file paths for videos
+  final Map<String, String> _localFilePaths = {};
+  
+  // Track if we're currently showing the local file dialog
+  bool _isShowingLocalFileDialog = false;
+  
+  // Add a flag to track if we've already checked the current video
+  final Set<String> _alreadyCheckedVideos = {};
+  
+  // Add a debounce timer for local file dialogs
+  Timer? _localFileDialogDebounce;
+
+  // Add a set to track which videos have local versions for UI display
+  final Set<String> _localVideos = {};
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -194,7 +211,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       if (res.code == 200) {
-        // 先创建播放列表
+        // Load the playlist as normal
         setState(() {
           List<Media> playMediaList =
               res.data?.content!.where((data) => data.type == 2).map((data) {
@@ -204,7 +221,11 @@ class VideoPlayerState extends State<VideoPlayer> {
                     }
                     return Media(
                       '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}',
-                      extras: {'name': data.name ?? ''},
+                      extras: {
+                        'name': data.name ?? '',
+                        'size': data.size ?? 0,
+                        'modified': data.modified ?? '',
+                      },
                     );
                   }).toList() ??
                   [];
@@ -259,9 +280,33 @@ class VideoPlayerState extends State<VideoPlayer> {
           index: playIndex,
         );
         await player.open(playable, play: false);
+        
+        // Initial check for the first video's local version
+        if (playList.isNotEmpty && playIndex < playList.length) {
+          final videoName = playList[playIndex].extras!['name'] as String;
+          final downloadTaskKey = "${widget.path}/$videoName";
+          final localFilePath = await _checkLocalFile(downloadTaskKey);
+          
+          if (localFilePath != null && mounted) {
+            _isShowingLocalFileDialog = true;
+            
+            final playLocal = await _showLocalFileDialog();
+            if (playLocal && mounted) {
+              await _playLocalFileVersion(localFilePath, videoName);
+            } else {
+              // Continue with streamed version
+              await player.play();
+            }
+            
+            _isShowingLocalFileDialog = false;
+          }
+        }
 
         // 初始化完成后进行一次排序
         _sortPlaylist();
+        
+        // 检查整个播放列表中哪些视频有本地缓存版本
+        _checkAllLocalFiles();
       } else {
         // 处理API错误
         if (mounted) {
@@ -280,6 +325,128 @@ class VideoPlayerState extends State<VideoPlayer> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('发生错误: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+  
+  // 检查整个播放列表中哪些视频有本地缓存版本
+  Future<void> _checkAllLocalFiles() async {
+    if (playList.isEmpty) return;
+    
+    final downloadManager = DownloadManager();
+    final tasks = downloadManager.tasks.value;
+    
+    for (final media in playList) {
+      final videoName = media.extras?['name'] as String?;
+      if (videoName != null) {
+        final key = "${widget.path}/$videoName";
+        if (tasks.containsKey(key)) {
+          final task = tasks[key]!;
+          if (task.status == '已完成') {
+            // 验证文件确实存在
+            final file = File(task.filePath);
+            if (await file.exists()) {
+              // 更新UI
+              if (mounted) {
+                setState(() {
+                  _localFilePaths[key] = task.filePath;
+                  _localVideos.add(videoName);
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Check if a file with the given path exists in the download tasks
+  Future<String?> _checkLocalFile(String path) async {
+    // Check if we already know this file is local
+    if (_localFilePaths.containsKey(path)) {
+      return _localFilePaths[path];
+    }
+    
+    final downloadTasks = DownloadManager().tasks.value;
+    final task = downloadTasks[path];
+    
+    if (task != null && task.status == '已完成') {
+      // Check if the file actually exists on disk
+      final file = File(task.filePath);
+      if (await file.exists()) {
+        // Cache the result
+        _localFilePaths[path] = task.filePath;
+        
+        // Add to set of local videos for UI
+        final videoName = path.split('/').last;
+        setState(() {
+          _localVideos.add(videoName);
+        });
+        
+        return task.filePath;
+      }
+    }
+    
+    return null;
+  }
+
+  // Show a dialog asking if the user wants to play the local file
+  Future<bool> _showLocalFileDialog() async {
+    return await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('播放本地文件'),
+        content: const Text('该视频已下载到本地，是否播放本地文件？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('在线播放'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('播放本地文件'),
+          ),
+        ],
+      ),
+    ) ?? false;
+  }
+
+  // Play the local version of a video while maintaining the playlist
+  Future<void> _playLocalFileVersion(String filePath, String videoName) async {
+    setState(() => _isLoading = true);
+
+    try {
+      // Create a temporary Media object for the local file
+      final localMedia = Media(
+        'file://$filePath',
+        extras: {'name': videoName},
+      );
+      
+      // Replace just the current media in the player
+      await player.stop();
+      
+      // Create a new playlist with the local file replacing the current entry
+      final List<Media> updatedPlaylist = List.from(playList);
+      updatedPlaylist[currentPlayingIndex] = localMedia;
+      
+      // Open the updated playlist
+      await player.open(
+        Playlist(updatedPlaylist, index: currentPlayingIndex),
+        play: true,
+      );
+      
+      setState(() => _isLoading = false);
+      print('Playing local file: $filePath');
+    } catch (e) {
+      print('Error playing local file: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('播放本地文件失败: ${e.toString()}'),
             backgroundColor: Colors.red,
             duration: const Duration(seconds: 3),
           ),
@@ -334,6 +501,8 @@ class VideoPlayerState extends State<VideoPlayer> {
     super.initState();
     _loadSettings();
     _loadPlaybackSpeeds();
+    
+    player.setPlaylistMode(PlaylistMode.none);
 
     // 监听播放速度变化
     player.stream.rate.listen((rate) {
@@ -365,6 +534,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
 
+    // Modified playlist change handler to check for local files
     player.stream.playlist.listen((event) async {
       if (mounted) {
         // 先保存当前视频进度，再更新状态
@@ -376,6 +546,18 @@ class VideoPlayerState extends State<VideoPlayer> {
             _isLoading = true;
             _hasSeekInitialPosition = false;
           });
+
+          // Get current video name
+          if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
+            final currentVideo = playList[currentPlayingIndex];
+            final videoName = currentVideo.extras!['name'] as String;
+            final videoKey = "${widget.path}/$videoName";
+            
+            // Only check if we haven't already checked this video in this session
+            if (!_alreadyCheckedVideos.contains(videoKey)) {
+              _checkAndPlayLocalFile(videoName);
+            }
+          }
         }
       }
     });
@@ -430,6 +612,57 @@ class VideoPlayerState extends State<VideoPlayer> {
       //   print(
       //       '当前选中的字幕: ID=${track.subtitle?.id}, 标题=${track.subtitle?.title}, 语言=${track.subtitle?.language}');
       // }
+    });
+
+    // Add position monitoring to detect when video ends
+    player.stream.position.listen((position) {
+      if (player.state.duration.inSeconds > 0 && 
+          position.inSeconds >= player.state.duration.inSeconds - 1) {
+        // Video reached the end, make sure it's paused
+        player.pause();
+      }
+    });
+  }
+
+  // New method to handle local file checking and dialog
+  Future<void> _checkAndPlayLocalFile(String videoName) async {
+    // Cancel any pending debounce timer
+    _localFileDialogDebounce?.cancel();
+    
+    // If already showing a dialog, don't show another
+    if (_isShowingLocalFileDialog) return;
+    
+    final videoKey = "${widget.path}/$videoName";
+    
+    // Add to checked videos set to avoid checking again
+    _alreadyCheckedVideos.add(videoKey);
+    
+    // Use debounce to prevent multiple dialogs
+    _localFileDialogDebounce = Timer(const Duration(milliseconds: 300), () async {
+      // Check if this video has a local version
+      final localFilePath = await _checkLocalFile(videoKey);
+      
+      // If local file exists and we're not already showing the dialog
+      if (localFilePath != null && mounted && !_isShowingLocalFileDialog) {
+        _isShowingLocalFileDialog = true;
+        
+        // Pause playback while showing dialog
+        await player.pause();
+        
+        // Show dialog asking user if they want to play the local file
+        if (mounted) {
+          final playLocal = await _showLocalFileDialog();
+          if (playLocal && mounted) {
+            // Play local version
+            await _playLocalFileVersion(localFilePath, videoName);
+          } else if (mounted) {
+            // Continue with streamed version
+            await player.play();
+          }
+        }
+        
+        _isShowingLocalFileDialog = false;
+      }
     });
   }
 
@@ -495,6 +728,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   @override
   void dispose() {
+    // Cancel the debounce timer
+    _localFileDialogDebounce?.cancel();
+    
     // 先调用父类的 dispose
     super.dispose();
 
@@ -1106,47 +1342,147 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 修改 ListTile 的 onTap 处理
   Widget _buildPlaylistItem(int index, bool isPlaying) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 8,
+    final videoName = playList[index].extras!['name'] as String;
+    final isLocalVideo = _localVideos.contains(videoName);
+    
+    // Get file size and modified time information if available
+    final size = playList[index].extras?['size'] as int? ?? 0;
+    final modifiedStr = playList[index].extras?['modified'] as String? ?? '';
+    final modified = modifiedStr.isNotEmpty ? DateTime.tryParse(modifiedStr) : null;
+    
+    return Container(
+      decoration: BoxDecoration(
+        color: isPlaying ? Colors.blue.withOpacity(0.08) : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        border: isPlaying 
+            ? Border.all(color: Colors.blue.withOpacity(0.3), width: 1) 
+            : null,
       ),
-      leading: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(
-            Icons.play_circle_outline,
-            size: 24,
-            color: isPlaying ? Colors.blue : Colors.grey[600],
-          ),
-          if (isPlaying)
-            const Icon(
-              Icons.play_circle_fill,
-              size: 24,
-              color: Colors.blue,
-            ),
-        ],
-      ),
-      title: Text(
-        playList[index].extras!['name'],
-        style: TextStyle(
-          fontSize: AppConstants.defaultFontSize,
-          color: isPlaying ? Colors.blue : Colors.black87,
-          fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+      margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 6,
         ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
+        leading: Stack(
+          alignment: Alignment.center,
+          children: [
+            Icon(
+              Icons.play_circle_outline,
+              size: 24,
+              color: isPlaying ? Colors.blue : Colors.grey[600],
+            ),
+            if (isPlaying)
+              const Icon(
+                Icons.play_circle_fill,
+                size: 24,
+                color: Colors.blue,
+              ),
+          ],
+        ),
+        title: Row(
+          children: [
+            Expanded(
+              child: Text(
+                videoName,
+                style: TextStyle(
+                  fontSize: AppConstants.defaultFontSize,
+                  color: isPlaying ? Colors.blue : Colors.black87,
+                  fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 2),
+          child: Wrap(
+            spacing: 4, // horizontal spacing between items
+            runSpacing: 2, // vertical spacing between lines
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Local file indicator
+              if (isLocalVideo)
+                Container(
+                  margin: const EdgeInsets.only(right: 2),
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(3),
+                    border: Border.all(color: Colors.green.withOpacity(0.5)),
+                  ),
+                  child: const Text(
+                    '已缓存',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.green,
+                    ),
+                  ),
+                ),
+              
+              // File size
+              if (size > 0)
+                Text(
+                  _formatSize(size),
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.grey[600],
+                  ),
+                ),
+                
+              // Modified date with separator
+              if (modified != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '|',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[400],
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formatDate(modified),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+        onTap: () async {
+          // 先保当前视频进，再切换视频
+          await _saveCurrentProgress();
+          if (mounted) {
+            player.jump(index);
+            scrollToCurrentItem();
+          }
+        },
+        hoverColor: Colors.blue.withValues(alpha: 0.05),
       ),
-      onTap: () async {
-        // 先保当前视频进，再切换视频
-        await _saveCurrentProgress();
-        if (mounted) {
-          player.jump(index);
-          scrollToCurrentItem();
-        }
-      },
-      hoverColor: Colors.blue.withValues(alpha: 0.05),
     );
+  }
+  
+  // 添加格式化日期的方法
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+  
+  // 添加格式化文件大小的方法
+  String _formatSize(int size) {
+    if (size < 1024) return '$size B';
+    if (size < 1024 * 1024) return '${(size / 1024).toStringAsFixed(1)} KB';
+    if (size < 1024 * 1024 * 1024) {
+      return '${(size / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(size / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
   }
 
   // 修改播放列表标题部分
@@ -2391,6 +2727,33 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
     
     return result;
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    
+    // Refresh which videos are available locally when dependencies change
+    // This ensures the UI gets updated when new downloads complete
+    _refreshLocalVideosList();
+  }
+  
+  // Refresh the list of locally available videos
+  Future<void> _refreshLocalVideosList() async {
+    // Check all videos in the playlist
+    for (int i = 0; i < playList.length; i++) {
+      final videoName = playList[i].extras?['name'] as String?;
+      if (videoName != null) {
+        final videoKey = "${widget.path}/$videoName";
+        final localPath = await _checkLocalFile(videoKey);
+        
+        if (localPath != null) {
+          setState(() {
+            _localVideos.add(videoName);
+          });
+        }
+      }
+    }
   }
 }
 

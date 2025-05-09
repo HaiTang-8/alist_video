@@ -7,6 +7,7 @@ import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
+import 'dart:io';
 
 class HomePage extends StatefulWidget {
   final String? initialUrl;
@@ -36,6 +37,9 @@ class _HomePageState extends State<HomePage>
   int _searchScope = 0;
   String? _currentUsername;
   bool _isFavorite = false;
+  
+  // 添加一个映射来跟踪哪些文件已下载
+  final Set<String> _localFiles = {};
 
   Future<void> _getList({bool refresh = false}) async {
     if (refresh) {
@@ -69,6 +73,9 @@ class _HomePageState extends State<HomePage>
         
         // 检查当前目录是否已收藏
         _checkFavoriteStatus();
+        
+        // 检查哪些文件已下载到本地
+        _checkLocalFiles();
       } else {
         _handleError(res.message ?? '获取文件失败');
       }
@@ -78,6 +85,34 @@ class _HomePageState extends State<HomePage>
       }
     } catch (e) {
       _handleError('操作失败,请检查日志');
+    }
+  }
+
+  // 新增方法：检查哪些文件已下载到本地
+  Future<void> _checkLocalFiles() async {
+    final downloadManager = DownloadManager();
+    final downloadTasks = downloadManager.tasks.value;
+    
+    setState(() {
+      _localFiles.clear();
+    });
+    
+    // 检查每个文件是否已下载
+    for (final file in files) {
+      if (file.type == 2) { // 只检查文件，不检查文件夹
+        final path = "${currentPath.join('/')}/${file.name}";
+        final task = downloadTasks[path];
+        
+        if (task != null && task.status == '已完成') {
+          // 检查文件是否真的存在
+          final fileExists = await File(task.filePath).exists();
+          if (fileExists) {
+            setState(() {
+              _localFiles.add(file.name);
+            });
+          }
+        }
+      }
     }
   }
 
@@ -948,6 +983,7 @@ class _HomePageState extends State<HomePage>
   // 文件列表项构建
   Widget _buildFileListItem(FileItem file, bool isSmallScreen) {
     final textColor = Colors.grey[800];
+    final isLocal = file.type == 2 && _localFiles.contains(file.name);
 
     return SlideTransition(
       position: Tween<Offset>(
@@ -1029,11 +1065,35 @@ class _HomePageState extends State<HomePage>
                     Expanded(
                       child: Row(
                         children: [
+                          // 文件图标
                           SizedBox(
                             width: 24,
                             child: _getIconForFile(file.name),
                           ),
                           const SizedBox(width: 12),
+                          
+                          // 本地文件标识 (放在文件名前面)
+                          if (isLocal)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 8.0),
+                              child: Tooltip(
+                                message: '已下载到本地',
+                                child: Container(
+                                  padding: const EdgeInsets.all(2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Icon(
+                                    Icons.download_done,
+                                    color: Colors.green,
+                                    size: 16,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          
+                          // 文件名称
                           Expanded(
                             child: Text(
                               file.name,
