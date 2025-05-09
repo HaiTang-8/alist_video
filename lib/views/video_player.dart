@@ -1308,25 +1308,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                     horizontal: 8,
                     vertical: 4,
                   ),
-                  decoration: BoxDecoration(
-                    color: isPlaying
-                        ? Colors.blue
-                            .withValues(alpha: AppConstants.hoverOpacity)
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.grey
-                            .withValues(alpha: AppConstants.shadowOpacity),
-                        spreadRadius: AppConstants.defaultSpreadRadius,
-                        blurRadius: AppConstants.defaultBlurRadius,
-                      ),
-                    ],
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: _buildPlaylistItem(index, isPlaying),
-                  ),
+                  child: _buildPlaylistItem(index, isPlaying),
                 );
               },
             ),
@@ -1350,122 +1332,132 @@ class VideoPlayerState extends State<VideoPlayer> {
     final modifiedStr = playList[index].extras?['modified'] as String? ?? '';
     final modified = modifiedStr.isNotEmpty ? DateTime.tryParse(modifiedStr) : null;
     
-    return Container(
-      decoration: BoxDecoration(
-        color: isPlaying ? Colors.blue.withOpacity(0.08) : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-        border: isPlaying 
-            ? Border.all(color: Colors.blue.withOpacity(0.3), width: 1) 
-            : null,
-      ),
-      margin: const EdgeInsets.symmetric(vertical: 2, horizontal: 4),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 6,
-        ),
-        leading: Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(
-              Icons.play_circle_outline,
-              size: 24,
-              color: isPlaying ? Colors.blue : Colors.grey[600],
-            ),
-            if (isPlaying)
-              const Icon(
-                Icons.play_circle_fill,
-                size: 24,
-                color: Colors.blue,
-              ),
-          ],
-        ),
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                videoName,
-                style: TextStyle(
-                  fontSize: AppConstants.defaultFontSize,
-                  color: isPlaying ? Colors.blue : Colors.black87,
-                  fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isPlaying ? Colors.blue.withOpacity(0.08) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: isPlaying 
+              ? Border.all(color: Colors.blue.withOpacity(0.3), width: 1) 
+              : null,
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey.withValues(alpha: AppConstants.shadowOpacity),
+              spreadRadius: AppConstants.defaultSpreadRadius,
+              blurRadius: AppConstants.defaultBlurRadius,
             ),
           ],
         ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 2),
-          child: Wrap(
-            spacing: 4, // horizontal spacing between items
-            runSpacing: 2, // vertical spacing between lines
-            crossAxisAlignment: WrapCrossAlignment.center,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 6,
+          ),
+          leading: Stack(
+            alignment: Alignment.center,
             children: [
-              // Local file indicator
-              if (isLocalVideo)
-                Container(
-                  margin: const EdgeInsets.only(right: 2),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(3),
-                    border: Border.all(color: Colors.green.withOpacity(0.5)),
-                  ),
-                  child: const Text(
-                    '已缓存',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.green,
-                    ),
-                  ),
-                ),
-              
-              // File size
-              if (size > 0)
-                Text(
-                  _formatSize(size),
-                  style: TextStyle(
-                    fontSize: 11,
-                    color: Colors.grey[600],
-                  ),
-                ),
-                
-              // Modified date with separator
-              if (modified != null)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '|',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[400],
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      _formatDate(modified),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
+              Icon(
+                Icons.play_circle_outline,
+                size: 24,
+                color: isPlaying ? Colors.blue : Colors.grey[600],
+              ),
+              if (isPlaying)
+                const Icon(
+                  Icons.play_circle_fill,
+                  size: 24,
+                  color: Colors.blue,
                 ),
             ],
           ),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  videoName,
+                  style: TextStyle(
+                    fontSize: AppConstants.defaultFontSize,
+                    color: isPlaying ? Colors.blue : Colors.black87,
+                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Wrap(
+              spacing: 4, // horizontal spacing between items
+              runSpacing: 2, // vertical spacing between lines
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                // Local file indicator
+                if (isLocalVideo)
+                  Container(
+                    margin: const EdgeInsets.only(right: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: Colors.green.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: Colors.green.withOpacity(0.5)),
+                    ),
+                    child: const Text(
+                      '已缓存',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.green,
+                      ),
+                    ),
+                  ),
+                
+                // File size
+                if (size > 0)
+                  Text(
+                    _formatSize(size),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  
+                // Modified date with separator
+                if (modified != null)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '|',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[400],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        _formatDate(modified),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          onTap: () async {
+            // 先保当前视频进，再切换视频
+            await _saveCurrentProgress();
+            if (mounted) {
+              player.jump(index);
+              scrollToCurrentItem();
+            }
+          },
+          hoverColor: Colors.blue.withValues(alpha: 0.05),
         ),
-        onTap: () async {
-          // 先保当前视频进，再切换视频
-          await _saveCurrentProgress();
-          if (mounted) {
-            player.jump(index);
-            scrollToCurrentItem();
-          }
-        },
-        hoverColor: Colors.blue.withValues(alpha: 0.05),
       ),
     );
   }
