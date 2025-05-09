@@ -7,7 +7,6 @@ import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
-import 'dart:io';
 
 class HomePage extends StatefulWidget {
   final String? initialUrl;
