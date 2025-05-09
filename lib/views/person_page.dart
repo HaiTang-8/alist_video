@@ -2,6 +2,7 @@ import 'package:alist_player/main.dart';
 import 'package:alist_player/utils/woo_http.dart';
 import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:alist_player/views/settings/playback_settings_page.dart';
+import 'package:alist_player/views/settings/shared_preferences_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/views/storage_page.dart';
@@ -220,6 +221,16 @@ class _PersonPageState extends State<PersonPage> {
                   icon: Icons.api_rounded,
                   title: 'API 设置',
                   onTap: () => ApiSettingsDialog.show(context),
+                ),
+                _buildMenuItem(
+                  icon: Icons.data_usage,
+                  title: '共享首选项查看器',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SharedPreferencesViewer(),
+                    ),
+                  ),
                 ),
                 _buildMenuItem(
                   icon: Icons.cloud_queue_rounded,

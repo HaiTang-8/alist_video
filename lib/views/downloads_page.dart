@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/download_manager.dart';
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 
 class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key});
@@ -20,6 +21,19 @@ class _DownloadsPageState extends State<DownloadsPage> {
       appBar: AppBar(
         title: const Text('下载管理'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.folder_open),
+            tooltip: '打开下载文件夹',
+            onPressed: () async {
+              final directory = await DownloadManager.getDownloadPath();
+              await DownloadManager.openFolder(directory);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.settings),
+            tooltip: '下载设置',
+            onPressed: () => _showSettingsDialog(context),
+          ),
           ValueListenableBuilder<Map<String, DownloadTask>>(
             valueListenable: DownloadManager().tasks,
             builder: (context, tasks, child) {
@@ -480,5 +494,152 @@ class _DownloadsPageState extends State<DownloadsPage> {
         ],
       ),
     );
+  }
+
+  Future<void> _showSettingsDialog(BuildContext context) async {
+    final currentPath = await DownloadManager.getCustomDownloadPath();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('下载设置'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('当前下载位置：'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.grey[200],
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      currentPath,
+                      style: const TextStyle(fontSize: 14),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy, size: 18),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: currentPath));
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('已复制路径到剪贴板')),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.search),
+              label: const Text('扫描文件夹并导入视频'),
+              onPressed: () async {
+                Navigator.pop(context);
+                await _scanAndImportVideos(context);
+              },
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size(double.infinity, 40),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await DownloadManager.resetToDefaultDownloadPath();
+              Navigator.pop(context);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已重置为默认下载位置')),
+              );
+            },
+            child: const Text('重置为默认'),
+          ),
+          TextButton(
+            onPressed: () async {
+              String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
+              if (selectedDirectory != null) {
+                final success = await DownloadManager.setCustomDownloadPath(selectedDirectory);
+                Navigator.pop(context);
+                
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('下载位置已更新')),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('设置下载位置失败')),
+                  );
+                }
+              }
+            },
+            child: const Text('选择文件夹'),
+          ),
+        ],
+      ),
+    );
+  }
+  
+  Future<void> _scanAndImportVideos(BuildContext context) async {
+    // 显示加载提示
+    final loadingDialog = AlertDialog(
+      content: Row(
+        children: [
+          const CircularProgressIndicator(),
+          const SizedBox(width: 16),
+          const Text('正在扫描文件夹...'),
+        ],
+      ),
+    );
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => loadingDialog,
+    );
+    
+    try {
+      // 执行扫描
+      final importedCount = await DownloadManager().scanDownloadFolder();
+      
+      // 关闭加载对话框
+      Navigator.pop(context);
+      
+      // 显示结果
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('扫描完成'),
+          content: Text(
+            importedCount > 0
+                ? '已导入 $importedCount 个视频文件到下载记录'
+                : '没有找到新的视频文件',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      );
+    } catch (e) {
+      // 出错时关闭加载对话框
+      Navigator.pop(context);
+      
+      // 显示错误
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('扫描失败: ${e.toString()}')),
+      );
+    }
   }
 }

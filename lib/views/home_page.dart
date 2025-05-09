@@ -91,28 +91,19 @@ class _HomePageState extends State<HomePage>
   // 新增方法：检查哪些文件已下载到本地
   Future<void> _checkLocalFiles() async {
     final downloadManager = DownloadManager();
-    final downloadTasks = downloadManager.tasks.value;
     
-    setState(() {
-      _localFiles.clear();
-    });
-    
-    // 检查每个文件是否已下载
-    for (final file in files) {
-      if (file.type == 2) { // 只检查文件，不检查文件夹
-        final path = "${currentPath.join('/')}/${file.name}";
-        final task = downloadTasks[path];
-        
-        if (task != null && task.status == '已完成') {
-          // 检查文件是否真的存在
-          final fileExists = await File(task.filePath).exists();
-          if (fileExists) {
-            setState(() {
-              _localFiles.add(file.name);
-            });
-          }
-        }
-      }
+    try {
+      // 使用新方法获取当前路径下的本地视频列表
+      final localVideos = await downloadManager.getLocalVideosInPath(currentPath.join('/'));
+      
+      setState(() {
+        _localFiles.clear();
+        _localFiles.addAll(localVideos);
+      });
+      
+      print("Found ${_localFiles.length} local videos in current directory");
+    } catch (e) {
+      print("Error checking local files: $e");
     }
   }
 

@@ -337,30 +337,33 @@ class VideoPlayerState extends State<VideoPlayer> {
   Future<void> _checkAllLocalFiles() async {
     if (playList.isEmpty) return;
     
-    final downloadManager = DownloadManager();
-    final tasks = downloadManager.tasks.value;
-    
-    for (final media in playList) {
-      final videoName = media.extras?['name'] as String?;
-      if (videoName != null) {
-        final key = "${widget.path}/$videoName";
-        if (tasks.containsKey(key)) {
-          final task = tasks[key]!;
-          if (task.status == '已完成') {
-            // 验证文件确实存在
-            final file = File(task.filePath);
-            if (await file.exists()) {
-              // 更新UI
-              if (mounted) {
-                setState(() {
-                  _localFilePaths[key] = task.filePath;
-                  _localVideos.add(videoName);
-                });
+    try {
+      final downloadManager = DownloadManager();
+      final localVideos = await downloadManager.getLocalVideosInPath(widget.path);
+      
+      if (mounted) {
+        setState(() {
+          _localVideos.clear();
+          
+          // 遍历播放列表，将本地文件添加到_localVideos集合中
+          for (final media in playList) {
+            final videoName = media.extras?['name'] as String?;
+            if (videoName != null && localVideos.contains(videoName)) {
+              _localVideos.add(videoName);
+              
+              // 尝试查找任务以获取文件路径
+              final task = downloadManager.findTask(widget.path, videoName);
+              if (task != null) {
+                _localFilePaths["${widget.path}/$videoName"] = task.filePath;
               }
             }
           }
-        }
+        });
       }
+      
+      print("Found ${_localVideos.length} local videos in playlist");
+    } catch (e) {
+      print("Error checking all local files: $e");
     }
   }
 
@@ -371,8 +374,12 @@ class VideoPlayerState extends State<VideoPlayer> {
       return _localFilePaths[path];
     }
     
-    final downloadTasks = DownloadManager().tasks.value;
-    final task = downloadTasks[path];
+    final downloadManager = DownloadManager();
+    
+    // 使用新的findTask方法获取任务
+    final fileName = path.split('/').last;
+    final directoryPath = path.substring(0, path.lastIndexOf('/'));
+    final task = downloadManager.findTask(directoryPath, fileName);
     
     if (task != null && task.status == '已完成') {
       // Check if the file actually exists on disk
@@ -382,9 +389,8 @@ class VideoPlayerState extends State<VideoPlayer> {
         _localFilePaths[path] = task.filePath;
         
         // Add to set of local videos for UI
-        final videoName = path.split('/').last;
         setState(() {
-          _localVideos.add(videoName);
+          _localVideos.add(fileName);
         });
         
         return task.filePath;

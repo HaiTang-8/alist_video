@@ -137,11 +137,13 @@ class DownloadManager {
       }
 
       final downloadUrl = response.data!.rawUrl!;
-      final directory = await getApplicationDocumentsDirectory();
-      final filePath = '${directory.path}/downloads/$fileName';
+      
+      // 获取自定义下载路径
+      final downloadDir = await getDownloadPath();
+      final filePath = '$downloadDir/$fileName';
 
       // 创建下载目录
-      await Directory('${directory.path}/downloads').create(recursive: true);
+      await Directory(downloadDir).create(recursive: true);
 
       final task = DownloadTask(
         path: taskKey, // 使用新的唯一标识
@@ -352,8 +354,55 @@ class DownloadManager {
 
   // 获取下载目录路径
   static Future<String> getDownloadPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    final customPath = prefs.getString('custom_download_path');
+    
+    if (customPath != null && await Directory(customPath).exists()) {
+      return customPath;
+    }
+    
+    // 默认路径
     final directory = await getApplicationDocumentsDirectory();
     return '${directory.path}/downloads';
+  }
+
+  // 获取当前设置的下载路径
+  static Future<String> getCustomDownloadPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    final customPath = prefs.getString('custom_download_path');
+    
+    if (customPath != null) {
+      return customPath;
+    }
+    
+    // 返回默认路径
+    final directory = await getApplicationDocumentsDirectory();
+    return '${directory.path}/downloads';
+  }
+  
+  // 设置自定义下载路径
+  static Future<bool> setCustomDownloadPath(String path) async {
+    try {
+      // 确保目录存在
+      final directory = Directory(path);
+      if (!await directory.exists()) {
+        await directory.create(recursive: true);
+      }
+      
+      // 保存设置
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('custom_download_path', path);
+      return true;
+    } catch (e) {
+      print("Error setting custom download path: $e");
+      return false;
+    }
+  }
+
+  // 重置为默认下载路径
+  static Future<void> resetToDefaultDownloadPath() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('custom_download_path');
   }
 
   // 打开文件
@@ -379,7 +428,7 @@ class DownloadManager {
     }
   }
 
-  // ���加通知方法
+  // 添加通知方法
   void _showNotification(String fileName) async {
     const androidDetails = AndroidNotificationDetails(
       'downloads',
@@ -400,5 +449,214 @@ class DownloadManager {
       '$fileName 已下载完成',
       details,
     );
+  }
+  
+  // 扫描下载文件夹，将未记录的视频文件导入到下载记录中
+  Future<int> scanDownloadFolder() async {
+    int importedCount = 0;
+    try {
+      final downloadPath = await getDownloadPath();
+      print("Scanning download folder: $downloadPath");
+      final directory = Directory(downloadPath);
+      
+      if (!await directory.exists()) {
+        print("Download directory does not exist: $downloadPath");
+        return 0;
+      }
+      
+      // 获取当前记录的所有下载文件路径
+      final recordedFilePaths = _tasks.values
+          .map((task) => task.filePath)
+          .toSet();
+      
+      print("Found ${recordedFilePaths.length} existing records");
+      
+      // 读取目录下的所有文件
+      final List<FileSystemEntity> files = [];
+      try {
+        files.addAll(await directory.list().toList());
+        print("Found ${files.length} files/directories in download folder");
+      } catch (e) {
+        print("Error listing directory contents: $e");
+        return 0;
+      }
+      
+      // 创建一个映射，用于存储文件名到可能原始路径的映射
+      // 我们将尝试将导入的文件名与已有的文件命名模式进行匹配
+      final Map<String, List<String>> existingFilePatterns = {};
+      
+      // 从已有的下载任务中收集文件命名模式
+      for (final task in _tasks.values) {
+        final pathParts = task.path.split('/');
+        if (pathParts.length >= 2) {
+          final fileName = pathParts.last;
+          final parentPath = pathParts.take(pathParts.length - 1).join('/');
+          
+          // 保存文件名到其父路径的映射
+          if (!existingFilePatterns.containsKey(fileName)) {
+            existingFilePatterns[fileName] = [];
+          }
+          existingFilePatterns[fileName]!.add(parentPath);
+        }
+      }
+      
+      for (var fileEntity in files) {
+        try {
+          // 跳过隐藏文件
+          final fileName = fileEntity.path.split(Platform.pathSeparator).last;
+          if (fileName.startsWith('.')) {
+            continue;
+          }
+          
+          if (fileEntity is File) {
+            final filePath = fileEntity.path;
+            
+            // 如果文件已在记录中，跳过
+            if (recordedFilePaths.contains(filePath)) {
+              continue;
+            }
+            
+            // 检查是否为视频文件
+            if (_isVideoFile(filePath)) {
+              print("Found video file: $fileName");
+              final fileSize = await fileEntity.length();
+              
+              // 尝试确定文件的原始路径
+              String taskPath;
+              
+              // 1. 尝试根据文件名匹配已有的下载任务路径模式
+              if (existingFilePatterns.containsKey(fileName)) {
+                // 如果找到了匹配的文件名，使用其第一个父路径
+                taskPath = "${existingFilePatterns[fileName]!.first}/$fileName";
+                print("Matched existing path pattern: $taskPath");
+              } else {
+                // 2. 如果没有匹配的模式，使用通用格式
+                taskPath = "/imported/$fileName";
+                print("Using generic import path: $taskPath");
+              }
+              
+              // 创建一个已完成的下载任务
+              final task = DownloadTask(
+                path: taskPath, 
+                url: '', // 导入的文件没有URL
+                fileName: fileName,
+                filePath: filePath,
+              );
+              task.status = '已完成';
+              task.progress = 1.0;
+              task.totalBytes = fileSize;
+              task.receivedBytes = fileSize;
+              
+              // 添加到任务列表
+              _tasks[task.path] = task;
+              importedCount++;
+              print("Imported video: $fileName (${_formatSize(fileSize)})");
+            }
+          }
+        } catch (e) {
+          // 单个文件处理失败不应该影响整个扫描过程
+          print("Error processing file ${fileEntity.path}: $e");
+          continue;
+        }
+      }
+      
+      if (importedCount > 0) {
+        // 更新任务列表并保存
+        _downloadTaskController.value = Map.from(_tasks);
+        await _saveTasks();
+        print("Successfully imported $importedCount videos");
+      } else {
+        print("No new videos found for import");
+      }
+      
+      return importedCount;
+    } catch (e) {
+      print("Error scanning download folder: $e");
+      if (e is Error) {
+        print("Stacktrace: ${e.stackTrace}");
+      }
+      return 0;
+    }
+  }
+  
+  // 格式化文件大小显示
+  String _formatSize(num bytes) {
+    if (bytes < 1024) return '${bytes.toStringAsFixed(1)} B';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
+    if (bytes < 1024 * 1024 * 1024) {
+      return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(1)} GB';
+  }
+  
+  // 检查文件是否为视频文件
+  bool _isVideoFile(String filePath) {
+    final videoExtensions = [
+      '.mp4', '.mkv', '.avi', '.mov', '.wmv', '.flv', '.webm', '.m4v', 
+      '.mpg', '.mpeg', '.3gp', '.ts', '.mts', '.m2ts'
+    ];
+    
+    final lastDotIndex = filePath.toLowerCase().lastIndexOf('.');
+    // 如果文件名中没有点号或点号在无效位置，则不是视频文件
+    if (lastDotIndex < 0) {
+      return false;
+    }
+    
+    final extension = filePath.toLowerCase().substring(lastDotIndex);
+    return videoExtensions.contains(extension);
+  }
+
+  // 判断任务是否是导入的任务
+  bool isImportedTask(String taskPath) {
+    return taskPath.startsWith('/imported/');
+  }
+
+  // 获取任务列表中具有相同文件名的任务
+  DownloadTask? findTaskByFileName(String fileName) {
+    for (final task in _tasks.values) {
+      if (task.fileName == fileName && task.status == '已完成') {
+        return task;
+      }
+    }
+    return null;
+  }
+  
+  // 获取指定目录和文件名的任务
+  DownloadTask? findTask(String path, String fileName) {
+    final taskKey = '$path/$fileName';
+    if (_tasks.containsKey(taskKey)) {
+      return _tasks[taskKey];
+    }
+    
+    // 也尝试查找同名导入任务
+    for (final entry in _tasks.entries) {
+      if (isImportedTask(entry.key) && entry.value.fileName == fileName) {
+        return entry.value;
+      }
+    }
+    
+    return null;
+  }
+  
+  // 获取特定路径下的视频文件列表
+  Future<List<String>> getLocalVideosInPath(String path) async {
+    final result = <String>[];
+    try {
+      for (final task in _tasks.values) {
+        if (task.status == '已完成') {
+          // 检查任务路径是否匹配
+          if (task.path.startsWith('$path/') || isImportedTask(task.path)) {
+            // 对于导入的任务，检查文件是否存在
+            final file = File(task.filePath);
+            if (await file.exists()) {
+              result.add(task.fileName);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print("Error getting local videos: $e");
+    }
+    return result;
   }
 }
