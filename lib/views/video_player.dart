@@ -103,9 +103,6 @@ class VideoPlayerState extends State<VideoPlayer> {
   OverlayEntry? _videoInfoOverlay;
   final GlobalKey _videoKey = GlobalKey();
 
-  // 添加标志以跟踪进度是否已保存
-  bool _progressSaved = false;
-
   // 添加无边框模式状态
   bool _isFramelessMode = false;
   // 添加填充模式状态
@@ -506,7 +503,6 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
       
       // 标记进度已保存成功
-      _progressSaved = true;
       print('播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
     } catch (e) {
       print('保存进度失败: $e');
@@ -585,7 +581,6 @@ class VideoPlayerState extends State<VideoPlayer> {
             _hasSeekInitialPosition = false;
             
             // 重置进度保存标志，以便能够保存新视频的进度
-            _progressSaved = false;
           });
 
           // Get current video name
@@ -664,7 +659,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         
         // 在视频结束时保存进度
         if (mounted) {
-          _progressSaved = false; // 重置标志以允许保存
+// 重置标志以允许保存
           _saveCurrentProgress().then((_) {
             print('视频结束，进度已保存');
           });
@@ -676,7 +671,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     player.stream.playing.listen((isPlaying) {
       if (!isPlaying && mounted) {
         // 视频暂停时保存进度
-        _progressSaved = false; // 重置标志以允许保存
+// 重置标志以允许保存
         _saveCurrentProgress().then((_) {
           print('视频暂停，进度已保存');
         });
@@ -792,7 +787,6 @@ class VideoPlayerState extends State<VideoPlayer> {
     _localFileDialogDebounce?.cancel();
     
     // 重置进度保存标志，确保可以保存进度
-    _progressSaved = false;
     
     // 创建一个异步函数来处理清理工作
     Future<void> cleanup() async {
@@ -872,7 +866,6 @@ class VideoPlayerState extends State<VideoPlayer> {
               await player.pause();
               
               // 重置进度保存标志，确保可以保存进度
-              _progressSaved = false;
               
               // 等待进度保存
               if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
@@ -1437,21 +1430,45 @@ class VideoPlayerState extends State<VideoPlayer> {
             horizontal: 16,
             vertical: 6,
           ),
-          leading: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(
-                Icons.play_circle_outline,
-                size: 24,
-                color: isPlaying ? Colors.blue : Colors.grey[600],
-              ),
-              if (isPlaying)
-                const Icon(
-                  Icons.play_circle_fill,
-                  size: 24,
-                  color: Colors.blue,
+          // 修改前导图标，添加序号显示
+          leading: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: isPlaying ? Colors.blue.withOpacity(0.1) : Colors.grey.withOpacity(0.05),
+              shape: BoxShape.circle,
+              border: isPlaying 
+                  ? Border.all(color: Colors.blue, width: 1) 
+                  : Border.all(color: Colors.grey.withOpacity(0.3), width: 1),
+            ),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                // 显示序号 (从1开始)
+                Text(
+                  '${index + 1}',
+                  style: TextStyle(
+                    color: isPlaying ? Colors.blue : Colors.grey[700],
+                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                    fontSize: 12,
+                  ),
                 ),
-            ],
+                // 播放中的指示
+                if (isPlaying)
+                  Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: Colors.blue,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
           title: Row(
             children: [
@@ -1561,6 +1578,13 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 修改播放列表标题部分
   Widget _buildPlaylistHeader() {
+    // 计算当前播放索引的文字信息
+    String playingIndexInfo = '';
+    if (playList.isNotEmpty && currentPlayingIndex >= 0 && currentPlayingIndex < playList.length) {
+      // 显示当前播放索引 (索引+1，从1开始计数更符合用户习惯)
+      playingIndexInfo = ' | 正在播放: ${currentPlayingIndex + 1}/${playList.length}';
+    }
+    
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1577,14 +1601,17 @@ class VideoPlayerState extends State<VideoPlayer> {
         children: [
           const Icon(Icons.format_list_bulleted, color: Colors.blue),
           const SizedBox(width: 8),
-          Text(
-            '播放列表 (${playList.length})',
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
+          Expanded(
+            child: Text(
+              '播放列表 (${playList.length})$playingIndexInfo',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
             ),
           ),
-          const Spacer(),
           // 添加排序按钮
           IconButton(
             icon: Icon(
