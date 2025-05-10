@@ -1180,60 +1180,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           fullscreen: MaterialDesktopVideoControlsThemeData(
               displaySeekBar: true,
               visibleOnMount: false,
-              primaryButtonBar: [
-                // 添加在顶部显示的倍速提示
-                ValueListenableBuilder<bool>(
-                  valueListenable: _showSpeedIndicator,
-                  builder: (context, isVisible, _) {
-                    if (!isVisible) return const SizedBox.shrink();
-                    return Center(
-                      child: ValueListenableBuilder<double>(
-                        valueListenable: _indicatorSpeedValue,
-                        builder: (context, speed, _) {
-                          return AnimatedOpacity(
-                            opacity: isVisible ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 300),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withValues(alpha: 0.7),
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: Colors.black.withValues(alpha: 0.3),
-                                    blurRadius: 10,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.speed,
-                                    color: Colors.white,
-                                    size: 24,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    '${speed}x',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    );
-                  },
-                ),
-              ],
+              primaryButtonBar: [],
               keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
               seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
               bottomButtonBarMargin: const EdgeInsets.only(
