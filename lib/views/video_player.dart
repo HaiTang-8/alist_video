@@ -1115,6 +1115,10 @@ class VideoPlayerState extends State<VideoPlayer> {
             // 显示全局倍速提示，指定为长按模式
             _showSpeedIndicatorOverlay(AppConstants.longPressPlaybackSpeed,
                 isLongPress: true);
+            
+            // 取消任何已有定时器，确保长按时指示器不会消失
+            _speedIndicatorTimer?.cancel();
+            _speedIndicatorTimer = null;
           },
           onLongPressEnd: (_) {
             controller.player.setRate(_previousSpeed);
@@ -1821,9 +1825,11 @@ class VideoPlayerState extends State<VideoPlayer> {
           _previousSpeed = controller.player.state.rate;
           player.setRate(AppConstants.longPressPlaybackSpeed);
 
-          // 显示倍速提示
+          // 显示倍速提示，并取消任何已有定时器
           _showSpeedIndicatorOverlay(AppConstants.longPressPlaybackSpeed,
               isLongPress: true);
+          _speedIndicatorTimer?.cancel();
+          _speedIndicatorTimer = null;
         },
         onRelease: () {
           player.setRate(_previousSpeed);
@@ -2437,6 +2443,18 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 先移除已有的提示
     _hideSpeedIndicatorOverlay();
 
+    // 更新显示值
+    _showSpeedIndicator.value = true;
+    _indicatorSpeedValue.value = speed;
+
+    // 只有在非长按模式下才设置自动隐藏定时器
+    if (!isLongPress) {
+      _speedIndicatorTimer?.cancel();
+      _speedIndicatorTimer = Timer(const Duration(seconds: 2), () {
+        _hideSpeedIndicatorOverlay();
+      });
+    }
+
     // 创建新overlay
     _speedIndicatorOverlay = OverlayEntry(
       builder: (context) => Positioned(
@@ -2508,12 +2526,6 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 添加到overlay
     if (mounted) {
       Overlay.of(context).insert(_speedIndicatorOverlay!);
-
-      // 设置定时器，2秒后移除
-      _speedIndicatorTimer?.cancel();
-      _speedIndicatorTimer = Timer(const Duration(seconds: 2), () {
-        _hideSpeedIndicatorOverlay();
-      });
     }
   }
 
@@ -2521,6 +2533,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   void _hideSpeedIndicatorOverlay() {
     _speedIndicatorOverlay?.remove();
     _speedIndicatorOverlay = null;
+    _showSpeedIndicator.value = false;
   }
 
   // 切换视频信息显示
