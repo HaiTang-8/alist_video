@@ -115,13 +115,16 @@ class VideoPlayerState extends State<VideoPlayer> {
   bool _isShowingLocalFileDialog = false;
   
   // Add a flag to track if we've already checked the current video
-  final Set<String> _alreadyCheckedVideos = {};
+  // final Set<String> _alreadyCheckedVideos = {};
   
   // Add a debounce timer for local file dialogs
   Timer? _localFileDialogDebounce;
 
   // Add a set to track which videos have local versions for UI display
   final Set<String> _localVideos = {};
+
+  // 添加初始加载标志
+  bool _isInitialLoading = true;
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -191,6 +194,159 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
+  // 添加日志方法来统一记录视频播放器相关日志
+  void _logDebug(String message) {
+    print('[VideoPlayer] $message');
+  }
+
+  // Modified playlist change handler to check for local files
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+    _loadPlaybackSpeeds();
+    
+    // 添加定期调试信息
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      try {
+        if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
+          final videoName = playList[currentPlayingIndex].extras!['name'] as String;
+          final position = player.state.position;
+          final duration = player.state.duration;
+          
+          _logDebug('当前播放: $videoName, 进度: ${position.inSeconds}/${duration.inSeconds}秒');
+        }
+      } catch (e) {
+        // 忽略任何错误
+      }
+    });
+    
+    player.setPlaylistMode(PlaylistMode.none);
+
+    // 监听播放速度变化
+    player.stream.rate.listen((rate) {
+      _rateNotifier.value = rate;
+      setState(() {
+        _currentSpeed = rate;
+      });
+    });
+
+    _getCurrentUsername();
+    _openAndSeekVideo();
+
+    player.stream.buffer.listen((event) {
+      if (event.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
+        _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
+            .then((_) {
+          if (mounted) {
+            setState(() => _isLoading = false);
+          }
+        });
+        _hasSeekInitialPosition = true;
+      }
+    });
+
+    // 2秒后标记初始加载完成，避免多次检查
+    Future.delayed(const Duration(seconds: 2), () {
+      _isInitialLoading = false;
+      _logDebug('初始加载标记设置为false');
+    });
+
+    // Modified playlist change handler to check for local files
+    player.stream.playlist.listen((event) async {
+      if (mounted) {
+        final videoName = playList.isNotEmpty && event.index < playList.length 
+            ? playList[event.index].extras!['name'] as String 
+            : "未知";
+        _logDebug('播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=${_isInitialLoading}');
+        
+        // 如果是初始加载，跳过检查
+        if (_isInitialLoading) {
+          _logDebug('初始加载中，跳过本地文件检查');
+          return;
+        }
+        
+        // 先保存当前视频进度，再更新状态
+        await _saveCurrentProgress(); // 切换视频时保存进度
+        if (mounted) {
+          setState(() {
+            currentPlayingIndex = event.index;
+            scrollToCurrentItem();
+            _isLoading = true;
+            _hasSeekInitialPosition = false;
+          });
+
+          // Get current video name
+          if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
+            final currentVideo = playList[currentPlayingIndex];
+            final videoName = currentVideo.extras!['name'] as String;
+            
+            _logDebug('准备检查本地文件: 索引=$currentPlayingIndex, 视频=$videoName, 对话框显示=${_isShowingLocalFileDialog}');
+            
+            // 每次都检查本地文件，不考虑是否已检查过
+            if (!_isShowingLocalFileDialog) {
+              await _checkAndPlayLocalFile(videoName);
+            }
+          }
+        }
+      }
+    });
+
+    // 修改错误监听处理
+    player.stream.error.listen((error) {
+      if (mounted) {
+        _showErrorMessage(error.toString());
+      }
+    });
+
+    // 监听字幕轨道变化
+    player.stream.tracks.listen((tracks) {
+      setState(() {});
+
+      // 打印当前视频的字幕轨道列表
+      _logDebug('当前视频字幕轨道列表: ${tracks.subtitle.length}个轨道');
+    });
+
+    // 监听当前选中的字幕
+    player.stream.track.listen((track) {
+      setState(() {
+        _currentSubtitle = track.subtitle;
+      });
+    });
+
+    // Add position monitoring to detect when video ends
+    player.stream.position.listen((position) {
+      if (player.state.duration.inSeconds > 0 && 
+          position.inSeconds >= player.state.duration.inSeconds - 1) {
+        // Video reached the end, make sure it's paused
+        player.pause();
+        
+        // 在视频结束时保存进度
+        if (mounted) {
+          _saveCurrentProgress().then((_) {
+            _logDebug('视频结束，进度已保存');
+          });
+        }
+      }
+    });
+    
+    // 添加对播放状态的监听，在暂停时保存进度
+    player.stream.playing.listen((isPlaying) {
+      if (!isPlaying && mounted) {
+        // 视频暂停时保存进度
+        _saveCurrentProgress().then((_) {
+          _logDebug('视频暂停，进度已保存');
+        });
+      }
+    });
+  }
+
+  // 修改初始化视频加载方法，避免多次检查
   Future<void> _openAndSeekVideo() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -198,6 +354,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       final baseDownloadUrl =
           prefs.getString(AppConstants.baseDownloadUrlKey) ??
               AppConstants.defaultBaseDownloadUrl;
+
+      _logDebug('开始加载视频: 路径=${widget.path}, 文件=${widget.name}');
 
       var res = await FsApi.list(
         path: widget.path,
@@ -236,6 +394,8 @@ class VideoPlayerState extends State<VideoPlayer> {
             playList.add(element);
             index++;
           }
+          
+          _logDebug('播放列表加载完成: 总数=${playList.length}, 初始索引=$playIndex');
         });
 
         // 修改字幕文件收集方式
@@ -262,41 +422,74 @@ class VideoPlayerState extends State<VideoPlayer> {
           }
 
           // 打印找到的外部字幕文件
-          print('找到的外部字幕文件:');
-          for (int i = 0; i < _availableSubtitles.length; i++) {
-            final subtitle = _availableSubtitles[i];
-            print('  [$i] 名称: ${subtitle.name}, 路径: ${subtitle.path}');
-          }
+          _logDebug('找到的外部字幕文件: 数量=${_availableSubtitles.length}');
         } else {
-          print('未找到外部字幕文件');
+          _logDebug('未找到外部字幕文件');
         }
 
-        // 打开视频
+        // 打开视频但不自动播放，等待本地文件检查完成
+        _logDebug('准备打开播放列表: 索引=$playIndex');
+
+        // 设置初始加载标志
+        _isInitialLoading = true;
+
         Playable playable = Playlist(
           playList,
           index: playIndex,
         );
+
+        // 初始加载时，手动设置当前播放索引
+        currentPlayingIndex = playIndex;
+
+        // 监听播放列表索引变化前，防止初始化时触发不必要的检查
+        player.stream.playlist.first.then((event) {
+          _logDebug('播放列表首次加载完成: 当前索引=${event.index}');
+        });
+
         await player.open(playable, play: false);
-        
+
         // Initial check for the first video's local version
         if (playList.isNotEmpty && playIndex < playList.length) {
           final videoName = playList[playIndex].extras!['name'] as String;
           final downloadTaskKey = "${widget.path}/$videoName";
+          
+          _logDebug('初始检查本地文件: 视频=$videoName');
+          
           final localFilePath = await _checkLocalFile(downloadTaskKey);
           
           if (localFilePath != null && mounted) {
-            _isShowingLocalFileDialog = true;
+            _logDebug('发现本地文件: 视频=$videoName, 路径=$localFilePath');
+            setState(() => _isShowingLocalFileDialog = true);
             
             final playLocal = await _showLocalFileDialog();
             if (playLocal && mounted) {
+              _logDebug('用户选择播放本地文件: 视频=$videoName');
               await _playLocalFileVersion(localFilePath, videoName);
-            } else {
+            } else if (mounted) {
+              _logDebug('用户选择播放在线文件: 视频=$videoName');
               // Continue with streamed version
               await player.play();
             }
             
-            _isShowingLocalFileDialog = false;
+            setState(() => _isShowingLocalFileDialog = false);
+          } else {
+            _logDebug('未找到本地文件或组件已卸载: 视频=$videoName');
+            if (mounted) {
+              // No local file, play the stream version
+              await player.play();
+            }
           }
+        } else if (mounted) {
+          _logDebug('播放列表为空或索引无效');
+          // No videos in playlist or invalid index
+          await player.play();
+        }
+
+        // 避免与播放列表变化监听冲突，手动设置初始值
+        if (mounted && !_isInitialLoading) {
+          setState(() {
+            currentPlayingIndex = playIndex;
+          });
         }
 
         // 初始化完成后进行一次排序
@@ -306,6 +499,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         _checkAllLocalFiles();
       } else {
         // 处理API错误
+        _logDebug('API错误: ${res.message ?? "未知错误"}');
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -318,6 +512,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     } catch (e) {
       // 处理异常
+      _logDebug('异常: ${e.toString()}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -508,256 +703,6 @@ class VideoPlayerState extends State<VideoPlayer> {
       print('保存进度失败: $e');
       // 保存失败时不设置_progressSaved标志
     }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    _loadSettings();
-    _loadPlaybackSpeeds();
-    
-    // 添加定期调试信息
-    Timer.periodic(const Duration(seconds: 30), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      
-      try {
-        if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
-          final videoName = playList[currentPlayingIndex].extras!['name'] as String;
-          final position = player.state.position;
-          final duration = player.state.duration;
-          
-          print('当前播放: $videoName, 进度: ${position.inSeconds}/${duration.inSeconds}秒');
-        }
-      } catch (e) {
-        // 忽略任何错误
-      }
-    });
-    
-    player.setPlaylistMode(PlaylistMode.none);
-
-    // 监听播放速度变化
-    player.stream.rate.listen((rate) {
-      _rateNotifier.value = rate;
-      setState(() {
-        _currentSpeed = rate;
-      });
-    });
-
-    // // 原有的其他设置
-    // (player.platform as dynamic).setProperty('cache', 'no');
-    // (player.platform as dynamic).setProperty('cache-secs', '0');
-    // (player.platform as dynamic).setProperty('demuxer-seekable-cache', 'no');
-    // (player.platform as dynamic).setProperty('demuxer-max-back-bytes', '0');
-    // (player.platform as dynamic).setProperty('demuxer-donate-buffer', 'no');
-
-    _getCurrentUsername();
-    _openAndSeekVideo();
-
-    player.stream.buffer.listen((event) {
-      if (event.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
-        _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
-            .then((_) {
-          if (mounted) {
-            setState(() => _isLoading = false);
-          }
-        });
-        _hasSeekInitialPosition = true;
-      }
-    });
-
-    // Modified playlist change handler to check for local files
-    player.stream.playlist.listen((event) async {
-      if (mounted) {
-        // 先保存当前视频进度，再更新状态
-        await _saveCurrentProgress(); // 切换视频时保存进度
-        if (mounted) {
-          setState(() {
-            currentPlayingIndex = event.index;
-            scrollToCurrentItem();
-            _isLoading = true;
-            _hasSeekInitialPosition = false;
-            
-            // 重置进度保存标志，以便能够保存新视频的进度
-          });
-
-          // Get current video name
-          if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
-            final currentVideo = playList[currentPlayingIndex];
-            final videoName = currentVideo.extras!['name'] as String;
-            final videoKey = "${widget.path}/$videoName";
-            
-            // Only check if we haven't already checked this video in this session
-            if (!_alreadyCheckedVideos.contains(videoKey)) {
-              _checkAndPlayLocalFile(videoName);
-            }
-          }
-        }
-      }
-    });
-
-    // 修改错误监听处理
-    player.stream.error.listen((error) {
-      if (mounted) {
-        _showErrorMessage(error.toString());
-      }
-    });
-
-    // 监听字幕轨道变化
-    player.stream.tracks.listen((tracks) {
-      setState(() {});
-
-      // 打印当前视频的字幕轨道列表
-      print('当前视频字幕轨道列表:');
-      if (tracks.subtitle.isEmpty) {
-        print('  没有找到内嵌字幕轨道');
-      } else {
-        for (int i = 0; i < tracks.subtitle.length; i++) {
-          final track = tracks.subtitle[i];
-          print(
-              '  [$i] ID: ${track.id}, 标题: ${track.title}, 语言: ${track.language}');
-        }
-      }
-
-      // 打印外部加载的字幕文件
-      print('外部字幕文件列表:');
-      if (_availableSubtitles.isEmpty) {
-        print('  没有找到外部字幕文件');
-      } else {
-        for (int i = 0; i < _availableSubtitles.length; i++) {
-          final subtitle = _availableSubtitles[i];
-          print('  [$i] 名称: ${subtitle.name}, 路径: ${subtitle.path}');
-        }
-      }
-    });
-
-    // 监听当前选中的字幕
-    player.stream.track.listen((track) {
-      setState(() {
-        _currentSubtitle = track.subtitle;
-      });
-
-      // 打印当前选中的字幕信息
-      // if (track.subtitle == null) {
-      //   print('当前未选择字幕');
-      // } else if (track.subtitle?.id == 'no') {
-      //   print('当前已关闭字幕');
-      // } else {
-      //   print(
-      //       '当前选中的字幕: ID=${track.subtitle?.id}, 标题=${track.subtitle?.title}, 语言=${track.subtitle?.language}');
-      // }
-    });
-
-    // Add position monitoring to detect when video ends
-    player.stream.position.listen((position) {
-      if (player.state.duration.inSeconds > 0 && 
-          position.inSeconds >= player.state.duration.inSeconds - 1) {
-        // Video reached the end, make sure it's paused
-        player.pause();
-        
-        // 在视频结束时保存进度
-        if (mounted) {
-// 重置标志以允许保存
-          _saveCurrentProgress().then((_) {
-            print('视频结束，进度已保存');
-          });
-        }
-      }
-    });
-    
-    // 添加对播放状态的监听，在暂停时保存进度
-    player.stream.playing.listen((isPlaying) {
-      if (!isPlaying && mounted) {
-        // 视频暂停时保存进度
-// 重置标志以允许保存
-        _saveCurrentProgress().then((_) {
-          print('视频暂停，进度已保存');
-        });
-      }
-    });
-  }
-
-  // New method to handle local file checking and dialog
-  Future<void> _checkAndPlayLocalFile(String videoName) async {
-    // Cancel any pending debounce timer
-    _localFileDialogDebounce?.cancel();
-    
-    // If already showing a dialog, don't show another
-    if (_isShowingLocalFileDialog) return;
-    
-    final videoKey = "${widget.path}/$videoName";
-    
-    // Add to checked videos set to avoid checking again
-    _alreadyCheckedVideos.add(videoKey);
-    
-    // Use debounce to prevent multiple dialogs
-    _localFileDialogDebounce = Timer(const Duration(milliseconds: 300), () async {
-      // Check if this video has a local version
-      final localFilePath = await _checkLocalFile(videoKey);
-      
-      // If local file exists and we're not already showing the dialog
-      if (localFilePath != null && mounted && !_isShowingLocalFileDialog) {
-        _isShowingLocalFileDialog = true;
-        
-        // Pause playback while showing dialog
-        await player.pause();
-        
-        // Show dialog asking user if they want to play the local file
-        if (mounted) {
-          final playLocal = await _showLocalFileDialog();
-          if (playLocal && mounted) {
-            // Play local version
-            await _playLocalFileVersion(localFilePath, videoName);
-          } else if (mounted) {
-            // Continue with streamed version
-            await player.play();
-          }
-        }
-        
-        _isShowingLocalFileDialog = false;
-      }
-    });
-  }
-
-  Future<void> _loadPlaybackSpeeds() async {
-    final prefs = await SharedPreferences.getInstance();
-    final speedsString = prefs.getStringList(AppConstants.playbackSpeedsKey);
-    if (speedsString != null) {
-      setState(() {
-        _playbackSpeeds = speedsString.map((s) => double.parse(s)).toList()
-          ..sort();
-      });
-    }
-  }
-
-  // Move the method outside of initState and rename it
-  void scrollToCurrentItem() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
-
-      // 获取屏幕宽度判断是否为移动端
-      final screenWidth = MediaQuery.of(context).size.width;
-      final isMobile = screenWidth < 600;
-
-      const itemHeight = AppConstants.defaultItemHeight; // ListTile的预估高度
-      final screenHeight = MediaQuery.of(context).size.height;
-
-      // 移动端和桌面端使用不同的滚动位置计算
-      final scrollOffset = isMobile
-          ? (currentPlayingIndex * itemHeight)
-          : (currentPlayingIndex * itemHeight) - (screenHeight / 3);
-
-      _scrollController.animateTo(
-        scrollOffset.clamp(
-          0.0,
-          _scrollController.position.maxScrollExtent,
-        ),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    });
   }
 
   // 查询并跳转到上次播放位
@@ -1548,9 +1493,52 @@ class VideoPlayerState extends State<VideoPlayer> {
             ),
           ),
           onTap: () async {
-            // 先保当前视频进，再切换视频
+            // 先保存当前视频进度，再切换视频
             await _saveCurrentProgress();
             if (mounted) {
+              // 如果在初始加载中，只执行视频切换
+              if (_isInitialLoading) {
+                _logDebug('初始加载中，跳过手动点击的本地文件检查');
+                player.jump(index);
+                scrollToCurrentItem();
+                return;
+              }
+              
+              // 获取要切换到的视频信息
+              final videoName = playList[index].extras!['name'] as String;
+              final videoKey = "${widget.path}/$videoName";
+              
+              _logDebug('手动点击列表项: 索引=$index, 视频=$videoName');
+              
+              // 检查是否存在本地文件，不考虑是否已经检查过
+              if (!_isShowingLocalFileDialog) {
+                final localFilePath = await _checkLocalFile(videoKey);
+                
+                if (localFilePath != null && mounted) {
+                  _logDebug('手动点击: 发现本地文件，显示对话框: $videoName');
+                  setState(() => _isShowingLocalFileDialog = true);
+                  
+                  final playLocal = await _showLocalFileDialog();
+                  if (playLocal && mounted) {
+                    // 先切换到该视频，然后播放本地版本
+                    player.jump(index);
+                    scrollToCurrentItem();
+                    await _playLocalFileVersion(localFilePath, videoName);
+                  } else if (mounted) {
+                    // 播放在线版本
+                    player.jump(index);
+                    scrollToCurrentItem();
+                    await player.play();
+                  }
+                  
+                  if (mounted) {
+                    setState(() => _isShowingLocalFileDialog = false);
+                  }
+                  return; // 已处理完毕，退出
+                }
+              }
+              
+              // 如果没有本地文件或对话框已显示，直接切换
               player.jump(index);
               scrollToCurrentItem();
             }
@@ -2855,6 +2843,104 @@ class VideoPlayerState extends State<VideoPlayer> {
         }
       }
     }
+  }
+
+  // New method to handle local file checking and dialog
+  Future<void> _checkAndPlayLocalFile(String videoName) async {
+    // Cancel any pending debounce timer
+    _localFileDialogDebounce?.cancel();
+    
+    // If already showing a dialog, don't show another
+    if (_isShowingLocalFileDialog) {
+      _logDebug('跳过本地文件检查: 对话框已显示, 视频=$videoName');
+      return;
+    }
+    
+    final videoKey = "${widget.path}/$videoName";
+    _logDebug('检查本地文件: 视频=$videoName, 键值=$videoKey');
+    
+    // Use debounce to prevent multiple dialogs when rapidly switching videos
+    _localFileDialogDebounce = Timer(const Duration(milliseconds: 300), () async {
+      // Check if this video has a local version
+      _logDebug('开始检查本地文件 (debounce后): 视频=$videoName');
+      final localFilePath = await _checkLocalFile(videoKey);
+      
+      // If local file exists and we're not already showing the dialog
+      if (localFilePath != null && mounted && !_isShowingLocalFileDialog) {
+        _logDebug('找到本地文件，准备显示对话框: 视频=$videoName, 路径=$localFilePath');
+        setState(() => _isShowingLocalFileDialog = true);
+        
+        // Pause playback while showing dialog
+        await player.pause();
+        
+        // Show dialog asking user if they want to play the local file
+        if (mounted) {
+          _logDebug('显示本地文件对话框: 视频=$videoName');
+          final playLocal = await _showLocalFileDialog();
+          if (playLocal && mounted) {
+            _logDebug('用户选择播放本地文件: 视频=$videoName');
+            // Play local version
+            await _playLocalFileVersion(localFilePath, videoName);
+          } else if (mounted) {
+            _logDebug('用户选择播放在线文件: 视频=$videoName');
+            // Continue with streamed version
+            await player.play();
+          }
+        }
+        
+        if (mounted) {
+          _logDebug('关闭本地文件对话框: 视频=$videoName');
+          setState(() => _isShowingLocalFileDialog = false);
+        }
+      } else {
+        if (localFilePath == null) {
+          _logDebug('未找到本地文件: 视频=$videoName');
+        } else if (!mounted) {
+          _logDebug('组件已卸载，不显示对话框: 视频=$videoName');
+        } else if (_isShowingLocalFileDialog) {
+          _logDebug('对话框已显示，不重复显示: 视频=$videoName');
+        }
+      }
+    });
+  }
+
+  Future<void> _loadPlaybackSpeeds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final speedsString = prefs.getStringList(AppConstants.playbackSpeedsKey);
+    if (speedsString != null) {
+      setState(() {
+        _playbackSpeeds = speedsString.map((s) => double.parse(s)).toList()
+          ..sort();
+      });
+    }
+  }
+
+  // Move the method outside of initState and rename it
+  void scrollToCurrentItem() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollController.hasClients) return;
+
+      // 获取屏幕宽度判断是否为移动端
+      final screenWidth = MediaQuery.of(context).size.width;
+      final isMobile = screenWidth < 600;
+
+      const itemHeight = AppConstants.defaultItemHeight; // ListTile的预估高度
+      final screenHeight = MediaQuery.of(context).size.height;
+
+      // 移动端和桌面端使用不同的滚动位置计算
+      final scrollOffset = isMobile
+          ? (currentPlayingIndex * itemHeight)
+          : (currentPlayingIndex * itemHeight) - (screenHeight / 3);
+
+      _scrollController.animateTo(
+        scrollOffset.clamp(
+          0.0,
+          _scrollController.position.maxScrollExtent,
+        ),
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    });
   }
 }
 
