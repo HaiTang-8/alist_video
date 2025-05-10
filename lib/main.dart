@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:media_kit/media_kit.dart';
@@ -54,7 +56,7 @@ class MyApp extends StatelessWidget {
         title: 'AList Player',
         theme: ThemeData(
           useMaterial3: true,
-          fontFamily: 'Microsoft YaHei',
+          fontFamily: Platform.isWindows ? "微软雅黑" : null,
           textTheme: const TextTheme(
             titleLarge: TextStyle(
               fontSize: 20,
@@ -83,7 +85,7 @@ class MyApp extends StatelessWidget {
             ),
           ),
           primaryTextTheme: const TextTheme().apply(
-            fontFamily: 'Microsoft YaHei',
+            fontFamily: Platform.isWindows ? "微软雅黑" : null,
           ),
           primarySwatch: Colors.blue,
           primaryColor: const Color(0xFF2C68D5),
