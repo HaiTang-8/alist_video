@@ -1123,6 +1123,9 @@ class VideoPlayerState extends State<VideoPlayer> {
           onLongPressEnd: (_) {
             controller.player.setRate(_previousSpeed);
 
+            // 立即更新倍速提示，显示恢复后的倍速值
+            _showSpeedIndicatorOverlay(_previousSpeed);
+            
             // 设置定时器，延迟2秒后隐藏提示
             _speedIndicatorTimer?.cancel();
             _speedIndicatorTimer = Timer(
@@ -1781,6 +1784,9 @@ class VideoPlayerState extends State<VideoPlayer> {
         onRelease: () {
           player.setRate(_previousSpeed);
 
+          // 立即更新倍速提示，显示恢复后的倍速值
+          _showSpeedIndicatorOverlay(_previousSpeed);
+          
           // 设置定时器，延迟2秒后隐藏提示
           _speedIndicatorTimer?.cancel();
           _speedIndicatorTimer = Timer(
