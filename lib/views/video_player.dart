@@ -463,22 +463,29 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 存当前播放进度
   Future<void> _saveCurrentProgress() async {
+    // 不需要重置标志，以避免重复调用时重复执行
     if (!mounted ||
         _currentUsername == null ||
         playList.isEmpty ||
-        _isLoading ||
-        _progressSaved) {  // 添加检查，避免重复保存
+        _isLoading) {
+      print('跳过进度保存: mounted=$mounted, username=$_currentUsername, isEmpty=${playList.isEmpty}, isLoading=$_isLoading');
       return;
     }
 
     try {
-      // 设置标志表示进度已开始保存
-      _progressSaved = true;
-      
       final currentPosition = player.state.position;
       final duration = player.state.duration; // 获取视频总时长
+      
+      // 安全检查：确保当前播放索引有效
+      if (currentPlayingIndex < 0 || currentPlayingIndex >= playList.length) {
+        print('跳过进度保存: 无效的播放索引 $currentPlayingIndex');
+        return;
+      }
+      
       final currentVideo = playList[currentPlayingIndex];
       final videoName = currentVideo.extras!['name'] as String;
+
+      print('正在保存视频进度: $videoName, 位置: ${currentPosition.inSeconds}秒');
 
       final existingRecord =
           await DatabaseHelper.instance.getHistoricalRecordByName(
@@ -497,8 +504,13 @@ class VideoPlayerState extends State<VideoPlayer> {
         videoName: videoName,
         totalVideoDuration: duration.inSeconds, // 保存视频总时长
       );
+      
+      // 标记进度已保存成功
+      _progressSaved = true;
+      print('播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
     } catch (e) {
-      print('Failed to save progress: $e');
+      print('保存进度失败: $e');
+      // 保存失败时不设置_progressSaved标志
     }
   }
 
@@ -507,6 +519,26 @@ class VideoPlayerState extends State<VideoPlayer> {
     super.initState();
     _loadSettings();
     _loadPlaybackSpeeds();
+    
+    // 添加定期调试信息
+    Timer.periodic(const Duration(seconds: 30), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      
+      try {
+        if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
+          final videoName = playList[currentPlayingIndex].extras!['name'] as String;
+          final position = player.state.position;
+          final duration = player.state.duration;
+          
+          print('当前播放: $videoName, 进度: ${position.inSeconds}/${duration.inSeconds}秒');
+        }
+      } catch (e) {
+        // 忽略任何错误
+      }
+    });
     
     player.setPlaylistMode(PlaylistMode.none);
 
@@ -551,6 +583,9 @@ class VideoPlayerState extends State<VideoPlayer> {
             scrollToCurrentItem();
             _isLoading = true;
             _hasSeekInitialPosition = false;
+            
+            // 重置进度保存标志，以便能够保存新视频的进度
+            _progressSaved = false;
           });
 
           // Get current video name
@@ -626,6 +661,25 @@ class VideoPlayerState extends State<VideoPlayer> {
           position.inSeconds >= player.state.duration.inSeconds - 1) {
         // Video reached the end, make sure it's paused
         player.pause();
+        
+        // 在视频结束时保存进度
+        if (mounted) {
+          _progressSaved = false; // 重置标志以允许保存
+          _saveCurrentProgress().then((_) {
+            print('视频结束，进度已保存');
+          });
+        }
+      }
+    });
+    
+    // 添加对播放状态的监听，在暂停时保存进度
+    player.stream.playing.listen((isPlaying) {
+      if (!isPlaying && mounted) {
+        // 视频暂停时保存进度
+        _progressSaved = false; // 重置标志以允许保存
+        _saveCurrentProgress().then((_) {
+          print('视频暂停，进度已保存');
+        });
       }
     });
   }
@@ -737,28 +791,38 @@ class VideoPlayerState extends State<VideoPlayer> {
     // Cancel the debounce timer
     _localFileDialogDebounce?.cancel();
     
-    // 先调用父类的 dispose
-    super.dispose();
-
+    // 重置进度保存标志，确保可以保存进度
+    _progressSaved = false;
+    
     // 创建一个异步函数来处理清理工作
     Future<void> cleanup() async {
       try {
+        print('视频播放器正在清理资源...');
+        
+        // 先暂停播放器
+        await player.pause();
+        
         // 等待进度保存成功
-        if (!_progressSaved) {  // 只有在进度还未保存的情况下才保存
+        if (mounted && playList.isNotEmpty && currentPlayingIndex < playList.length) {
+          print('正在保存最终播放进度...');
           await _saveCurrentProgress();
+          print('最终播放进度保存完成');
         }
 
         // 播放器关闭完成
+        print('正在关闭播放器...');
         await player.dispose();
+        print('播放器已关闭');
 
         // 其他资源清理
         _scrollController.dispose();
+        print('资源清理完成');
       } catch (e) {
-        print('Error during cleanup: $e');
+        print('清理过程中发生错误: $e');
       }
     }
 
-    // 执行清理
+    // 执行清理函数，但不等待它完成
     cleanup();
 
     _subtitleSearchController.dispose();
@@ -770,6 +834,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 清理键盘事件处理器
     VideoShortcutActivator.dispose();
+    
+    // 最后调用父类的 dispose
+    super.dispose();
   }
 
   @override
@@ -803,8 +870,17 @@ class VideoPlayerState extends State<VideoPlayer> {
             try {
               // 暂停视频
               await player.pause();
+              
+              // 重置进度保存标志，确保可以保存进度
+              _progressSaved = false;
+              
               // 等待进度保存
-              await _saveCurrentProgress();
+              if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
+                print('退出前保存最终播放进度...');
+                await _saveCurrentProgress();
+                print('退出前进度保存完成');
+              }
+              
               // 等播放器关闭
               await player.dispose();
 

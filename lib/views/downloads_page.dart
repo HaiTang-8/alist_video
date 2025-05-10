@@ -591,12 +591,12 @@ class _DownloadsPageState extends State<DownloadsPage> {
   
   Future<void> _scanAndImportVideos(BuildContext context) async {
     // 显示加载提示
-    final loadingDialog = AlertDialog(
+    const loadingDialog = AlertDialog(
       content: Row(
         children: [
-          const CircularProgressIndicator(),
-          const SizedBox(width: 16),
-          const Text('正在扫描文件夹...'),
+          CircularProgressIndicator(),
+          SizedBox(width: 16),
+          Text('正在扫描文件夹...'),
         ],
       ),
     );
