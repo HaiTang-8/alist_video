@@ -551,4 +551,231 @@ class ConfigServer {
       return false;
     }
   }
+
+  /// 获取当前所有配置
+  Future<List<ConfigCategory>> getCurrentConfigs() async {
+    await _loadConfigurations();
+    return List<ConfigCategory>.from(_configCategories);
+  }
+  
+  /// 创建当前配置的备份
+  Future<bool> backupCurrentConfigs(String backupName) async {
+    try {
+      // 加载最新配置
+      await _loadConfigurations();
+      
+      // 准备备份数据
+      final Map<String, dynamic> backupData = {
+        'timestamp': DateTime.now().millisecondsSinceEpoch,
+        'name': backupName,
+        'configs': _configCategories.map((category) => category.toJson()).toList(),
+      };
+      
+      // 获取已有备份
+      final prefs = await SharedPreferences.getInstance();
+      final String backupsJson = prefs.getString('config_backups') ?? '[]';
+      final List<dynamic> backups = jsonDecode(backupsJson);
+      
+      // 添加新备份
+      backups.add(backupData);
+      
+      // 保存备份列表
+      await prefs.setString('config_backups', jsonEncode(backups));
+      
+      _log('创建配置备份: $backupName');
+      return true;
+    } catch (e) {
+      _log('创建配置备份失败: $e');
+      return false;
+    }
+  }
+  
+  /// 获取所有备份
+  Future<List<Map<String, dynamic>>> getConfigBackups() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final String backupsJson = prefs.getString('config_backups') ?? '[]';
+      final List<dynamic> backups = jsonDecode(backupsJson);
+      
+      // 转换为所需格式
+      return backups.map((backup) => backup as Map<String, dynamic>).toList();
+    } catch (e) {
+      _log('获取配置备份失败: $e');
+      return [];
+    }
+  }
+  
+  /// 从备份恢复配置
+  Future<bool> restoreFromBackup(int backupIndex) async {
+    try {
+      // 获取所有备份
+      final backups = await getConfigBackups();
+      if (backupIndex < 0 || backupIndex >= backups.length) {
+        _log('无效的备份索引');
+        return false;
+      }
+      
+      final backup = backups[backupIndex];
+      final List<dynamic> configsJson = backup['configs'];
+      
+      // 转换为配置类别
+      final List<ConfigCategory> categories = configsJson
+          .map((json) => ConfigCategory.fromJson(json as Map<String, dynamic>))
+          .toList();
+      
+      // 准备要应用的配置项
+      final List<Map<String, dynamic>> configsToApply = [];
+      
+      for (var category in categories) {
+        for (var item in category.items) {
+          configsToApply.add({
+            'key': item.key,
+            'value': item.value,
+            'type': item.type,
+          });
+        }
+      }
+      
+      // 应用配置
+      final prefs = await SharedPreferences.getInstance();
+      int appliedCount = 0;
+      
+      for (var config in configsToApply) {
+        final key = config['key'] as String;
+        final value = config['value'] as String;
+        final type = config['type'] as String;
+        
+        switch (type) {
+          case 'number':
+            final numValue = int.tryParse(value);
+            if (numValue != null) {
+              await prefs.setInt(key, numValue);
+              appliedCount++;
+            }
+            break;
+          case 'boolean':
+            final boolValue = value.toLowerCase() == 'true';
+            await prefs.setBool(key, boolValue);
+            appliedCount++;
+            break;
+          case 'text':
+          case 'password':
+          case 'url':
+          default:
+            await prefs.setString(key, value);
+            appliedCount++;
+            break;
+        }
+      }
+      
+      _log('已从备份恢复$appliedCount项配置');
+      return true;
+    } catch (e) {
+      _log('从备份恢复配置失败: $e');
+      return false;
+    }
+  }
+  
+  /// 删除备份
+  Future<bool> deleteBackup(int backupIndex) async {
+    try {
+      // 获取所有备份
+      final prefs = await SharedPreferences.getInstance();
+      final String backupsJson = prefs.getString('config_backups') ?? '[]';
+      final List<dynamic> backups = jsonDecode(backupsJson);
+      
+      if (backupIndex < 0 || backupIndex >= backups.length) {
+        _log('无效的备份索引');
+        return false;
+      }
+      
+      // 删除指定备份
+      backups.removeAt(backupIndex);
+      
+      // 保存备份列表
+      await prefs.setString('config_backups', jsonEncode(backups));
+      
+      _log('删除备份成功');
+      return true;
+    } catch (e) {
+      _log('删除备份失败: $e');
+      return false;
+    }
+  }
+
+  /// 从远程服务器获取配置（不立即应用）
+  Future<List<ConfigCategory>?> getRemoteConfigs(String ipAddress, {int port = 9527}) async {
+    try {
+      _log('获取 $ipAddress:$port 的配置');
+      
+      // 创建HTTP客户端
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 5);
+      
+      // 获取配置
+      final request = await client.getUrl(Uri.parse('http://$ipAddress:$port/configs'));
+      final response = await request.close();
+      
+      if (response.statusCode != HttpStatus.ok) {
+        _log('获取配置失败: HTTP ${response.statusCode}');
+        return null;
+      }
+      
+      // 读取响应
+      final responseBody = await utf8.decoder.bind(response).join();
+      final List<dynamic> configsJson = jsonDecode(responseBody);
+      
+      // 转换为配置类别
+      final List<ConfigCategory> remoteCategories = configsJson
+          .map((json) => ConfigCategory.fromJson(json as Map<String, dynamic>))
+          .toList();
+      
+      return remoteCategories;
+    } catch (e) {
+      _log('获取远程配置时出错: $e');
+      return null;
+    }
+  }
+  
+  /// 应用指定的配置列表
+  Future<int> applyConfigs(List<ConfigItem> configs) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      int appliedCount = 0;
+      
+      for (var config in configs) {
+        final key = config.key;
+        final value = config.value;
+        final type = config.type;
+        
+        switch (type) {
+          case 'number':
+            final numValue = int.tryParse(value);
+            if (numValue != null) {
+              await prefs.setInt(key, numValue);
+              appliedCount++;
+            }
+            break;
+          case 'boolean':
+            final boolValue = value.toLowerCase() == 'true';
+            await prefs.setBool(key, boolValue);
+            appliedCount++;
+            break;
+          case 'text':
+          case 'password':
+          case 'url':
+          default:
+            await prefs.setString(key, value);
+            appliedCount++;
+            break;
+        }
+      }
+      
+      _log('已应用$appliedCount项配置');
+      return appliedCount;
+    } catch (e) {
+      _log('应用配置时出错: $e');
+      return 0;
+    }
+  }
 } 
