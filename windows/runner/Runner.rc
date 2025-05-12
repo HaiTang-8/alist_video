@@ -90,12 +90,12 @@ BEGIN
         BLOCK "040904e4"
         BEGIN
             VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "webdav_video" "\0"
+            VALUE "FileDescription", "AlistPlayer" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "webdav_video" "\0"
+            VALUE "InternalName", "AlistPlayer" "\0"
             VALUE "LegalCopyright", "Copyright (C) 2024 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "webdav_video.exe" "\0"
-            VALUE "ProductName", "webdav_video" "\0"
+            VALUE "OriginalFilename", "AlistPlayer.exe" "\0"
+            VALUE "ProductName", "AlistPlayer" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

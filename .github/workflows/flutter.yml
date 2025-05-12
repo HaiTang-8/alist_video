@@ -4,9 +4,24 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      build_android:
+        description: 'Build Android'
+        type: boolean
+        default: true
+      build_windows:
+        description: 'Build Windows'
+        type: boolean
+        default: true
+      build_macos:
+        description: 'Build macOS'
+        type: boolean
+        default: true
 
 jobs:
   build-android:
+    if: ${{ github.event_name == 'push' || github.event.inputs.build_android == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -48,6 +63,7 @@ jobs:
             build/app/outputs/flutter-apk/app-x86_64-release.apk
 
   build-windows:
+    if: ${{ github.event_name == 'push' || github.event.inputs.build_windows == 'true' }}
     runs-on: windows-latest
     permissions:
       contents: write
@@ -83,6 +99,7 @@ jobs:
           path: build/windows/x64/runner/Release
 
   build-macos:
+    if: ${{ github.event_name == 'push' || github.event.inputs.build_macos == 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -119,6 +136,7 @@ jobs:
 
   create-release:
     needs: [build-android, build-windows, build-macos]
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
