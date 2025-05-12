@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
+import 'package:alist_player/utils/network_scanner.dart';
 
 class DatabaseSettingsDialog extends StatefulWidget {
   final String host;
@@ -422,6 +423,10 @@ class _ApiSettingsDialogState extends State<ApiSettingsDialog> {
   late TextEditingController _baseUrlController;
   late TextEditingController _baseDownloadUrlController;
   bool _isSaving = false;
+  bool _isScanning = false;
+  int _scanProgress = 0;
+  int _scanMax = 100;
+  List<NetworkDevice> _discoveredDevices = [];
 
   @override
   void initState() {
@@ -429,6 +434,306 @@ class _ApiSettingsDialogState extends State<ApiSettingsDialog> {
     _baseUrlController = TextEditingController(text: widget.baseUrl);
     _baseDownloadUrlController =
         TextEditingController(text: widget.baseDownloadUrl);
+  }
+
+  // 扫描局域网设备
+  Future<void> _scanLocalDevices() async {
+    setState(() {
+      _isScanning = true;
+      _scanProgress = 0;
+      _scanMax = 255;
+      _discoveredDevices = [];
+    });
+
+    try {
+      final scanner = NetworkScanner();
+      final devices = await scanner.scanDevices(
+        onProgress: (current, max) {
+          setState(() {
+            _scanProgress = current;
+            _scanMax = max;
+          });
+        },
+        // AList默认端口是5244
+        port: 5244,
+        timeout: const Duration(milliseconds: 100),
+      );
+
+      setState(() {
+        _discoveredDevices = devices;
+      });
+      
+      if (_discoveredDevices.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('未发现局域网设备'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else {
+        // 显示设备选择对话框
+        if (!mounted) return;
+        _showDeviceSelectionDialog();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('扫描出错: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      setState(() {
+        _isScanning = false;
+      });
+    }
+  }
+
+  // 显示设备选择对话框
+  void _showDeviceSelectionDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                Icons.devices_rounded,
+                color: Theme.of(context).primaryColor,
+              ),
+              const SizedBox(width: 8),
+              const Text('选择局域网设备'),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            height: 300,
+            child: _discoveredDevices.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.wifi_off_rounded,
+                          size: 48,
+                          color: Colors.grey[400],
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          '未发现设备',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _discoveredDevices.length,
+                    itemBuilder: (context, index) {
+                      final device = _discoveredDevices[index];
+                      
+                      // 检测设备状态
+                      _checkDeviceStatus(device, setState);
+                      
+                      return Card(
+                        elevation: 0,
+                        margin: const EdgeInsets.symmetric(vertical: 4),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                          side: BorderSide(
+                            color: device.isLocalDevice
+                                ? Colors.purple.shade200
+                                : device.status == DeviceStatus.online
+                                    ? Colors.green.shade200
+                                    : device.status == DeviceStatus.offline
+                                        ? Colors.red.shade200
+                                        : Colors.grey.shade200,
+                            width: device.isLocalDevice ? 2 : 1,
+                          ),
+                        ),
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 8,
+                          ),
+                          leading: Icon(
+                            device.isLocalDevice
+                                ? Icons.computer_outlined
+                                : Icons.devices_other_rounded,
+                            color: device.isLocalDevice
+                                ? Colors.purple
+                                : device.status == DeviceStatus.online
+                                    ? Colors.green
+                                    : device.status == DeviceStatus.offline
+                                        ? Colors.red
+                                        : Colors.grey,
+                            size: 36,
+                          ),
+                          title: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  device.ip,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                    color: device.isLocalDevice ? Colors.purple : null,
+                                  ),
+                                ),
+                              ),
+                              if (device.isLocalDevice)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Colors.purple.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    '本机',
+                                    style: TextStyle(
+                                      color: Colors.purple.shade700,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (device.deviceName != null && !device.isLocalDevice)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 4),
+                                  child: Text(
+                                    device.deviceName!,
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey[800],
+                                    ),
+                                  ),
+                                ),
+                              const SizedBox(height: 4),
+                              Text('响应时间: ${device.responseTime.inMilliseconds}ms'),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 8,
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: device.isLocalDevice
+                                          ? Colors.purple
+                                          : device.status == DeviceStatus.online
+                                              ? Colors.green
+                                              : device.status == DeviceStatus.offline
+                                                  ? Colors.red
+                                                  : Colors.grey,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    device.isLocalDevice
+                                        ? '本机'
+                                        : device.status == DeviceStatus.online
+                                            ? '在线'
+                                            : device.status == DeviceStatus.offline
+                                                ? '离线'
+                                                : '未知',
+                                    style: TextStyle(
+                                      color: device.isLocalDevice
+                                          ? Colors.purple
+                                          : device.status == DeviceStatus.online
+                                              ? Colors.green
+                                              : device.status == DeviceStatus.offline
+                                                  ? Colors.red
+                                                  : Colors.grey,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                          onTap: device.status == DeviceStatus.online
+                              ? () {
+                                  _selectDevice(device);
+                                  Navigator.pop(context);
+                                }
+                              : null,
+                          enabled: device.status == DeviceStatus.online,
+                          trailing: device.status == DeviceStatus.online
+                              ? const Icon(Icons.arrow_forward_ios, size: 16)
+                              : device.status == DeviceStatus.unknown
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : null,
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                // 重新扫描
+                Navigator.pop(context);
+                _scanLocalDevices();
+              },
+              child: const Text('重新扫描'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 检查设备状态
+  Future<void> _checkDeviceStatus(NetworkDevice device, StateSetter setState) async {
+    if (device.status == DeviceStatus.unknown) {
+      // 异步检查设备状态
+      Future.microtask(() async {
+        await device.checkStatus();
+        setState(() {});
+      });
+    }
+  }
+
+  // 选择设备
+  void _selectDevice(NetworkDevice device) {
+    setState(() {
+      // 更新URL，使用选中的IP地址
+      final String baseUrl = 'http://${device.ip}:5244';
+      final String baseDownloadUrl = 'http://${device.ip}:5244/d';
+      
+      _baseUrlController.text = baseUrl;
+      _baseDownloadUrlController.text = baseDownloadUrl;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('已选择设备: ${device.ip}'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   Future<void> _saveSettings() async {
@@ -506,6 +811,32 @@ class _ApiSettingsDialogState extends State<ApiSettingsDialog> {
               ),
             ),
             const SizedBox(height: 24),
+            // 添加扫描按钮
+            OutlinedButton.icon(
+              onPressed: _isScanning ? null : _scanLocalDevices,
+              icon: _isScanning
+                  ? SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                            Theme.of(context).primaryColor),
+                      ),
+                    )
+                  : const Icon(Icons.wifi_find),
+              label: _isScanning
+                  ? Text('扫描中 $_scanProgress/$_scanMax')
+                  : const Text('扫描局域网设备'),
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(color: Theme.of(context).primaryColor),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
             _buildTextField(
               controller: _baseUrlController,
               label: '基础 URL',

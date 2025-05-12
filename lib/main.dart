@@ -10,6 +10,7 @@ import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:toastification/toastification.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/utils/config_server.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 void main() async {
@@ -41,6 +42,16 @@ void main() async {
     );
   } catch (e) {
     print('数据库初始化失败: $e');
+  }
+
+  // 尝试启动配置服务器（可选）
+  final autoStartServer = prefs.getBool('auto_start_config_server') ?? false;
+  if (autoStartServer) {
+    try {
+      await ConfigServer().start();
+    } catch (e) {
+      print('启动配置服务器失败: $e');
+    }
   }
 
   runApp(const MyApp());

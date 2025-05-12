@@ -6,6 +6,7 @@ import 'package:alist_player/views/settings/shared_preferences_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/views/storage_page.dart';
+import 'package:alist_player/views/settings/remote_config_page.dart';
 
 class PersonPage extends StatefulWidget {
   const PersonPage({super.key});
@@ -221,6 +222,16 @@ class _PersonPageState extends State<PersonPage> {
                   icon: Icons.api_rounded,
                   title: 'API 设置',
                   onTap: () => ApiSettingsDialog.show(context),
+                ),
+                _buildMenuItem(
+                  icon: Icons.sync_alt_rounded,
+                  title: '远程配置',
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const RemoteConfigPage(),
+                    ),
+                  ),
                 ),
                 _buildMenuItem(
                   icon: Icons.data_usage,
