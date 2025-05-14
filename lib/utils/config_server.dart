@@ -504,9 +504,35 @@ class ConfigServer {
       
       for (var category in remoteCategories) {
         for (var item in category.items) {
+          String value = item.value;
+          
+          // 检查是否需要替换本地地址
+          bool shouldReplace = false;
+          
+          // 需要替换的情况:
+          // 1. URL类型 且 包含本地地址
+          // 2. 数据库主机配置项 且 包含本地地址
+          if (value.contains('127.0.0.1') || value.contains('localhost')) {
+            if (item.type == 'url' || item.key == AppConstants.dbHostKey) {
+              shouldReplace = true;
+            }
+          }
+          
+          if (shouldReplace) {
+            // 对于数据库主机，直接替换为远程IP
+            if (item.key == AppConstants.dbHostKey) {
+              value = ipAddress;
+              _log('将数据库主机从 ${item.value} 替换为 $value');
+            } else {
+              // 对于URL，替换主机部分
+              value = _replaceLocalhost(value, ipAddress);
+              _log('将${item.name}从 ${item.value} 替换为 $value');
+            }
+          }
+          
           configsToApply.add({
             'key': item.key,
-            'value': item.value,
+            'value': value,
             'type': item.type,
           });
         }
@@ -726,15 +752,74 @@ class ConfigServer {
       final List<dynamic> configsJson = jsonDecode(responseBody);
       
       // 转换为配置类别
-      final List<ConfigCategory> remoteCategories = configsJson
-          .map((json) => ConfigCategory.fromJson(json as Map<String, dynamic>))
-          .toList();
+      final List<ConfigCategory> remoteCategories = [];
+      
+      for (var categoryJson in configsJson) {
+        final category = ConfigCategory.fromJson(categoryJson as Map<String, dynamic>);
+        
+        // 替换URL和数据库主机中的localhost或127.0.0.1为远程设备IP
+        final updatedItems = category.items.map((item) {
+          String value = item.value;
+          bool shouldReplace = false;
+          
+          // 需要替换的情况:
+          // 1. URL类型 且 包含本地地址
+          // 2. 数据库主机配置项 且 包含本地地址
+          if (value.contains('127.0.0.1') || value.contains('localhost')) {
+            if (item.type == 'url' || item.key == AppConstants.dbHostKey) {
+              shouldReplace = true;
+            }
+          }
+          
+          if (shouldReplace) {
+            // 对于数据库主机，直接替换为远程IP
+            if (item.key == AppConstants.dbHostKey) {
+              value = ipAddress;
+            } else {
+              // 对于URL，替换主机部分
+              value = _replaceLocalhost(value, ipAddress);
+            }
+            
+            return ConfigItem(
+              key: item.key,
+              name: item.name,
+              value: value,
+              type: item.type,
+              description: item.description,
+            );
+          }
+          return item;
+        }).toList();
+        
+        remoteCategories.add(ConfigCategory(
+          id: category.id,
+          name: category.name,
+          items: updatedItems,
+        ));
+      }
       
       return remoteCategories;
     } catch (e) {
       _log('获取远程配置时出错: $e');
       return null;
     }
+  }
+  
+  /// 替换URL中的localhost或127.0.0.1为指定IP
+  String _replaceLocalhost(String url, String newIp) {
+    if (url.isEmpty || newIp.isEmpty) return url;
+    
+    try {
+      final uri = Uri.parse(url);
+      if (uri.host == 'localhost' || uri.host == '127.0.0.1') {
+        final newUri = uri.replace(host: newIp);
+        return newUri.toString();
+      }
+    } catch (e) {
+      _log('替换URL中的localhost失败: $e');
+    }
+    
+    return url;
   }
   
   /// 应用指定的配置列表

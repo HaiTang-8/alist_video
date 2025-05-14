@@ -19,7 +19,6 @@ class _RemoteConfigPageState extends State<RemoteConfigPage> with SingleTickerPr
   bool _isScanning = false;
   int _scanProgress = 0;
   int _scanMax = 255;
-  List<String> _localIpAddresses = [];
   bool _autoStartServer = false;
   List<Map<String, dynamic>> _backups = [];
   bool _isLoadingBackups = false;
@@ -82,7 +81,6 @@ class _RemoteConfigPageState extends State<RemoteConfigPage> with SingleTickerPr
   Future<void> _getLocalIpAddresses() async {
     final addresses = await _configServer.getLocalIpAddresses();
     setState(() {
-      _localIpAddresses = addresses;
     });
   }
 
