@@ -301,7 +301,7 @@ class DownloadManager {
     final task = _tasks[path];
     if (task != null) {
       final directory = await getApplicationDocumentsDirectory();
-      final newFilePath = '${directory.path}/downloads/$newFileName';
+      final newFilePath = '${directory.path}/alist_player/downloads/$newFileName';
 
       try {
         final file = File(task.filePath);
@@ -363,7 +363,7 @@ class DownloadManager {
     
     // 默认路径
     final directory = await getApplicationDocumentsDirectory();
-    return '${directory.path}/downloads';
+    return '${directory.path}/alist_player/downloads';
   }
 
   // 获取当前设置的下载路径
@@ -377,7 +377,7 @@ class DownloadManager {
     
     // 返回默认路径
     final directory = await getApplicationDocumentsDirectory();
-    return '${directory.path}/downloads';
+    return '${directory.path}/alist_player/downloads';
   }
   
   // 设置自定义下载路径

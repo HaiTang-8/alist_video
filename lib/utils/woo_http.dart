@@ -30,7 +30,7 @@ class WooHttpUtil {
   static Future<void> openLogDirectory() async {
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final logDir = Directory('${dir.path}/logs');
+      final logDir = Directory('${dir.path}/alist_player/logs');
       if (!await logDir.exists()) {
         await logDir.create(recursive: true);
       }
@@ -51,7 +51,7 @@ class WooHttpUtil {
   static Future<void> clearLogs() async {
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final logDir = Directory('${dir.path}/logs');
+      final logDir = Directory('${dir.path}/alist_player/logs');
       if (await logDir.exists()) {
         await logDir.delete(recursive: true);
         EasyLoading.showSuccess('日志清除成功');
@@ -240,7 +240,7 @@ class RequestInterceptors extends Interceptor {
   Future<void> _logRequest(String content) async {
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final logDir = Directory('${dir.path}/logs');
+      final logDir = Directory('${dir.path}/alist_player/logs');
       if (!await logDir.exists()) {
         await logDir.create(recursive: true);
       }

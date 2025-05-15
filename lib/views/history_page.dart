@@ -6,11 +6,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as path;
 import 'package:timeago/timeago.dart' as timeago;
 import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+import 'package:path_provider/path_provider.dart';
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:flutter/services.dart';
 import 'home_page.dart';
 import 'package:alist_player/utils/download_manager.dart';
+
+// Add this extension to avoid importing additional packages
+extension FutureExtensions<T> on Future<T> {
+  void unawaited() {}
+}
 
 class HistoryEntry {
   final String url;
@@ -39,6 +47,9 @@ class _HistoryPageState extends State<HistoryPage>
   String? _lastDeletedGroupKey;
   String? _basePath;
   late final AnimationController _controller;
+  
+  // Cache for screenshot paths to avoid repeated file checks
+  final Map<String, String?> _screenshotPathCache = {};
 
   @override
   void initState() {
@@ -49,6 +60,11 @@ class _HistoryPageState extends State<HistoryPage>
     );
     _loadHistory();
     _loadBasePath();
+    
+    // Preload screenshots in the background after loading history
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _preloadScreenshots();
+    });
   }
 
   @override
@@ -64,6 +80,9 @@ class _HistoryPageState extends State<HistoryPage>
       setState(() => _isLoading = true);
       final prefs = await SharedPreferences.getInstance();
       _currentUsername = prefs.getString('current_username');
+      
+      // Clear the screenshot cache when refreshing
+      _screenshotPathCache.clear();
 
       if (_currentUsername != null) {
         final records =
@@ -362,6 +381,64 @@ class _HistoryPageState extends State<HistoryPage>
     } catch (e) {
       print('Error checking file: $e');
       return (false, e.toString());
+    }
+  }
+
+  // Get the screenshot path for a history record
+  Future<String?> _getScreenshotPath(HistoricalRecord record) async {
+    // Check cache first
+    final cacheKey = '${record.videoPath}_${record.videoName}';
+    if (_screenshotPathCache.containsKey(cacheKey)) {
+      return _screenshotPathCache[cacheKey];
+    }
+    
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      
+      // Sanitize path and name as done in the video player
+      final String sanitizedVideoPath = record.videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedVideoName = record.videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      
+      // Construct the screenshot filename
+      final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png';
+      final String filePath = '${directory.path}/alist_player/$fileName';
+      
+      // Check if the file exists
+      final file = File(filePath);
+      if (await file.exists()) {
+        _screenshotPathCache[cacheKey] = filePath;
+        return filePath;
+      } else {
+        _screenshotPathCache[cacheKey] = null;
+        return null;
+      }
+    } catch (e) {
+      print('Error getting screenshot path: $e');
+      _screenshotPathCache[cacheKey] = null;
+      return null;
+    }
+  }
+
+  // Preload screenshots in the background to avoid UI stutters
+  Future<void> _preloadScreenshots() async {
+    if (_groupedRecords.isEmpty) return;
+    
+    // Flatten all records
+    final allRecords = <HistoricalRecord>[];
+    for (final records in _groupedRecords.values) {
+      allRecords.addAll(records);
+    }
+    
+    // Preload screenshots for visible records first
+    for (var i = 0; i < math.min(10, allRecords.length); i++) {
+      if (!mounted) return;
+      await _getScreenshotPath(allRecords[i]);
+    }
+    
+    // Then load the rest in the background
+    for (var i = 10; i < allRecords.length; i++) {
+      if (!mounted) return;
+      unawaited(_getScreenshotPath(allRecords[i]));
     }
   }
 
@@ -861,60 +938,75 @@ class _HistoryPageState extends State<HistoryPage>
                     children: [
                       Padding(
                         padding: const EdgeInsets.all(12),
-                        child: Column(
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              _getDisplayPath(record.videoPath),
-                              style: TextStyle(
-                                fontSize: 13,
-                                color: Colors.grey[600],
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              record.videoName,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                Icon(Icons.access_time,
-                                    size: 14, color: Colors.grey[600]),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '${timeago.format(record.changeTime, locale: 'zh_CN')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.grey[600],
+                            // 显示截图
+                            _buildScreenshotPreview(record),
+                            const SizedBox(width: 12),
+                            // 视频详情
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _getDisplayPath(record.videoPath),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Colors.grey[600],
+                                      fontWeight: FontWeight.w500,
+                                    ),
                                   ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            LinearProgressIndicator(
-                              value: record.totalVideoDuration > 0
-                                  ? (record.videoSeek /
-                                          record.totalVideoDuration)
-                                      .clamp(0.0, 1.0)
-                                  : 0.0,
-                              backgroundColor: Colors.grey[200],
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                  Colors.blue[400]!),
-                              minHeight: 4,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[600],
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    record.videoName,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Icon(Icons.access_time,
+                                          size: 14, color: Colors.grey[600]),
+                                      const SizedBox(width: 4),
+                                      Expanded(
+                                        child: Text(
+                                          '${timeago.format(record.changeTime, locale: 'zh_CN')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                                          style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  LinearProgressIndicator(
+                                    value: record.totalVideoDuration > 0
+                                        ? (record.videoSeek /
+                                                record.totalVideoDuration)
+                                            .clamp(0.0, 1.0)
+                                        : 0.0,
+                                    backgroundColor: Colors.grey[200],
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                        Colors.blue[400]!),
+                                    minHeight: 4,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -948,6 +1040,99 @@ class _HistoryPageState extends State<HistoryPage>
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // Build the screenshot preview widget
+  Widget _buildScreenshotPreview(HistoricalRecord record) {
+    return FutureBuilder<String?>(
+      future: _getScreenshotPath(record),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildScreenshotPlaceholder();
+        }
+        
+        final screenshotPath = snapshot.data;
+        if (screenshotPath == null) {
+          return _buildScreenshotPlaceholder();
+        }
+        
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(1),
+          child: Container(
+            width: 180,
+            height: 105,
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(1),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.file(
+                  File(screenshotPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    print('Error loading image: $error');
+                    return _buildScreenshotPlaceholder();
+                  },
+                ),
+                // Add a play icon overlay
+                Positioned.fill(
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 24,
+                      ),
+                    ),
+                  ),
+                ),
+                // Add video progress indicator at the bottom
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: LinearProgressIndicator(
+                    value: record.totalVideoDuration > 0
+                        ? (record.videoSeek / record.totalVideoDuration)
+                            .clamp(0.0, 1.0)
+                        : 0.0,
+                    backgroundColor: Colors.black45,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
+                    minHeight: 3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // Build a placeholder for when no screenshot is available
+  Widget _buildScreenshotPlaceholder() {
+    return Container(
+      width: 180,
+      height: 105,
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(1),
+      ),
+      child: const Center(
+        child: Icon(
+          Icons.video_library,
+          color: Colors.grey,
+          size: 40,
         ),
       ),
     );

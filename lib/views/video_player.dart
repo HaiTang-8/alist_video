@@ -9,6 +9,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:async';
 import 'dart:io'; // Add this import for File class
+import 'package:path_provider/path_provider.dart'; // Added for path_provider
 
 class VideoPlayer extends StatefulWidget {
   final String path;
@@ -197,6 +198,65 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加日志方法来统一记录视频播放器相关日志
   void _logDebug(String message) {
     print('[VideoPlayer] $message');
+  }
+
+  // Method to take a screenshot
+  // Returns the file path if successful, null otherwise.
+  Future<String?> _takeScreenshot({String? specificVideoName}) async {
+    try {
+      final Uint8List? screenshotBytes = await player.screenshot();
+      if (screenshotBytes == null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to take screenshot: No data received.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+        _logDebug('Screenshot failed: no data received.');
+        return null;
+      }
+
+      final Directory directory = await getApplicationDocumentsDirectory();
+      final String videoNameToUse = specificVideoName ??
+          (playList.isNotEmpty && currentPlayingIndex < playList.length
+              ? playList[currentPlayingIndex].extras!['name'] as String
+              : 'video');
+      
+      // Sanitize videoName for use in filename, allowing Chinese characters
+      final String sanitizedVideoName = videoNameToUse.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      // Sanitize videoPath for use in filename, allowing Chinese characters
+      final String sanitizedVideoPath = widget.path.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png'; // No timestamp for overwriting
+      final String filePath = '${directory.path}/alist_player/$fileName';
+
+      final File file = File(filePath);
+      await file.writeAsBytes(screenshotBytes);
+
+      // Don't show SnackBar here if called from _saveCurrentProgress to avoid double messages
+      if (specificVideoName == null && mounted) { // Only show if called directly by button
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Screenshot saved to: $filePath'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      _logDebug('Screenshot saved: $filePath');
+      return filePath;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving screenshot: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      _logDebug('Error taking screenshot: $e');
+      return null;
+    }
   }
 
   // Modified playlist change handler to check for local files
@@ -679,6 +739,14 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       print('正在保存视频进度: $videoName, 位置: ${currentPosition.inSeconds}秒');
 
+      // Take screenshot and get path
+      final String? screenshotFilePath = await _takeScreenshot(specificVideoName: videoName);
+      if (screenshotFilePath != null) {
+        print('Screenshot for $videoName saved to $screenshotFilePath during progress save.');
+      } else {
+        print('Failed to take screenshot for $videoName during progress save.');
+      }
+
       final existingRecord =
           await DatabaseHelper.instance.getHistoricalRecordByName(
         name: videoName,
@@ -695,6 +763,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         userId: _currentUsername!.hashCode,
         videoName: videoName,
         totalVideoDuration: duration.inSeconds, // 保存视频总时长
+        // screenshotPath: screenshotFilePath, // You'll need to add this to your method
       );
       
       // 标记进度已保存成功
@@ -933,6 +1002,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
+                      buildScreenshotButton(), // Added screenshot button
                       buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
@@ -1027,6 +1097,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
                       buildSubtitleButton(),
+                      buildScreenshotButton(), // Added screenshot button
                       buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
@@ -1170,6 +1241,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 const Spacer(), // 将全屏按钮推到最右边
                 buildSpeedButton(),
                 buildSubtitleButton(),
+                buildScreenshotButton(), // Added screenshot button
                 buildKeyboardShortcutsButton(),
                 buildFramelessButton(), // 始终显示无边框按钮
                 // 在无边框模式下显示拉伸切换按钮
@@ -1197,6 +1269,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 const Spacer(), // 将全屏按钮推到最右边
                 buildSpeedButton(),
                 buildSubtitleButton(),
+                buildScreenshotButton(), // Added screenshot button
                 buildKeyboardShortcutsButton(),
                 buildFramelessButton(), // 始终显示无边框按钮
                 // 在无边框模式下显示拉伸切换按钮
@@ -2907,6 +2980,20 @@ class VideoPlayerState extends State<VideoPlayer> {
         curve: Curves.easeInOut,
       );
     });
+  }
+
+  // Build screenshot button
+  Widget buildScreenshotButton() {
+    return MaterialCustomButton(
+      onPressed: _takeScreenshot,
+      icon: const Tooltip(
+        message: 'Take Screenshot',
+        child: Icon(
+          Icons.camera_alt,
+          color: Colors.white,
+        ),
+      ),
+    );
   }
 }
 
