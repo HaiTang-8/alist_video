@@ -1,10 +1,12 @@
 import 'dart:ui';
 
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
 
@@ -75,6 +77,9 @@ class _HomePageState extends State<HomePage>
         
         // 检查哪些文件已下载到本地
         _checkLocalFiles();
+        
+        // 加载视频文件的播放历史记录
+        _loadVideoHistoryRecords();
       } else {
         _handleError(res.message ?? '获取文件失败');
       }
@@ -103,6 +108,43 @@ class _HomePageState extends State<HomePage>
       print("Found ${_localFiles.length} local videos in current directory");
     } catch (e) {
       print("Error checking local files: $e");
+    }
+  }
+  
+  // 新增方法：加载视频文件的播放历史记录
+  Future<void> _loadVideoHistoryRecords() async {
+    if (_currentUsername == null) return;
+    
+    try {
+      // 获取当前目录下所有视频文件的历史记录
+      final currentDirectory = currentPath.join('/');
+      final historyRecords = await DatabaseHelper.instance.getHistoricalRecordsByPath(
+        path: currentDirectory,
+        userId: _currentUsername!.hashCode,
+      );
+      
+      if (historyRecords.isEmpty) return;
+      
+      // 将历史记录关联到对应的文件项
+      setState(() {
+        for (var file in files) {
+          if (file.type == 2) { // 只处理视频文件
+            // 查找匹配的历史记录
+            try {
+              final record = historyRecords.firstWhere(
+                (record) => record.videoName == file.name,
+              );
+              file.historyRecord = record;
+            } catch (e) {
+              // 如果没有找到匹配的记录，不做任何操作
+            }
+          }
+        }
+      });
+      
+      print("Found ${historyRecords.length} history records for current directory");
+    } catch (e) {
+      print("Error loading video history records: $e");
     }
   }
 
@@ -208,6 +250,67 @@ class _HomePageState extends State<HomePage>
               path: currentPath.join('/'),
               name: file.name,
             )));
+  }
+  
+
+  
+  // 获取中文星期几
+  String _getChineseWeekday(int weekday) {
+    const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    return weekdays[weekday - 1];
+  }
+  
+  // 构建带有不同颜色的播放进度文本
+  List<TextSpan> _buildWatchProgressText(HistoricalRecord record) {
+    // 计算进度百分比
+    final progressPercent = (record.progressValue * 100).toStringAsFixed(0);
+    
+    // 格式化观看进度时间（分:秒）
+    int minutes = 0;
+    int seconds = 0;
+    
+    // 确保videoSeek有效
+    if (record.videoSeek > 0) {
+      // videoSeek是总秒数，直接计算分钟和剩余秒数
+      minutes = (record.videoSeek / 60).floor();
+      seconds = (record.videoSeek % 60).floor();
+    }
+    
+    final progressTime = "$minutes分$seconds秒";
+    
+    // 格式化观看日期时间
+    final now = DateTime.now();
+    final changeTime = record.changeTime;
+    final isSameYear = now.year == changeTime.year;
+    
+    // 获取星期几
+    final weekday = _getChineseWeekday(changeTime.weekday);
+    
+    // 格式化日期，如果是今年则不显示年份
+    final dateFormat = isSameYear 
+        ? DateFormat('MM-dd $weekday HH:mm')
+        : DateFormat('yyyy-MM-dd $weekday HH:mm');
+    final formattedDate = dateFormat.format(changeTime);
+    
+    // 返回带有不同颜色的TextSpan列表
+    return [
+      const TextSpan(
+        text: "观看至",
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.blue,
+          height: 1.2,
+        ),
+      ),
+      TextSpan(
+        text: "$progressPercent%（$progressTime）$formattedDate 观看",
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[600],
+          height: 1.2,
+        ),
+      ),
+    ];
   }
 
   // 执行搜索
@@ -1083,17 +1186,34 @@ class _HomePageState extends State<HomePage>
                               ),
                             ),
                           
-                          // 文件名称
+                          // 文件名称和播放进度
                           Expanded(
-                            child: Text(
-                              file.name,
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: textColor,
-                                height: 1.3,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  file.name,
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: textColor,
+                                    height: 1.3,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                // 如果有播放历史记录，显示播放进度
+                                if (file.type == 2 && file.historyRecord != null) ...[  
+                                  const SizedBox(height: 4),
+                                  // 使用RichText来设置不同部分的文本颜色
+                                  RichText(
+                                    text: TextSpan(
+                                      children: _buildWatchProgressText(file.historyRecord!),
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         ],
@@ -1357,6 +1477,7 @@ class FileItem {
   final int type;
   final String sha1;
   final String parent;
+  HistoricalRecord? historyRecord; // 添加历史记录字段
 
   FileItem({
     required this.name,
@@ -1365,5 +1486,6 @@ class FileItem {
     required this.type,
     required this.sha1,
     required this.parent,
+    this.historyRecord,
   });
 }
