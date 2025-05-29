@@ -79,7 +79,7 @@ class _RemoteConfigPageState extends State<RemoteConfigPage> with SingleTickerPr
   
   /// 获取本机IP地址(用于识别本地设备)
   Future<void> _getLocalIpAddresses() async {
-    final addresses = await _configServer.getLocalIpAddresses();
+    // final addresses = await _configServer.getLocalIpAddresses();
     setState(() {
     });
   }
