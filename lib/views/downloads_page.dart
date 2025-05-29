@@ -195,12 +195,25 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         ),
                       ),
                       if (task.status == '下载中')
-                        Text(
-                          '${_formatSpeed(task.speed ?? 0)}/s',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 12,
-                          ),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              '${_formatSpeed(task.speed ?? 0)}/s',
+                              style: TextStyle(
+                                color: Colors.grey[600],
+                                fontSize: 12,
+                              ),
+                            ),
+                            if (_calculateRemainingTime(task).isNotEmpty)
+                              Text(
+                                '剩余 ${_calculateRemainingTime(task)}',
+                                style: TextStyle(
+                                  color: Colors.grey[600],
+                                  fontSize: 11,
+                                ),
+                              ),
+                          ],
                         ),
                       Row(
                         children: [
@@ -270,6 +283,37 @@ class _DownloadsPageState extends State<DownloadsPage> {
 
   String _formatSpeed(num bytesPerSecond) {
     return _formatSize(bytesPerSecond);
+  }
+
+  String _formatTime(int seconds) {
+    if (seconds <= 0) return '';
+
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    final secs = seconds % 60;
+
+    if (hours > 0) {
+      return '${hours}小时${minutes}分';
+    } else if (minutes > 0) {
+      return '${minutes}分${secs}秒';
+    } else {
+      return '${secs}秒';
+    }
+  }
+
+  String _calculateRemainingTime(DownloadTask task) {
+    if (task.status != '下载中' ||
+        task.speed == null ||
+        task.speed! <= 0 ||
+        task.totalBytes == null) {
+      return '';
+    }
+
+    final remainingBytes = task.totalBytes! - task.receivedBytes;
+    if (remainingBytes <= 0) return '';
+
+    final remainingSeconds = (remainingBytes / task.speed!).round();
+    return _formatTime(remainingSeconds);
   }
 
   void _showBatchDeleteDialog(List<DownloadTask> tasks) {
@@ -570,7 +614,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
               if (selectedDirectory != null) {
                 final success = await DownloadManager.setCustomDownloadPath(selectedDirectory);
                 Navigator.pop(context);
-                
+
                 if (success) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('下载位置已更新')),
@@ -588,7 +632,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
       ),
     );
   }
-  
+
   Future<void> _scanAndImportVideos(BuildContext context) async {
     // 显示加载提示
     const loadingDialog = AlertDialog(
@@ -600,20 +644,20 @@ class _DownloadsPageState extends State<DownloadsPage> {
         ],
       ),
     );
-    
+
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => loadingDialog,
     );
-    
+
     try {
       // 执行扫描
       final importedCount = await DownloadManager().scanDownloadFolder();
-      
+
       // 关闭加载对话框
       Navigator.pop(context);
-      
+
       // 显示结果
       showDialog(
         context: context,
@@ -635,7 +679,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
     } catch (e) {
       // 出错时关闭加载对话框
       Navigator.pop(context);
-      
+
       // 显示错误
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('扫描失败: ${e.toString()}')),
