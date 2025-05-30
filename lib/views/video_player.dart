@@ -1,9 +1,11 @@
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:media_kit/media_kit.dart'; // Provides [Player], [Media], [Playlist] etc.
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -111,13 +113,13 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // Add a map to store local file paths for videos
   final Map<String, String> _localFilePaths = {};
-  
+
   // Track if we're currently showing the local file dialog
   bool _isShowingLocalFileDialog = false;
-  
+
   // Add a flag to track if we've already checked the current video
   // final Set<String> _alreadyCheckedVideos = {};
-  
+
   // Add a debounce timer for local file dialogs
   Timer? _localFileDialogDebounce;
 
@@ -126,6 +128,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加初始加载标志
   bool _isInitialLoading = true;
+
+  // 添加历史记录映射，用于存储播放列表中每个视频的历史记录
+  final Map<String, HistoricalRecord> _videoHistoryRecords = {};
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -204,9 +209,10 @@ class VideoPlayerState extends State<VideoPlayer> {
   // Returns the file path if successful, null otherwise.
   Future<String?> _takeScreenshot({String? specificVideoName}) async {
     try {
+      // 使用 compute 在后台线程执行截图操作，避免阻塞UI
       final Uint8List? screenshotBytes = await player.screenshot();
       if (screenshotBytes == null) {
-        if (mounted) {
+        if (mounted && specificVideoName == null) { // 只在直接调用时显示错误
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Failed to take screenshot: No data received.'),
@@ -218,12 +224,31 @@ class VideoPlayerState extends State<VideoPlayer> {
         return null;
       }
 
+      // 在后台线程处理文件保存
+      return await _saveScreenshotToFile(screenshotBytes, specificVideoName);
+    } catch (e) {
+      if (mounted && specificVideoName == null) { // 只在直接调用时显示错误
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error saving screenshot: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      _logDebug('Error taking screenshot: $e');
+      return null;
+    }
+  }
+
+  // 在后台线程保存截图文件
+  Future<String?> _saveScreenshotToFile(Uint8List screenshotBytes, String? specificVideoName) async {
+    try {
       final Directory directory = await getApplicationDocumentsDirectory();
       final String videoNameToUse = specificVideoName ??
           (playList.isNotEmpty && currentPlayingIndex < playList.length
               ? playList[currentPlayingIndex].extras!['name'] as String
               : 'video');
-      
+
       // Sanitize videoName for use in filename, allowing Chinese characters
       final String sanitizedVideoName = videoNameToUse.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
       // Sanitize videoPath for use in filename, allowing Chinese characters
@@ -232,6 +257,11 @@ class VideoPlayerState extends State<VideoPlayer> {
       final String filePath = '${directory.path}/alist_player/$fileName';
 
       final File file = File(filePath);
+
+      // 确保目录存在
+      await file.parent.create(recursive: true);
+
+      // 异步写入文件
       await file.writeAsBytes(screenshotBytes);
 
       // Don't show SnackBar here if called from _saveCurrentProgress to avoid double messages
@@ -246,15 +276,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       _logDebug('Screenshot saved: $filePath');
       return filePath;
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving screenshot: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-      _logDebug('Error taking screenshot: $e');
+      _logDebug('Error saving screenshot file: $e');
       return null;
     }
   }
@@ -265,27 +287,27 @@ class VideoPlayerState extends State<VideoPlayer> {
     super.initState();
     _loadSettings();
     _loadPlaybackSpeeds();
-    
+
     // 添加定期调试信息
     Timer.periodic(const Duration(seconds: 30), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
-      
+
       try {
         if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
           final videoName = playList[currentPlayingIndex].extras!['name'] as String;
           final position = player.state.position;
           final duration = player.state.duration;
-          
+
           _logDebug('当前播放: $videoName, 进度: ${position.inSeconds}/${duration.inSeconds}秒');
         }
       } catch (e) {
         // 忽略任何错误
       }
     });
-    
+
     player.setPlaylistMode(PlaylistMode.none);
 
     // 监听播放速度变化
@@ -320,19 +342,19 @@ class VideoPlayerState extends State<VideoPlayer> {
     // Modified playlist change handler to check for local files
     player.stream.playlist.listen((event) async {
       if (mounted) {
-        final videoName = playList.isNotEmpty && event.index < playList.length 
-            ? playList[event.index].extras!['name'] as String 
+        final videoName = playList.isNotEmpty && event.index < playList.length
+            ? playList[event.index].extras!['name'] as String
             : "未知";
         _logDebug('播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=${_isInitialLoading}');
-        
+
         // 如果是初始加载，跳过检查
         if (_isInitialLoading) {
           _logDebug('初始加载中，跳过本地文件检查');
           return;
         }
-        
-        // 先保存当前视频进度，再更新状态
-        await _saveCurrentProgress(); // 切换视频时保存进度
+
+        // 先保存当前视频进度，再更新状态 - 立即更新UI
+        await _saveCurrentProgress(updateUIImmediately: true); // 切换视频时保存进度
         if (mounted) {
           setState(() {
             currentPlayingIndex = event.index;
@@ -345,9 +367,9 @@ class VideoPlayerState extends State<VideoPlayer> {
           if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
             final currentVideo = playList[currentPlayingIndex];
             final videoName = currentVideo.extras!['name'] as String;
-            
+
             _logDebug('准备检查本地文件: 索引=$currentPlayingIndex, 视频=$videoName, 对话框显示=${_isShowingLocalFileDialog}');
-            
+
             // 每次都检查本地文件，不考虑是否已检查过
             if (!_isShowingLocalFileDialog) {
               await _checkAndPlayLocalFile(videoName);
@@ -381,11 +403,11 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // Add position monitoring to detect when video ends
     player.stream.position.listen((position) {
-      if (player.state.duration.inSeconds > 0 && 
+      if (player.state.duration.inSeconds > 0 &&
           position.inSeconds >= player.state.duration.inSeconds - 1) {
         // Video reached the end, make sure it's paused
         player.pause();
-        
+
         // 在视频结束时保存进度
         if (mounted) {
           _saveCurrentProgress().then((_) {
@@ -394,7 +416,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         }
       }
     });
-    
+
     // 添加对播放状态的监听，在暂停时保存进度
     player.stream.playing.listen((isPlaying) {
       if (!isPlaying && mounted) {
@@ -454,7 +476,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             playList.add(element);
             index++;
           }
-          
+
           _logDebug('播放列表加载完成: 总数=${playList.length}, 初始索引=$playIndex');
         });
 
@@ -512,15 +534,15 @@ class VideoPlayerState extends State<VideoPlayer> {
         if (playList.isNotEmpty && playIndex < playList.length) {
           final videoName = playList[playIndex].extras!['name'] as String;
           final downloadTaskKey = "${widget.path}/$videoName";
-          
+
           _logDebug('初始检查本地文件: 视频=$videoName');
-          
+
           final localFilePath = await _checkLocalFile(downloadTaskKey);
-          
+
           if (localFilePath != null && mounted) {
             _logDebug('发现本地文件: 视频=$videoName, 路径=$localFilePath');
             setState(() => _isShowingLocalFileDialog = true);
-            
+
             final playLocal = await _showLocalFileDialog();
             if (playLocal && mounted) {
               _logDebug('用户选择播放本地文件: 视频=$videoName');
@@ -530,7 +552,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               // Continue with streamed version
               await player.play();
             }
-            
+
             setState(() => _isShowingLocalFileDialog = false);
           } else {
             _logDebug('未找到本地文件或组件已卸载: 视频=$videoName');
@@ -554,9 +576,12 @@ class VideoPlayerState extends State<VideoPlayer> {
 
         // 初始化完成后进行一次排序
         _sortPlaylist();
-        
+
         // 检查整个播放列表中哪些视频有本地缓存版本
         _checkAllLocalFiles();
+
+        // 加载播放列表中所有视频的历史记录
+        _loadPlaylistHistoryRecords();
       } else {
         // 处理API错误
         _logDebug('API错误: ${res.message ?? "未知错误"}');
@@ -584,25 +609,25 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     }
   }
-  
+
   // 检查整个播放列表中哪些视频有本地缓存版本
   Future<void> _checkAllLocalFiles() async {
     if (playList.isEmpty) return;
-    
+
     try {
       final downloadManager = DownloadManager();
       final localVideos = await downloadManager.getLocalVideosInPath(widget.path);
-      
+
       if (mounted) {
         setState(() {
           _localVideos.clear();
-          
+
           // 遍历播放列表，将本地文件添加到_localVideos集合中
           for (final media in playList) {
             final videoName = media.extras?['name'] as String?;
             if (videoName != null && localVideos.contains(videoName)) {
               _localVideos.add(videoName);
-              
+
               // 尝试查找任务以获取文件路径
               final task = downloadManager.findTask(widget.path, videoName);
               if (task != null) {
@@ -612,10 +637,40 @@ class VideoPlayerState extends State<VideoPlayer> {
           }
         });
       }
-      
+
       print("Found ${_localVideos.length} local videos in playlist");
     } catch (e) {
       print("Error checking all local files: $e");
+    }
+  }
+
+  // 加载播放列表中所有视频的历史记录
+  Future<void> _loadPlaylistHistoryRecords() async {
+    if (_currentUsername == null || playList.isEmpty) return;
+
+    try {
+      // 获取当前目录下所有视频文件的历史记录
+      final historyRecords = await DatabaseHelper.instance.getHistoricalRecordsByPath(
+        path: widget.path,
+        userId: _currentUsername!.hashCode,
+      );
+
+      if (historyRecords.isEmpty) return;
+
+      // 将历史记录关联到对应的视频
+      if (mounted) {
+        setState(() {
+          _videoHistoryRecords.clear();
+
+          for (final record in historyRecords) {
+            _videoHistoryRecords[record.videoName] = record;
+          }
+        });
+      }
+
+      _logDebug("Found ${historyRecords.length} history records for playlist");
+    } catch (e) {
+      _logDebug("Error loading playlist history records: $e");
     }
   }
 
@@ -625,30 +680,30 @@ class VideoPlayerState extends State<VideoPlayer> {
     if (_localFilePaths.containsKey(path)) {
       return _localFilePaths[path];
     }
-    
+
     final downloadManager = DownloadManager();
-    
+
     // 使用新的findTask方法获取任务
     final fileName = path.split('/').last;
     final directoryPath = path.substring(0, path.lastIndexOf('/'));
     final task = downloadManager.findTask(directoryPath, fileName);
-    
+
     if (task != null && task.status == '已完成') {
       // Check if the file actually exists on disk
       final file = File(task.filePath);
       if (await file.exists()) {
         // Cache the result
         _localFilePaths[path] = task.filePath;
-        
+
         // Add to set of local videos for UI
         setState(() {
           _localVideos.add(fileName);
         });
-        
+
         return task.filePath;
       }
     }
-    
+
     return null;
   }
 
@@ -683,20 +738,20 @@ class VideoPlayerState extends State<VideoPlayer> {
         'file://$filePath',
         extras: {'name': videoName},
       );
-      
+
       // Replace just the current media in the player
       await player.stop();
-      
+
       // Create a new playlist with the local file replacing the current entry
       final List<Media> updatedPlaylist = List.from(playList);
       updatedPlaylist[currentPlayingIndex] = localMedia;
-      
+
       // Open the updated playlist
       await player.open(
         Playlist(updatedPlaylist, index: currentPlayingIndex),
         play: true,
       );
-      
+
       setState(() => _isLoading = false);
       print('Playing local file: $filePath');
     } catch (e) {
@@ -713,8 +768,11 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
-  // 存当前播放进度
-  Future<void> _saveCurrentProgress() async {
+  // 立即更新UI中的播放进度，然后异步保存到数据库
+  Future<void> _saveCurrentProgress({
+    bool updateUIImmediately = false,
+    bool waitForCompletion = false, // 新增参数：是否等待完成（用于退出时）
+  }) async {
     // 不需要重置标志，以避免重复调用时重复执行
     if (!mounted ||
         _currentUsername == null ||
@@ -727,25 +785,17 @@ class VideoPlayerState extends State<VideoPlayer> {
     try {
       final currentPosition = player.state.position;
       final duration = player.state.duration; // 获取视频总时长
-      
+
       // 安全检查：确保当前播放索引有效
       if (currentPlayingIndex < 0 || currentPlayingIndex >= playList.length) {
         print('跳过进度保存: 无效的播放索引 $currentPlayingIndex');
         return;
       }
-      
+
       final currentVideo = playList[currentPlayingIndex];
       final videoName = currentVideo.extras!['name'] as String;
 
       print('正在保存视频进度: $videoName, 位置: ${currentPosition.inSeconds}秒');
-
-      // Take screenshot and get path
-      final String? screenshotFilePath = await _takeScreenshot(specificVideoName: videoName);
-      if (screenshotFilePath != null) {
-        print('Screenshot for $videoName saved to $screenshotFilePath during progress save.');
-      } else {
-        print('Failed to take screenshot for $videoName during progress save.');
-      }
 
       final existingRecord =
           await DatabaseHelper.instance.getHistoricalRecordByName(
@@ -756,22 +806,162 @@ class VideoPlayerState extends State<VideoPlayer> {
       final videoSha1 =
           existingRecord?.videoSha1 ?? _getVideoSha1(widget.path, videoName);
 
+      // 如果需要立即更新UI，先更新本地历史记录映射
+      if (updateUIImmediately && mounted) {
+        setState(() {
+          _videoHistoryRecords[videoName] = HistoricalRecord(
+            videoSha1: videoSha1,
+            userId: _currentUsername!.hashCode,
+            videoName: videoName,
+            videoPath: widget.path,
+            videoSeek: currentPosition.inSeconds,
+            totalVideoDuration: duration.inSeconds,
+            changeTime: DateTime.now(),
+          );
+        });
+      }
+
+      if (waitForCompletion) {
+        // 退出时：同步保存，确保数据完整性
+        await _saveProgressToDatabaseSync(
+          videoSha1: videoSha1,
+          videoName: videoName,
+          currentPosition: currentPosition,
+          duration: duration,
+          updateUIImmediately: updateUIImmediately,
+        );
+      } else {
+        // 正常切换时：异步保存，不阻塞UI
+        _saveProgressToDatabase(
+          videoSha1: videoSha1,
+          videoName: videoName,
+          currentPosition: currentPosition,
+          duration: duration,
+          updateUIImmediately: updateUIImmediately,
+        );
+      }
+
+    } catch (e) {
+      print('保存进度失败: $e');
+    }
+  }
+
+  // 异步保存进度到数据库的方法
+  Future<void> _saveProgressToDatabase({
+    required String videoSha1,
+    required String videoName,
+    required Duration currentPosition,
+    required Duration duration,
+    required bool updateUIImmediately,
+  }) async {
+    try {
+      // 先保存到数据库，不等待截图完成
       await DatabaseHelper.instance.upsertHistoricalRecord(
         videoSha1: videoSha1,
         videoPath: widget.path,
         videoSeek: currentPosition.inSeconds,
         userId: _currentUsername!.hashCode,
         videoName: videoName,
-        totalVideoDuration: duration.inSeconds, // 保存视频总时长
-        // screenshotPath: screenshotFilePath, // You'll need to add this to your method
+        totalVideoDuration: duration.inSeconds,
       );
-      
+
       // 标记进度已保存成功
       print('播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
+
+      // 如果之前没有立即更新UI，现在更新
+      if (!updateUIImmediately && mounted) {
+        setState(() {
+          _videoHistoryRecords[videoName] = HistoricalRecord(
+            videoSha1: videoSha1,
+            userId: _currentUsername!.hashCode,
+            videoName: videoName,
+            videoPath: widget.path,
+            videoSeek: currentPosition.inSeconds,
+            totalVideoDuration: duration.inSeconds,
+            changeTime: DateTime.now(),
+          );
+        });
+      }
+
+      // 异步截图，完全不阻塞主流程
+      _takeScreenshotAsync(videoName);
+
     } catch (e) {
-      print('保存进度失败: $e');
-      // 保存失败时不设置_progressSaved标志
+      print('数据库保存进度失败: $e');
     }
+  }
+
+  // 同步保存进度到数据库的方法（用于退出时）
+  Future<void> _saveProgressToDatabaseSync({
+    required String videoSha1,
+    required String videoName,
+    required Duration currentPosition,
+    required Duration duration,
+    required bool updateUIImmediately,
+  }) async {
+    try {
+      // 先保存到数据库
+      await DatabaseHelper.instance.upsertHistoricalRecord(
+        videoSha1: videoSha1,
+        videoPath: widget.path,
+        videoSeek: currentPosition.inSeconds,
+        userId: _currentUsername!.hashCode,
+        videoName: videoName,
+        totalVideoDuration: duration.inSeconds,
+      );
+
+      // 标记进度已保存成功
+      print('播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
+
+      // 如果之前没有立即更新UI，现在更新
+      if (!updateUIImmediately && mounted) {
+        setState(() {
+          _videoHistoryRecords[videoName] = HistoricalRecord(
+            videoSha1: videoSha1,
+            userId: _currentUsername!.hashCode,
+            videoName: videoName,
+            videoPath: widget.path,
+            videoSeek: currentPosition.inSeconds,
+            totalVideoDuration: duration.inSeconds,
+            changeTime: DateTime.now(),
+          );
+        });
+      }
+
+      // 同步截图，等待完成（退出时确保截图也保存）
+      try {
+        final screenshotFilePath = await _takeScreenshot(specificVideoName: videoName);
+        if (screenshotFilePath != null) {
+          print('Screenshot for $videoName saved to $screenshotFilePath during exit.');
+        } else {
+          print('Failed to take screenshot for $videoName during exit.');
+        }
+      } catch (e) {
+        print('Screenshot failed for $videoName during exit: $e');
+        // 截图失败不影响进度保存
+      }
+
+    } catch (e) {
+      print('数据库保存进度失败: $e');
+    }
+  }
+
+  // 完全异步的截图方法，不阻塞任何操作
+  void _takeScreenshotAsync(String videoName) {
+    // 使用 Future.microtask 确保在下一个事件循环中执行
+    Future.microtask(() async {
+      try {
+        final screenshotFilePath = await _takeScreenshot(specificVideoName: videoName);
+        if (screenshotFilePath != null) {
+          print('Screenshot for $videoName saved to $screenshotFilePath during progress save.');
+        } else {
+          print('Failed to take screenshot for $videoName during progress save.');
+        }
+      } catch (e) {
+        print('Screenshot failed for $videoName: $e');
+        // 截图失败不影响任何操作
+      }
+    });
   }
 
   // 查询并跳转到上次播放位
@@ -799,21 +989,21 @@ class VideoPlayerState extends State<VideoPlayer> {
   void dispose() {
     // Cancel the debounce timer
     _localFileDialogDebounce?.cancel();
-    
+
     // 重置进度保存标志，确保可以保存进度
-    
+
     // 创建一个异步函数来处理清理工作
     Future<void> cleanup() async {
       try {
         print('视频播放器正在清理资源...');
-        
+
         // 先暂停播放器
         await player.pause();
-        
+
         // 等待进度保存成功
         if (mounted && playList.isNotEmpty && currentPlayingIndex < playList.length) {
           print('正在保存最终播放进度...');
-          await _saveCurrentProgress();
+          await _saveCurrentProgress(waitForCompletion: true);
           print('最终播放进度保存完成');
         }
 
@@ -842,7 +1032,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 清理键盘事件处理器
     VideoShortcutActivator.dispose();
-    
+
     // 最后调用父类的 dispose
     super.dispose();
   }
@@ -878,16 +1068,16 @@ class VideoPlayerState extends State<VideoPlayer> {
             try {
               // 暂停视频
               await player.pause();
-              
+
               // 重置进度保存标志，确保可以保存进度
-              
+
               // 等待进度保存
               if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
                 print('退出前保存最终播放进度...');
-                await _saveCurrentProgress();
+                await _saveCurrentProgress(waitForCompletion: true);
                 print('退出前进度保存完成');
               }
-              
+
               // 等播放器关闭
               await player.dispose();
 
@@ -1147,7 +1337,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         child: _buildVideoPlayer(isFrameless: true, stretch: _isStretchMode),
       );
     }
-    
+
     return Row(
       children: [
         // 左侧视频播放器
@@ -1171,7 +1361,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       ],
     );
   }
-  
+
   // 提取视频播放器组件
   Widget _buildVideoPlayer({bool isFrameless = false, bool stretch = false}) {
     // 视频内容包装器
@@ -1186,7 +1376,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             // 显示全局倍速提示，指定为长按模式
             _showSpeedIndicatorOverlay(AppConstants.longPressPlaybackSpeed,
                 isLongPress: true);
-            
+
             // 取消任何已有定时器，确保长按时指示器不会消失
             _speedIndicatorTimer?.cancel();
             _speedIndicatorTimer = null;
@@ -1196,7 +1386,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
             // 立即更新倍速提示，显示恢复后的倍速值
             _showSpeedIndicatorOverlay(_previousSpeed);
-            
+
             // 设置定时器，延迟2秒后隐藏提示
             _speedIndicatorTimer?.cancel();
             _speedIndicatorTimer = Timer(
@@ -1287,7 +1477,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       ],
     );
   }
-  
+
   // 添加无边框播放按钮
   Widget buildFramelessButton() {
     return MaterialCustomButton(
@@ -1310,7 +1500,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       ),
     );
   }
-  
+
   // 添加视频拉伸切换按钮
   Widget buildStretchButton() {
     return MaterialCustomButton(
@@ -1369,16 +1559,78 @@ class VideoPlayerState extends State<VideoPlayer> {
     return '${path}_$name'.hashCode.toString();
   }
 
+  // 获取中文星期几
+  String _getChineseWeekday(int weekday) {
+    const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    return weekdays[weekday - 1];
+  }
+
+  // 构建带有不同颜色的播放进度文本
+  List<TextSpan> _buildWatchProgressText(HistoricalRecord record) {
+    // 计算进度百分比
+    final progressPercent = (record.progressValue * 100).toStringAsFixed(0);
+
+    // 格式化观看进度时间（分:秒）
+    int minutes = 0;
+    int seconds = 0;
+
+    // 确保videoSeek有效
+    if (record.videoSeek > 0) {
+      // videoSeek是总秒数，直接计算分钟和剩余秒数
+      minutes = (record.videoSeek / 60).floor();
+      seconds = (record.videoSeek % 60).floor();
+    }
+
+    final progressTime = "$minutes分$seconds秒";
+
+    // 格式化观看日期时间
+    final now = DateTime.now();
+    final changeTime = record.changeTime;
+    final isSameYear = now.year == changeTime.year;
+
+    // 获取星期几
+    final weekday = _getChineseWeekday(changeTime.weekday);
+
+    // 格式化日期，如果是今年则不显示年份
+    final dateFormat = isSameYear
+        ? DateFormat('MM-dd $weekday HH:mm')
+        : DateFormat('yyyy-MM-dd $weekday HH:mm');
+    final formattedDate = dateFormat.format(changeTime);
+
+    // 返回带有不同颜色的TextSpan列表
+    return [
+      const TextSpan(
+        text: "观看至",
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.blue,
+          height: 1.2,
+        ),
+      ),
+      TextSpan(
+        text: "$progressPercent%（$progressTime）$formattedDate 观看",
+        style: TextStyle(
+          fontSize: 12,
+          color: Colors.grey[600],
+          height: 1.2,
+        ),
+      ),
+    ];
+  }
+
   // 修改 ListTile 的 onTap 处理
   Widget _buildPlaylistItem(int index, bool isPlaying) {
     final videoName = playList[index].extras!['name'] as String;
     final isLocalVideo = _localVideos.contains(videoName);
-    
+
     // Get file size and modified time information if available
     final size = playList[index].extras?['size'] as int? ?? 0;
     final modifiedStr = playList[index].extras?['modified'] as String? ?? '';
     final modified = modifiedStr.isNotEmpty ? DateTime.tryParse(modifiedStr) : null;
-    
+
+    // 获取该视频的历史记录
+    final historyRecord = _videoHistoryRecords[videoName];
+
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(8),
@@ -1386,8 +1638,8 @@ class VideoPlayerState extends State<VideoPlayer> {
         decoration: BoxDecoration(
           color: isPlaying ? Colors.blue.withOpacity(0.08) : Colors.white,
           borderRadius: BorderRadius.circular(8),
-          border: isPlaying 
-              ? Border.all(color: Colors.blue.withOpacity(0.3), width: 1) 
+          border: isPlaying
+              ? Border.all(color: Colors.blue.withOpacity(0.3), width: 1)
               : null,
           boxShadow: [
             BoxShadow(
@@ -1409,8 +1661,8 @@ class VideoPlayerState extends State<VideoPlayer> {
             decoration: BoxDecoration(
               color: isPlaying ? Colors.blue.withOpacity(0.1) : Colors.grey.withOpacity(0.05),
               shape: BoxShape.circle,
-              border: isPlaying 
-                  ? Border.all(color: Colors.blue, width: 1) 
+              border: isPlaying
+                  ? Border.all(color: Colors.blue, width: 1)
                   : Border.all(color: Colors.grey.withOpacity(0.3), width: 1),
             ),
             child: Stack(
@@ -1483,7 +1735,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                     ),
                   ),
-                
+
                 // File size
                 if (size > 0)
                   Text(
@@ -1493,7 +1745,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       color: Colors.grey[600],
                     ),
                   ),
-                  
+
                 // Modified date with separator
                 if (modified != null)
                   Row(
@@ -1516,12 +1768,25 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                     ],
                   ),
+
+                // 历史记录信息
+                if (historyRecord != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(top: 4),
+                    child: RichText(
+                      text: TextSpan(
+                        style: DefaultTextStyle.of(context).style,
+                        children: _buildWatchProgressText(historyRecord),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
           onTap: () async {
-            // 先保存当前视频进度，再切换视频
-            await _saveCurrentProgress();
+            // 先保存当前视频进度，再切换视频 - 立即更新UI
+            await _saveCurrentProgress(updateUIImmediately: true);
             if (mounted) {
               // 如果在初始加载中，只执行视频切换
               if (_isInitialLoading) {
@@ -1530,21 +1795,21 @@ class VideoPlayerState extends State<VideoPlayer> {
                 scrollToCurrentItem();
                 return;
               }
-              
+
               // 获取要切换到的视频信息
               final videoName = playList[index].extras!['name'] as String;
               final videoKey = "${widget.path}/$videoName";
-              
+
               _logDebug('手动点击列表项: 索引=$index, 视频=$videoName');
-              
+
               // 检查是否存在本地文件，不考虑是否已经检查过
               if (!_isShowingLocalFileDialog) {
                 final localFilePath = await _checkLocalFile(videoKey);
-                
+
                 if (localFilePath != null && mounted) {
                   _logDebug('手动点击: 发现本地文件，显示对话框: $videoName');
                   setState(() => _isShowingLocalFileDialog = true);
-                  
+
                   final playLocal = await _showLocalFileDialog();
                   if (playLocal && mounted) {
                     // 先切换到该视频，然后播放本地版本
@@ -1557,14 +1822,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                     scrollToCurrentItem();
                     await player.play();
                   }
-                  
+
                   if (mounted) {
                     setState(() => _isShowingLocalFileDialog = false);
                   }
                   return; // 已处理完毕，退出
                 }
               }
-              
+
               // 如果没有本地文件或对话框已显示，直接切换
               player.jump(index);
               scrollToCurrentItem();
@@ -1575,12 +1840,12 @@ class VideoPlayerState extends State<VideoPlayer> {
       ),
     );
   }
-  
+
   // 添加格式化日期的方法
   String _formatDate(DateTime date) {
     return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
   }
-  
+
   // 添加格式化文件大小的方法
   String _formatSize(int size) {
     if (size < 1024) return '$size B';
@@ -1599,7 +1864,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       // 显示当前播放索引 (索引+1，从1开始计数更符合用户习惯)
       playingIndexInfo = ' | 正在播放: ${currentPlayingIndex + 1}/${playList.length}';
     }
-    
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -1859,7 +2124,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
           // 立即更新倍速提示，显示恢复后的倍速值
           _showSpeedIndicatorOverlay(_previousSpeed);
-          
+
           // 设置定时器，延迟2秒后隐藏提示
           _speedIndicatorTimer?.cancel();
           _speedIndicatorTimer = Timer(
@@ -2589,7 +2854,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             builder: (context, _) {
               // 获取视频信息
               final videoParams = player.state.videoParams;
-              
+
               // 基础信息（不依赖于MPV属性的Future）
               final position = player.state.position;
               final duration = player.state.duration;
@@ -2616,7 +2881,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                   final videoBitrateStr = extInfo['videoBitrate'] ?? 'N/A';
                   final codecInfo = extInfo['videoCodec'] ?? 'N/A';
                   final videoFps = extInfo['videoFps'] ?? 'N/A';
-                  
+
                   return Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -2748,7 +3013,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 获取扩展的视频信息
   Future<Map<String, String>> _getExtendedVideoInfo() async {
     final result = <String, String>{};
-    
+
     try {
       // 检查是否有下面这些属性
       final mpvProperties = [
@@ -2756,10 +3021,10 @@ class VideoPlayerState extends State<VideoPlayer> {
         'video-bitrate', 'video-params/bitrate', 'stats/video/bitrate',
         'packet-video-bitrate', 'estimated-vf-fps', 'container-fps',
         // 视频编码相关
-        'video-codec', 'video-format', 'video-codec-name', 
+        'video-codec', 'video-format', 'video-codec-name',
         'current-tracks/video/codec', 'current-tracks/video/demux-fps'
       ];
-      
+
       // 收集所有可用的MPV属性
       final debugValues = <String, dynamic>{};
       for (final prop in mpvProperties) {
@@ -2772,7 +3037,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           // 忽略单个属性的错误
         }
       }
-      
+
       // 尝试获取视频帧率
       String fps = 'N/A';
       for (final prop in ['container-fps', 'estimated-vf-fps', 'current-tracks/video/demux-fps']) {
@@ -2788,7 +3053,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         }
       }
       result['videoFps'] = '$fps fps';
-      
+
       // 尝试获取视频编码
       String codec = 'N/A';
       for (final prop in ['video-codec', 'video-format', 'video-codec-name', 'current-tracks/video/codec']) {
@@ -2799,7 +3064,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         }
       }
       result['videoCodec'] = codec;
-      
+
       // 尝试从已知属性获取视频码率
       for (final prop in ['video-bitrate', 'video-params/bitrate', 'stats/video/bitrate', 'packet-video-bitrate']) {
         final value = debugValues[prop];
@@ -2810,7 +3075,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           } else if (value is String) {
             bitrate = double.tryParse(value);
           }
-          
+
           if (bitrate != null && bitrate > 0) {
             final mbps = bitrate / 1000000;
             result['videoBitrate'] = '${mbps.toStringAsFixed(2)} Mbps';
@@ -2818,20 +3083,20 @@ class VideoPlayerState extends State<VideoPlayer> {
           }
         }
       }
-      
+
       // 如果找不到直接的码率值，尝试计算
       final fileSize = await _getPlayerProperty('file-size', null);
       final duration = player.state.duration.inSeconds;
-      
+
       if (fileSize != null && duration > 0) {
         double? fileSizeBytes;
-        
+
         if (fileSize is num) {
           fileSizeBytes = fileSize.toDouble();
         } else if (fileSize is String) {
           fileSizeBytes = double.tryParse(fileSize);
         }
-        
+
         if (fileSizeBytes != null && fileSizeBytes > 0) {
           // 计算总码率
           final totalBitrate = (fileSizeBytes * 8) / duration;
@@ -2845,7 +3110,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           }
         }
       }
-      
+
       // 打印调试信息
       print('MPV视频属性: $debugValues');
       result['videoBitrate'] = 'N/A (无法读取)';
@@ -2853,19 +3118,19 @@ class VideoPlayerState extends State<VideoPlayer> {
       print('获取扩展视频信息错误: $e');
       result['videoBitrate'] = 'N/A (错误)';
     }
-    
+
     return result;
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    
+
     // Refresh which videos are available locally when dependencies change
     // This ensures the UI gets updated when new downloads complete
     _refreshLocalVideosList();
   }
-  
+
   // Refresh the list of locally available videos
   Future<void> _refreshLocalVideosList() async {
     // Check all videos in the playlist
@@ -2874,7 +3139,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       if (videoName != null) {
         final videoKey = "${widget.path}/$videoName";
         final localPath = await _checkLocalFile(videoKey);
-        
+
         if (localPath != null) {
           setState(() {
             _localVideos.add(videoName);
@@ -2888,30 +3153,30 @@ class VideoPlayerState extends State<VideoPlayer> {
   Future<void> _checkAndPlayLocalFile(String videoName) async {
     // Cancel any pending debounce timer
     _localFileDialogDebounce?.cancel();
-    
+
     // If already showing a dialog, don't show another
     if (_isShowingLocalFileDialog) {
       _logDebug('跳过本地文件检查: 对话框已显示, 视频=$videoName');
       return;
     }
-    
+
     final videoKey = "${widget.path}/$videoName";
     _logDebug('检查本地文件: 视频=$videoName, 键值=$videoKey');
-    
+
     // Use debounce to prevent multiple dialogs when rapidly switching videos
     _localFileDialogDebounce = Timer(const Duration(milliseconds: 300), () async {
       // Check if this video has a local version
       _logDebug('开始检查本地文件 (debounce后): 视频=$videoName');
       final localFilePath = await _checkLocalFile(videoKey);
-      
+
       // If local file exists and we're not already showing the dialog
       if (localFilePath != null && mounted && !_isShowingLocalFileDialog) {
         _logDebug('找到本地文件，准备显示对话框: 视频=$videoName, 路径=$localFilePath');
         setState(() => _isShowingLocalFileDialog = true);
-        
+
         // Pause playback while showing dialog
         await player.pause();
-        
+
         // Show dialog asking user if they want to play the local file
         if (mounted) {
           _logDebug('显示本地文件对话框: 视频=$videoName');
@@ -2926,7 +3191,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             await player.play();
           }
         }
-        
+
         if (mounted) {
           _logDebug('关闭本地文件对话框: 视频=$videoName');
           setState(() => _isShowingLocalFileDialog = false);

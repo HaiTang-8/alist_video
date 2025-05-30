@@ -1,0 +1,20 @@
+{
+  "buildFiles": [
+    "/Users/zhouquan/application/flutter/packages/flutter_tools/gradle/src/main/groovy/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/zhouquan/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/zhouquan/workSpace/flutter/webdav_video/android/app/.cxx/Debug/6e6d5r1i/x86",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/zhouquan/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/zhouquan/workSpace/flutter/webdav_video/android/app/.cxx/Debug/6e6d5r1i/x86",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {}
+}
