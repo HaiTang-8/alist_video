@@ -50,5 +50,11 @@
     <key>NSAllowsArbitraryLoads</key>
     <true/>
 </dict>
+	<!-- 后台下载模式 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>background-fetch</string>
+		<string>background-processing</string>
+	</array>
 </dict>
 </plist>

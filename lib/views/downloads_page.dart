@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../utils/download_manager.dart';
+import '../utils/download_adapter.dart';
+import 'log_viewer_page.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 
@@ -39,6 +41,17 @@ class _DownloadsPageState extends State<DownloadsPage> {
             onPressed: () async {
               final directory = await DownloadManager.getDownloadPath();
               await DownloadManager.openFolder(directory);
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.bug_report_outlined),
+            tooltip: '查看日志',
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const LogViewerPage()),
+              );
             },
           ),
           IconButton(
@@ -1093,6 +1106,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
 
   Future<void> _showSettingsDialog(BuildContext context) async {
     final currentPath = await DownloadManager.getCustomDownloadPath();
+    final downloadMethod = DownloadAdapter().getCurrentDownloadMethod();
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -1101,6 +1115,43 @@ class _DownloadsPageState extends State<DownloadsPage> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 显示当前下载方法
+            const Text('当前下载方法：'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                  width: 1,
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    DownloadAdapter().isMobilePlatform
+                        ? Icons.smartphone
+                        : Icons.computer,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      downloadMethod,
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
             const Text('当前下载位置：'),
             const SizedBox(height: 8),
             Container(

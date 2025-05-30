@@ -11,6 +11,8 @@ import 'package:toastification/toastification.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/config_server.dart';
+import 'package:alist_player/utils/download_adapter.dart';
+import 'package:alist_player/utils/logger.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 void main() async {
@@ -18,6 +20,15 @@ void main() async {
   MediaKit.ensureInitialized();
   timeago.setLocaleMessages('zh', timeago.ZhMessages());
   timeago.setLocaleMessages('zh_CN', timeago.ZhCnMessages());
+
+  // 初始化日志系统
+  try {
+    await AppLogger().initialize();
+    await AppLogger().info('App', 'Application starting...');
+    await AppLogger().info('App', 'Platform: ${Platform.operatingSystem}');
+  } catch (e) {
+    print('日志系统初始化失败: $e');
+  }
 
   // 初始化数据库连接
   final prefs = await SharedPreferences.getInstance();
@@ -52,6 +63,13 @@ void main() async {
     } catch (e) {
       print('启动配置服务器失败: $e');
     }
+  }
+
+  // 初始化下载管理器
+  try {
+    await DownloadAdapter().initialize();
+  } catch (e) {
+    print('下载管理器初始化失败: $e');
   }
 
   runApp(const MyApp());
