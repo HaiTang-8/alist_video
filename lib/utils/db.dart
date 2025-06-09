@@ -318,29 +318,49 @@ class DatabaseHelper {
   Future<List<Map<String, dynamic>>> getRecentHistoricalRecords({
     required int userId,
     int limit = 10,
+    int offset = 0,
   }) async {
     try {
       final results = await query('''
-        SELECT 
-          video_sha1, 
-          video_path, 
-          video_seek, 
-          user_id, 
-          change_time, 
-          video_name, 
+        SELECT
+          video_sha1,
+          video_path,
+          video_seek,
+          user_id,
+          change_time,
+          video_name,
           total_video_duration
-        FROM t_historical_records 
+        FROM t_historical_records
         WHERE user_id = @userId
         ORDER BY change_time DESC
-        LIMIT @limit
+        LIMIT @limit OFFSET @offset
       ''', {
         'userId': userId,
         'limit': limit,
+        'offset': offset,
       });
 
       return results;
     } catch (e) {
       print('Failed to get recent historical records: $e');
+      rethrow;
+    }
+  }
+
+  // 获取用户历史记录总数
+  Future<int> getUserHistoricalRecordsCount(int userId) async {
+    try {
+      final results = await query('''
+        SELECT COUNT(*) as count
+        FROM t_historical_records
+        WHERE user_id = @userId
+      ''', {
+        'userId': userId,
+      });
+
+      return results.first['count'] as int;
+    } catch (e) {
+      print('Failed to get user historical records count: $e');
       rethrow;
     }
   }

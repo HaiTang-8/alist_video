@@ -47,9 +47,18 @@ class _HistoryPageState extends State<HistoryPage>
   String? _lastDeletedGroupKey;
   String? _basePath;
   late final AnimationController _controller;
-  
+
   // Cache for screenshot paths to avoid repeated file checks
   final Map<String, String?> _screenshotPathCache = {};
+
+  // 瀑布流相关状态
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoadingMore = false;
+  bool _hasMoreData = true;
+  int _currentPage = 0;
+  final int _pageSize = 20;
+  List<HistoricalRecord> _allRecords = [];
+  int _totalRecords = 0;
 
   @override
   void initState() {
@@ -58,9 +67,10 @@ class _HistoryPageState extends State<HistoryPage>
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
+    _scrollController.addListener(_onScroll);
     _loadHistory();
     _loadBasePath();
-    
+
     // Preload screenshots in the background after loading history
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _preloadScreenshots();
@@ -69,37 +79,76 @@ class _HistoryPageState extends State<HistoryPage>
 
   @override
   void dispose() {
+    _scrollController.dispose();
     _controller.dispose();
     super.dispose();
+  }
+
+  // 滚动监听器
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent - 200 &&
+        !_isLoadingMore &&
+        _hasMoreData) {
+      _loadMoreHistory();
+    }
   }
 
   Future<void> _loadHistory() async {
     if (!mounted) return;
 
     try {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _currentPage = 0;
+        _hasMoreData = true;
+        _allRecords.clear();
+      });
+
       final prefs = await SharedPreferences.getInstance();
       _currentUsername = prefs.getString('current_username');
-      
+
       // Clear the screenshot cache when refreshing
       _screenshotPathCache.clear();
 
       if (_currentUsername != null) {
-        final records =
-            await DatabaseHelper.instance.getRecentHistoricalRecords(
-          userId: _currentUsername!.hashCode,
-          limit: 50,
+        // 获取总记录数
+        _totalRecords = await DatabaseHelper.instance.getUserHistoricalRecordsCount(
+          _currentUsername!.hashCode,
         );
 
-        if (!mounted) return;
-
-        final List<HistoricalRecord> historyRecords =
-            records.map((r) => HistoricalRecord.fromMap(r)).toList();
-
         if (_isTimelineMode) {
-          _groupByTimeline(historyRecords);
+          // 时间线模式：使用分页加载
+          final records = await DatabaseHelper.instance.getRecentHistoricalRecords(
+            userId: _currentUsername!.hashCode,
+            limit: _pageSize,
+            offset: 0,
+          );
+
+          if (!mounted) return;
+
+          final List<HistoricalRecord> historyRecords =
+              records.map((r) => HistoricalRecord.fromMap(r)).toList();
+
+          _allRecords.addAll(historyRecords);
+          _hasMoreData = _allRecords.length < _totalRecords;
+          _groupByTimeline(_allRecords);
         } else {
-          _groupByDirectory(historyRecords);
+          // 目录模式：加载所有数据以构建完整的目录列表
+          final records = await DatabaseHelper.instance.getUserHistoricalRecords(
+            _currentUsername!.hashCode,
+            limit: _totalRecords, // 加载所有记录
+            offset: 0,
+          );
+
+          if (!mounted) return;
+
+          final List<HistoricalRecord> historyRecords =
+              records.map((r) => HistoricalRecord.fromMap(r)).toList();
+
+          _allRecords.addAll(historyRecords);
+          _hasMoreData = false; // 目录模式下不需要瀑布流
+          _groupByDirectory(_allRecords);
         }
 
         setState(() {
@@ -111,6 +160,38 @@ class _HistoryPageState extends State<HistoryPage>
       print('Error loading history: $e');
       if (!mounted) return;
       setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _loadMoreHistory() async {
+    // 只在时间线模式下支持瀑布流加载
+    if (!_isTimelineMode || _isLoadingMore || !_hasMoreData || _currentUsername == null) return;
+
+    try {
+      setState(() => _isLoadingMore = true);
+
+      _currentPage++;
+      final records = await DatabaseHelper.instance.getRecentHistoricalRecords(
+        userId: _currentUsername!.hashCode,
+        limit: _pageSize,
+        offset: _currentPage * _pageSize,
+      );
+
+      if (!mounted) return;
+
+      final List<HistoricalRecord> historyRecords =
+          records.map((r) => HistoricalRecord.fromMap(r)).toList();
+
+      _allRecords.addAll(historyRecords);
+      _hasMoreData = _allRecords.length < _totalRecords;
+
+      _groupByTimeline(_allRecords);
+
+      setState(() => _isLoadingMore = false);
+    } catch (e) {
+      print('Error loading more history: $e');
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
     }
   }
 
@@ -148,9 +229,11 @@ class _HistoryPageState extends State<HistoryPage>
     for (var record in records) {
       final pathParts = record.videoPath.split('/');
       if (pathParts.length >= 2) {
-        final lastDirName = pathParts[pathParts.length - 2];
-        _groupedRecords.putIfAbsent(lastDirName, () => []);
-        _groupedRecords[lastDirName]!.add(record);
+        // 使用完整的目录路径作为key，避免同名目录冲突
+        // 例如：/movies/action/movie.mp4 -> /movies/action
+        final dirPath = pathParts.sublist(0, pathParts.length).join('/');
+        _groupedRecords.putIfAbsent(dirPath, () => []);
+        _groupedRecords[dirPath]!.add(record);
       }
     }
 
@@ -552,6 +635,7 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildDirectoryList() {
+    // 目录模式不需要瀑布流，显示所有目录
     return ListView.builder(
       padding: const EdgeInsets.all(16),
       itemCount: _groupedRecords.length,
@@ -560,8 +644,9 @@ class _HistoryPageState extends State<HistoryPage>
         final records = _groupedRecords[dirPath]!;
         final latestRecord = records.first;
 
-        final pathParts = latestRecord.videoPath.split('/');
-        final lastDirName = pathParts[pathParts.length - 1];
+        // 从完整目录路径中提取目录名
+        // 例如：/movies/action -> action
+        final dirName = dirPath.split('/').last;
 
         return SlideTransition(
           position: Tween<Offset>(
@@ -602,7 +687,7 @@ class _HistoryPageState extends State<HistoryPage>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              lastDirName,
+                              dirName,
                               style: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.w600,
@@ -663,6 +748,7 @@ class _HistoryPageState extends State<HistoryPage>
       timelineRecords[dateKey]!.add(record);
     }
 
+    // 目录时间线不需要瀑布流，显示该目录下的所有视频
     return ListView.builder(
       itemCount: timelineRecords.length,
       itemBuilder: (context, index) {
@@ -674,9 +760,17 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildTimelineView() {
+    final itemCount = _groupedRecords.length + (_hasMoreData ? 1 : 0);
+
     return ListView.builder(
-      itemCount: _groupedRecords.length,
+      controller: _scrollController,
+      itemCount: itemCount,
       itemBuilder: (context, index) {
+        // 如果是最后一项且还有更多数据，显示加载指示器
+        if (index == _groupedRecords.length) {
+          return _buildLoadMoreIndicator();
+        }
+
         final key = _groupedRecords.keys.elementAt(index);
         final records = _groupedRecords[key]!;
         return _buildDateGroup(key, records);
@@ -1182,6 +1276,40 @@ class _HistoryPageState extends State<HistoryPage>
           },
         ),
       ],
+    );
+  }
+
+  // 构建加载更多指示器（仅在时间线模式下使用）
+  Widget _buildLoadMoreIndicator() {
+    if (!_isTimelineMode) {
+      return const SizedBox.shrink(); // 目录模式下不显示
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      alignment: Alignment.center,
+      child: _isLoadingMore
+          ? const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 12),
+                Text('加载更多...'),
+              ],
+            )
+          : _hasMoreData
+              ? const Text(
+                  '上拉加载更多',
+                  style: TextStyle(color: Colors.grey),
+                )
+              : const Text(
+                  '没有更多数据了',
+                  style: TextStyle(color: Colors.grey),
+                ),
     );
   }
 }
