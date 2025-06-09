@@ -69,6 +69,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加一个变量来存储长按前的速度
   double _previousSpeed = AppConstants.defaultPlaybackSpeed;
 
+  // 添加变量来存储z/x/c键调速前的速度
+  double? _speedBeforeZXCAdjustment;
+
   late Duration _shortSeekDuration;
   late Duration _longSeekDuration;
 
@@ -2199,6 +2202,56 @@ class VideoPlayerState extends State<VideoPlayer> {
           toggleFullscreen(context),
       const SingleActivator(LogicalKeyboardKey.escape): () =>
           exitFullscreen(context),
+
+      // 添加z/x/c键快捷键用于播放速度控制
+      const SingleActivator(LogicalKeyboardKey.keyZ): () {
+        // z键：恢复到调速前的速度
+        if (_speedBeforeZXCAdjustment != null) {
+          final targetSpeed = _speedBeforeZXCAdjustment!;
+          player.setRate(targetSpeed);
+          setState(() {
+            _currentSpeed = targetSpeed;
+          });
+          _rateNotifier.value = targetSpeed;
+          _showSpeedIndicatorOverlay(targetSpeed);
+          // 恢复后清除缓存，下次x/c会重新缓存当前速度
+          _speedBeforeZXCAdjustment = null;
+        }
+      },
+
+      const SingleActivator(LogicalKeyboardKey.keyX): () {
+        // x键：减速0.1x
+        // 如果是第一次使用x/c键，保存当前速度
+        _speedBeforeZXCAdjustment ??= _currentSpeed;
+
+        // 使用四舍五入避免浮点数精度问题
+        final newSpeed = ((_currentSpeed - 0.1) * 10).round() / 10.0;
+        final clampedSpeed = newSpeed.clamp(0.1, 5.0);
+
+        player.setRate(clampedSpeed);
+        setState(() {
+          _currentSpeed = clampedSpeed;
+        });
+        _rateNotifier.value = clampedSpeed;
+        _showSpeedIndicatorOverlay(clampedSpeed);
+      },
+
+      const SingleActivator(LogicalKeyboardKey.keyC): () {
+        // c键：加速0.1x
+        // 如果是第一次使用x/c键，保存当前速度
+        _speedBeforeZXCAdjustment ??= _currentSpeed;
+
+        // 使用四舍五入避免浮点数精度问题
+        final newSpeed = ((_currentSpeed + 0.1) * 10).round() / 10.0;
+        final clampedSpeed = newSpeed.clamp(0.1, 5.0);
+
+        player.setRate(clampedSpeed);
+        setState(() {
+          _currentSpeed = clampedSpeed;
+        });
+        _rateNotifier.value = clampedSpeed;
+        _showSpeedIndicatorOverlay(clampedSpeed);
+      },
     };
   }
 
@@ -2644,6 +2697,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                         'I', '长跳进 (${_longSeekDuration.inSeconds}秒)'),
                     _buildShortcutItem(
                         'J', '长跳回 (${_longSeekDuration.inSeconds}秒)'),
+                    _buildShortcutCategory('播放速度控制'),
+                    _buildShortcutItem('Z', '恢复调速前的速度'),
+                    _buildShortcutItem('X', '减速 0.1x'),
+                    _buildShortcutItem('C', '加速 0.1x'),
                     _buildShortcutCategory('音量控制'),
                     _buildShortcutItem('↑', '增加音量'),
                     _buildShortcutItem('↓', '降低音量'),
