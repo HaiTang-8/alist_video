@@ -474,27 +474,37 @@ class _HistoryPageState extends State<HistoryPage>
     if (_screenshotPathCache.containsKey(cacheKey)) {
       return _screenshotPathCache[cacheKey];
     }
-    
+
     try {
       final directory = await getApplicationDocumentsDirectory();
-      
+
       // Sanitize path and name as done in the video player
       final String sanitizedVideoPath = record.videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
       final String sanitizedVideoName = record.videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      
-      // Construct the screenshot filename
-      final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png';
-      final String filePath = '${directory.path}/alist_player/$fileName';
-      
-      // Check if the file exists
-      final file = File(filePath);
-      if (await file.exists()) {
-        _screenshotPathCache[cacheKey] = filePath;
-        return filePath;
-      } else {
-        _screenshotPathCache[cacheKey] = null;
-        return null;
+
+      // 首先尝试新的 JPEG 格式（压缩后的格式）
+      final String jpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.jpg';
+      final String jpegFilePath = '${directory.path}/alist_player/$jpegFileName';
+      final jpegFile = File(jpegFilePath);
+
+      if (await jpegFile.exists()) {
+        _screenshotPathCache[cacheKey] = jpegFilePath;
+        return jpegFilePath;
       }
+
+      // 如果 JPEG 格式不存在，尝试旧的 PNG 格式（向后兼容）
+      final String pngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png';
+      final String pngFilePath = '${directory.path}/alist_player/$pngFileName';
+      final pngFile = File(pngFilePath);
+
+      if (await pngFile.exists()) {
+        _screenshotPathCache[cacheKey] = pngFilePath;
+        return pngFilePath;
+      }
+
+      // 如果两种格式都不存在
+      _screenshotPathCache[cacheKey] = null;
+      return null;
     } catch (e) {
       print('Error getting screenshot path: $e');
       _screenshotPathCache[cacheKey] = null;

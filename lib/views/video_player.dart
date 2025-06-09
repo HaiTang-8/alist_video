@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:async';
 import 'dart:io'; // Add this import for File class
+import 'package:image/image.dart' as img; // Add this import for image processing
 import 'package:path_provider/path_provider.dart'; // Added for path_provider
 
 class VideoPlayer extends StatefulWidget {
@@ -258,22 +259,35 @@ class VideoPlayerState extends State<VideoPlayer> {
       final String sanitizedVideoName = videoNameToUse.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
       // Sanitize videoPath for use in filename, allowing Chinese characters
       final String sanitizedVideoPath = widget.path.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png'; // No timestamp for overwriting
-      final String filePath = '${directory.path}/alist_player/$fileName';
-
-      final File file = File(filePath);
 
       // 确保目录存在
-      await file.parent.create(recursive: true);
+      final screenshotDir = Directory('${directory.path}/alist_player');
+      await screenshotDir.create(recursive: true);
 
-      // 异步写入文件
-      await file.writeAsBytes(screenshotBytes);
+      // 压缩图片并保存
+      final compressionResult = await _compressScreenshot(screenshotBytes);
+      final compressedBytes = compressionResult['bytes'] as Uint8List;
+      final isJpeg = compressionResult['isJpeg'] as bool;
+
+      // 根据压缩结果选择文件扩展名
+      final String fileExtension = isJpeg ? 'jpg' : 'png';
+      final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.$fileExtension';
+      final String filePath = '${screenshotDir.path}/$fileName';
+
+      final File file = File(filePath);
+      await file.writeAsBytes(compressedBytes);
+
+      // 记录压缩效果
+      final originalSize = screenshotBytes.length;
+      final compressedSize = compressedBytes.length;
+      final compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toStringAsFixed(1);
+      _logDebug('Screenshot saved: $originalSize bytes -> $compressedSize bytes ($compressionRatio% reduction), format: $fileExtension');
 
       // Don't show SnackBar here if called from _saveCurrentProgress to avoid double messages
       if (specificVideoName == null && mounted) { // Only show if called directly by button
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Screenshot saved to: $filePath'),
+            content: Text('Screenshot saved to: $filePath\n压缩率: $compressionRatio%'),
             backgroundColor: Colors.green,
           ),
         );
@@ -283,6 +297,70 @@ class VideoPlayerState extends State<VideoPlayer> {
     } catch (e) {
       _logDebug('Error saving screenshot file: $e');
       return null;
+    }
+  }
+
+  // 压缩截图的方法
+  Future<Map<String, dynamic>> _compressScreenshot(Uint8List originalBytes) async {
+    try {
+      // 解码原始图片
+      final img.Image? originalImage = img.decodeImage(originalBytes);
+      if (originalImage == null) {
+        _logDebug('Failed to decode screenshot image, using original bytes');
+        return {'bytes': originalBytes, 'isJpeg': false};
+      }
+
+      // 获取原始尺寸
+      final originalWidth = originalImage.width;
+      final originalHeight = originalImage.height;
+      _logDebug('Original image size: ${originalWidth}x${originalHeight}');
+
+      // 计算压缩后的尺寸（保持宽高比，最大宽度1280像素）
+      const int maxWidth = 1280;
+      int newWidth = originalWidth;
+      int newHeight = originalHeight;
+      bool needsResize = false;
+
+      if (originalWidth > maxWidth) {
+        newWidth = maxWidth;
+        newHeight = (originalHeight * maxWidth / originalWidth).round();
+        needsResize = true;
+        _logDebug('Resizing to: ${newWidth}x${newHeight}');
+      }
+
+      // 调整图片尺寸（如果需要）
+      img.Image resizedImage = originalImage;
+      if (needsResize) {
+        resizedImage = img.copyResize(
+          originalImage,
+          width: newWidth,
+          height: newHeight,
+          interpolation: img.Interpolation.linear,
+        );
+      }
+
+      // 编码为 JPEG 格式，质量设置为 85（平衡质量和文件大小）
+      const int quality = 85;
+      final jpegBytes = img.encodeJpg(resizedImage, quality: quality);
+      final compressedBytes = Uint8List.fromList(jpegBytes);
+
+      // 如果压缩后的文件反而更大，或者原始文件很小（小于100KB），则保持原格式
+      const int minSizeForCompression = 100 * 1024; // 100KB
+      if (originalBytes.length < minSizeForCompression || compressedBytes.length >= originalBytes.length) {
+        _logDebug('Compression not beneficial, using original format');
+        // 如果需要调整尺寸但不需要压缩，使用PNG格式保存调整后的图片
+        if (needsResize) {
+          final resizedPngBytes = img.encodePng(resizedImage);
+          return {'bytes': Uint8List.fromList(resizedPngBytes), 'isJpeg': false};
+        }
+        return {'bytes': originalBytes, 'isJpeg': false};
+      }
+
+      _logDebug('Image compression completed with quality: $quality');
+      return {'bytes': compressedBytes, 'isJpeg': true};
+    } catch (e) {
+      _logDebug('Error compressing screenshot: $e, using original bytes');
+      return {'bytes': originalBytes, 'isJpeg': false};
     }
   }
 
