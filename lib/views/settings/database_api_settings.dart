@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/network_scanner.dart';
+import 'package:alist_player/utils/woo_http.dart';
 
 class DatabaseSettingsDialog extends StatefulWidget {
   final String host;
@@ -749,11 +750,14 @@ class _ApiSettingsDialogState extends State<ApiSettingsDialog> {
             AppConstants.baseDownloadUrlKey, _baseDownloadUrlController.text),
       ]);
 
+      // 立即更新HTTP客户端的baseUrl，使设置立即生效
+      await WooHttpUtil().updateBaseUrl();
+
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('API 设置已保存'),
+          content: Text('API 设置已保存并立即生效'),
           backgroundColor: Colors.green,
         ),
       );

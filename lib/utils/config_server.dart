@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/utils/woo_http.dart';
 
 class ConfigItem {
   final String key;
@@ -389,16 +390,22 @@ class ConfigServer {
       final List<dynamic> configs = data['configs'];
       final prefs = await SharedPreferences.getInstance();
       int appliedCount = 0;
-      
+      bool hasApiConfigChanged = false;
+
       for (var config in configs) {
-        if (config is Map<String, dynamic> && 
-            config.containsKey('key') && 
+        if (config is Map<String, dynamic> &&
+            config.containsKey('key') &&
             config.containsKey('value') &&
             config.containsKey('type')) {
           final key = config['key'] as String;
           final value = config['value'] as String;
           final type = config['type'] as String;
-          
+
+          // 检查是否是API相关配置
+          if (key == AppConstants.baseUrlKey || key == AppConstants.baseDownloadUrlKey) {
+            hasApiConfigChanged = true;
+          }
+
           // 根据类型保存值
           switch (type) {
             case 'number':
@@ -423,7 +430,17 @@ class ConfigServer {
           }
         }
       }
-      
+
+      // 如果API配置有变化，立即更新HTTP客户端
+      if (hasApiConfigChanged) {
+        try {
+          await WooHttpUtil().updateBaseUrl();
+          _log('已更新HTTP客户端配置');
+        } catch (e) {
+          _log('更新HTTP客户端配置失败: $e');
+        }
+      }
+
       _log('已应用$appliedCount项配置');
       
       request.response
@@ -541,12 +558,18 @@ class ConfigServer {
       // 应用配置
       final prefs = await SharedPreferences.getInstance();
       int appliedCount = 0;
-      
+      bool hasApiConfigChanged = false;
+
       for (var config in configsToApply) {
         final key = config['key'] as String;
         final value = config['value'] as String;
         final type = config['type'] as String;
-        
+
+        // 检查是否是API相关配置
+        if (key == AppConstants.baseUrlKey || key == AppConstants.baseDownloadUrlKey) {
+          hasApiConfigChanged = true;
+        }
+
         switch (type) {
           case 'number':
             final numValue = int.tryParse(value);
@@ -569,7 +592,17 @@ class ConfigServer {
             break;
         }
       }
-      
+
+      // 如果API配置有变化，立即更新HTTP客户端
+      if (hasApiConfigChanged) {
+        try {
+          await WooHttpUtil().updateBaseUrl();
+          _log('已更新HTTP客户端配置');
+        } catch (e) {
+          _log('更新HTTP客户端配置失败: $e');
+        }
+      }
+
       _log('成功从远程同步$appliedCount项配置');
       return true;
     } catch (e) {
@@ -665,12 +698,18 @@ class ConfigServer {
       // 应用配置
       final prefs = await SharedPreferences.getInstance();
       int appliedCount = 0;
-      
+      bool hasApiConfigChanged = false;
+
       for (var config in configsToApply) {
         final key = config['key'] as String;
         final value = config['value'] as String;
         final type = config['type'] as String;
-        
+
+        // 检查是否是API相关配置
+        if (key == AppConstants.baseUrlKey || key == AppConstants.baseDownloadUrlKey) {
+          hasApiConfigChanged = true;
+        }
+
         switch (type) {
           case 'number':
             final numValue = int.tryParse(value);
@@ -693,7 +732,17 @@ class ConfigServer {
             break;
         }
       }
-      
+
+      // 如果API配置有变化，立即更新HTTP客户端
+      if (hasApiConfigChanged) {
+        try {
+          await WooHttpUtil().updateBaseUrl();
+          _log('已更新HTTP客户端配置');
+        } catch (e) {
+          _log('更新HTTP客户端配置失败: $e');
+        }
+      }
+
       _log('已从备份恢复$appliedCount项配置');
       return true;
     } catch (e) {
@@ -827,12 +876,18 @@ class ConfigServer {
     try {
       final prefs = await SharedPreferences.getInstance();
       int appliedCount = 0;
-      
+      bool hasApiConfigChanged = false;
+
       for (var config in configs) {
         final key = config.key;
         final value = config.value;
         final type = config.type;
-        
+
+        // 检查是否是API相关配置
+        if (key == AppConstants.baseUrlKey || key == AppConstants.baseDownloadUrlKey) {
+          hasApiConfigChanged = true;
+        }
+
         switch (type) {
           case 'number':
             final numValue = int.tryParse(value);
@@ -855,7 +910,17 @@ class ConfigServer {
             break;
         }
       }
-      
+
+      // 如果API配置有变化，立即更新HTTP客户端
+      if (hasApiConfigChanged) {
+        try {
+          await WooHttpUtil().updateBaseUrl();
+          _log('已更新HTTP客户端配置');
+        } catch (e) {
+          _log('更新HTTP客户端配置失败: $e');
+        }
+      }
+
       _log('已应用$appliedCount项配置');
       return appliedCount;
     } catch (e) {
