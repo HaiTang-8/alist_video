@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:media_kit/media_kit.dart'; // Provides [Player], [Media], [Playlist] etc.
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:async';
 import 'dart:io'; // Add this import for File class
 import 'package:path_provider/path_provider.dart'; // Added for path_provider
@@ -50,8 +51,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   int playIndex = 0;
   late int currentPlayingIndex = 0;
 
-  // 添加 ScrollController
-  final ScrollController _scrollController = ScrollController();
+  // 添加 ItemScrollController 用于精确的索引滚动
+  final ItemScrollController _itemScrollController = ItemScrollController();
+  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
 
   String? _currentUsername;
   bool _hasSeekInitialPosition = false;
@@ -361,9 +363,13 @@ class VideoPlayerState extends State<VideoPlayer> {
         if (mounted) {
           setState(() {
             currentPlayingIndex = event.index;
-            scrollToCurrentItem();
             _isLoading = true;
             _hasSeekInitialPosition = false;
+          });
+
+          // 在 setState 完成后再执行滚动
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            scrollToCurrentItem();
           });
 
           // Get current video name
@@ -585,6 +591,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
         // 加载播放列表中所有视频的历史记录
         _loadPlaylistHistoryRecords();
+
+        // 在所有初始化完成后，执行初始滚动到当前播放项
+        _scheduleInitialScroll();
       } else {
         // 处理API错误
         _logDebug('API错误: ${res.message ?? "未知错误"}');
@@ -1016,7 +1025,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         print('播放器已关闭');
 
         // 其他资源清理
-        _scrollController.dispose();
+        // ItemScrollController 不需要手动 dispose
         print('资源清理完成');
       } catch (e) {
         print('清理过程中发生错误: $e');
@@ -1538,8 +1547,9 @@ class VideoPlayerState extends State<VideoPlayer> {
         children: [
           _buildPlaylistHeader(), // 使用新的标题组件
           Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
+            child: ScrollablePositionedList.builder(
+              itemScrollController: _itemScrollController,
+              itemPositionsListener: _itemPositionsListener,
               itemCount: playList.length,
               itemBuilder: (context, index) {
                 final isPlaying = index == currentPlayingIndex;
@@ -1795,7 +1805,9 @@ class VideoPlayerState extends State<VideoPlayer> {
               if (_isInitialLoading) {
                 _logDebug('初始加载中，跳过手动点击的本地文件检查');
                 player.jump(index);
-                scrollToCurrentItem();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  scrollToCurrentItem();
+                });
                 return;
               }
 
@@ -1817,12 +1829,16 @@ class VideoPlayerState extends State<VideoPlayer> {
                   if (playLocal && mounted) {
                     // 先切换到该视频，然后播放本地版本
                     player.jump(index);
-                    scrollToCurrentItem();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      scrollToCurrentItem();
+                    });
                     await _playLocalFileVersion(localFilePath, videoName);
                   } else if (mounted) {
                     // 播放在线版本
                     player.jump(index);
-                    scrollToCurrentItem();
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      scrollToCurrentItem();
+                    });
                     await player.play();
                   }
 
@@ -1835,7 +1851,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
               // 如果没有本地文件或对话框已显示，直接切换
               player.jump(index);
-              scrollToCurrentItem();
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                scrollToCurrentItem();
+              });
             }
           },
           hoverColor: Colors.blue.withValues(alpha: 0.05),
@@ -1894,6 +1912,18 @@ class VideoPlayerState extends State<VideoPlayer> {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
+          ),
+          // 添加测试滚动按钮
+          IconButton(
+            icon: const Icon(
+              Icons.center_focus_strong,
+              size: 20,
+            ),
+            onPressed: () {
+              _logDebug('手动测试滚动功能');
+              scrollToCurrentItem();
+            },
+            tooltip: '滚动到当前项',
           ),
           // 添加排序按钮
           IconButton(
@@ -3276,31 +3306,78 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
-  // Move the method outside of initState and rename it
-  void scrollToCurrentItem() {
+  // 安排初始滚动，确保在列表构建完成后执行
+  void _scheduleInitialScroll() {
+    _logDebug('安排初始滚动到索引: $currentPlayingIndex');
+
+    // 使用多层延迟确保列表完全构建完成
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) return;
+      // 第一层：等待当前帧完成
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) {
+          // 第二层：再等待一小段时间确保 ScrollablePositionedList 完全初始化
+          Future.delayed(const Duration(milliseconds: 200), () {
+            if (mounted) {
+              _logDebug('执行初始滚动到索引: $currentPlayingIndex');
+              scrollToCurrentItem();
+            }
+          });
+        }
+      });
+    });
+  }
 
-      // 获取屏幕宽度判断是否为移动端
-      final screenWidth = MediaQuery.of(context).size.width;
-      final isMobile = screenWidth < 600;
+  // 使用 ScrollablePositionedList 的精确索引滚动
+  void scrollToCurrentItem() {
+    // 确保索引有效
+    if (currentPlayingIndex < 0 || currentPlayingIndex >= playList.length) {
+      _logDebug('滚动失败: 无效索引 $currentPlayingIndex, 播放列表长度: ${playList.length}');
+      return;
+    }
 
-      const itemHeight = AppConstants.defaultItemHeight; // ListTile的预估高度
-      final screenHeight = MediaQuery.of(context).size.height;
+    // 确保组件已挂载
+    if (!mounted) {
+      _logDebug('滚动失败: 组件未挂载');
+      return;
+    }
 
-      // 移动端和桌面端使用不同的滚动位置计算
-      final scrollOffset = isMobile
-          ? (currentPlayingIndex * itemHeight)
-          : (currentPlayingIndex * itemHeight) - (screenHeight / 3);
+    _logDebug('准备滚动到索引: $currentPlayingIndex');
 
-      _scrollController.animateTo(
-        scrollOffset.clamp(
-          0.0,
-          _scrollController.position.maxScrollExtent,
-        ),
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+    // 使用 ItemScrollController 精确滚动到指定索引
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        _logDebug('滚动失败: 回调时组件未挂载');
+        return;
+      }
+
+      try {
+        // 检查控制器是否已附加
+        if (!_itemScrollController.isAttached) {
+          _logDebug('滚动失败: ItemScrollController 未附加到列表');
+          return;
+        }
+
+        // 获取屏幕宽度判断是否为移动端
+        final screenWidth = MediaQuery.of(context).size.width;
+        final isMobile = screenWidth < 600;
+
+        _logDebug('开始滚动到索引 $currentPlayingIndex, 设备类型: ${isMobile ? "移动端" : "桌面端"}');
+
+        // 根据设备类型选择不同的对齐方式
+        // 移动端：将项目滚动到顶部
+        // 桌面端：将项目滚动到中间位置以获得更好的可见性
+        _itemScrollController.scrollTo(
+          index: currentPlayingIndex,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+          alignment: isMobile ? 0.0 : 0.3, // 0.0 = 顶部, 0.5 = 中间, 1.0 = 底部
+        );
+
+        _logDebug('滚动命令已发送到索引: $currentPlayingIndex');
+      } catch (e) {
+        // 如果滚动失败，记录错误但不影响其他功能
+        _logDebug('滚动到当前项目失败: $e');
+      }
     });
   }
 
