@@ -5,6 +5,7 @@ import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/foundation.dart'; // Add this for compute
 import 'package:intl/intl.dart';
 import 'package:media_kit/media_kit.dart'; // Provides [Player], [Media], [Playlist] etc.
 import 'package:media_kit_video/media_kit_video.dart';
@@ -77,6 +78,10 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   late Duration _shortSeekDuration;
   late Duration _longSeekDuration;
+
+  // 添加防抖机制相关变量
+  Timer? _saveProgressDebounceTimer;
+  bool _isSavingProgress = false;
 
   // 将 late 移除，提供默认值
   List<double> _playbackSpeeds = AppConstants.defaultPlaybackSpeeds;
@@ -211,11 +216,70 @@ class VideoPlayerState extends State<VideoPlayer> {
     print('[VideoPlayer] $message');
   }
 
+  // 防抖保存进度方法
+  void _debouncedSaveProgress() {
+    // 取消之前的定时器
+    _saveProgressDebounceTimer?.cancel();
+
+    // 如果正在保存进度，跳过
+    if (_isSavingProgress) {
+      _logDebug('正在保存进度中，跳过此次保存请求');
+      return;
+    }
+
+    // 设置新的定时器，500ms后执行保存
+    _saveProgressDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      if (mounted && !_isSavingProgress) {
+        _isSavingProgress = true;
+        _saveCurrentProgress().then((_) {
+          _logDebug('防抖保存进度完成');
+          _isSavingProgress = false;
+        }).catchError((error) {
+          _logDebug('防抖保存进度失败: $error');
+          _isSavingProgress = false;
+        });
+      }
+    });
+  }
+
+  // 异步处理视频切换时的操作，避免阻塞UI
+  void _handleVideoSwitchAsync(int newIndex) {
+    Future.microtask(() async {
+      try {
+        final startTime = DateTime.now();
+
+        // 先保存当前视频进度（异步，不等待完成）
+        _saveCurrentProgress(updateUIImmediately: true);
+
+        // 检查本地文件
+        if (playList.isNotEmpty && newIndex < playList.length) {
+          final currentVideo = playList[newIndex];
+          final videoName = currentVideo.extras!['name'] as String;
+
+          _logDebug('异步检查本地文件: 索引=$newIndex, 视频=$videoName');
+
+          // 如果没有显示对话框，检查本地文件
+          if (!_isShowingLocalFileDialog) {
+            await _checkAndPlayLocalFile(videoName);
+          }
+        }
+
+        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+        _logDebug('视频切换异步处理完成，耗时: ${totalTime}ms');
+      } catch (e) {
+        _logDebug('视频切换异步处理失败: $e');
+      }
+    });
+  }
+
   // Method to take a screenshot
   // Returns the file path if successful, null otherwise.
   Future<String?> _takeScreenshot({String? specificVideoName}) async {
+    final startTime = DateTime.now();
     try {
-      // 使用 compute 在后台线程执行截图操作，避免阻塞UI
+      _logDebug('开始截图操作...');
+
+      // 获取截图数据（这个操作相对较快）
       final Uint8List? screenshotBytes = await player.screenshot();
       if (screenshotBytes == null) {
         if (mounted && specificVideoName == null) { // 只在直接调用时显示错误
@@ -230,9 +294,21 @@ class VideoPlayerState extends State<VideoPlayer> {
         return null;
       }
 
-      // 在后台线程处理文件保存
-      return await _saveScreenshotToFile(screenshotBytes, specificVideoName);
+      final screenshotTime = DateTime.now().difference(startTime).inMilliseconds;
+      _logDebug('截图数据获取完成，耗时: ${screenshotTime}ms');
+
+      // 获取当前视频名称
+      final String videoNameToUse = specificVideoName ??
+          (playList.isNotEmpty && currentPlayingIndex < playList.length
+              ? playList[currentPlayingIndex].extras!['name'] as String
+              : 'video');
+
+      // 使用优化的主线程处理，但通过Future.microtask避免阻塞当前操作
+      return await _saveScreenshotToFileOptimized(screenshotBytes, videoNameToUse, widget.path);
     } catch (e) {
+      final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+      _logDebug('截图操作失败，总耗时: ${totalTime}ms, 错误: $e');
+
       if (mounted && specificVideoName == null) { // 只在直接调用时显示错误
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -241,127 +317,58 @@ class VideoPlayerState extends State<VideoPlayer> {
           ),
         );
       }
-      _logDebug('Error taking screenshot: $e');
       return null;
     }
   }
 
-  // 在后台线程保存截图文件
-  Future<String?> _saveScreenshotToFile(Uint8List screenshotBytes, String? specificVideoName) async {
-    try {
-      final Directory directory = await getApplicationDocumentsDirectory();
-      final String videoNameToUse = specificVideoName ??
-          (playList.isNotEmpty && currentPlayingIndex < playList.length
-              ? playList[currentPlayingIndex].extras!['name'] as String
-              : 'video');
+  // 优化的截图保存方法，在主线程处理但使用异步优化
+  Future<String?> _saveScreenshotToFileOptimized(Uint8List screenshotBytes, String videoName, String videoPath) async {
+    return await Future.microtask(() async {
+      final startTime = DateTime.now();
+      try {
+        _logDebug('开始优化截图保存处理...');
 
-      // Sanitize videoName for use in filename, allowing Chinese characters
-      final String sanitizedVideoName = videoNameToUse.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      // Sanitize videoPath for use in filename, allowing Chinese characters
-      final String sanitizedVideoPath = widget.path.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+        final Directory directory = await getApplicationDocumentsDirectory();
+        _logDebug('应用文档目录: ${directory.path}');
 
-      // 确保目录存在
-      final screenshotDir = Directory('${directory.path}/alist_player');
-      await screenshotDir.create(recursive: true);
+        // Sanitize videoName for use in filename, allowing Chinese characters
+        final String sanitizedVideoName = videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+        // Sanitize videoPath for use in filename, allowing Chinese characters
+        final String sanitizedVideoPath = videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
-      // 压缩图片并保存
-      final compressionResult = await _compressScreenshot(screenshotBytes);
-      final compressedBytes = compressionResult['bytes'] as Uint8List;
-      final isJpeg = compressionResult['isJpeg'] as bool;
+        // 确保目录存在
+        final screenshotDir = Directory('${directory.path}/alist_player');
+        await screenshotDir.create(recursive: true);
+        _logDebug('截图目录创建: ${screenshotDir.path}');
 
-      // 根据压缩结果选择文件扩展名
-      final String fileExtension = isJpeg ? 'jpg' : 'png';
-      final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.$fileExtension';
-      final String filePath = '${screenshotDir.path}/$fileName';
+        // 使用compute只处理图片压缩部分（不涉及文件系统操作）
+        final compressionResult = await compute(_compressScreenshotInBackground, screenshotBytes);
+        final compressedBytes = compressionResult['bytes'] as Uint8List;
+        final isJpeg = compressionResult['isJpeg'] as bool;
 
-      final File file = File(filePath);
-      await file.writeAsBytes(compressedBytes);
+        // 在主线程处理文件保存
+        final String fileExtension = isJpeg ? 'jpg' : 'png';
+        final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.$fileExtension';
+        final String filePath = '${screenshotDir.path}/$fileName';
 
-      // 记录压缩效果
-      final originalSize = screenshotBytes.length;
-      final compressedSize = compressedBytes.length;
-      final compressionRatio = ((originalSize - compressedSize) / originalSize * 100).toStringAsFixed(1);
-      _logDebug('Screenshot saved: $originalSize bytes -> $compressedSize bytes ($compressionRatio% reduction), format: $fileExtension');
+        final File file = File(filePath);
+        await file.writeAsBytes(compressedBytes);
 
-      // Don't show SnackBar here if called from _saveCurrentProgress to avoid double messages
-      if (specificVideoName == null && mounted) { // Only show if called directly by button
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Screenshot saved to: $filePath\n压缩率: $compressionRatio%'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        // 验证文件是否成功保存
+        final bool fileExists = await file.exists();
+        final int fileSize = fileExists ? await file.length() : 0;
+
+        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+        _logDebug('优化截图保存完成: $filePath, 耗时: ${totalTime}ms');
+        _logDebug('文件存在: $fileExists, 文件大小: $fileSize bytes');
+
+        return filePath;
+      } catch (e) {
+        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+        _logDebug('优化截图保存失败，耗时: ${totalTime}ms, 错误: $e');
+        return null;
       }
-      _logDebug('Screenshot saved: $filePath');
-      return filePath;
-    } catch (e) {
-      _logDebug('Error saving screenshot file: $e');
-      return null;
-    }
-  }
-
-  // 压缩截图的方法
-  Future<Map<String, dynamic>> _compressScreenshot(Uint8List originalBytes) async {
-    try {
-      // 解码原始图片
-      final img.Image? originalImage = img.decodeImage(originalBytes);
-      if (originalImage == null) {
-        _logDebug('Failed to decode screenshot image, using original bytes');
-        return {'bytes': originalBytes, 'isJpeg': false};
-      }
-
-      // 获取原始尺寸
-      final originalWidth = originalImage.width;
-      final originalHeight = originalImage.height;
-      _logDebug('Original image size: ${originalWidth}x${originalHeight}');
-
-      // 计算压缩后的尺寸（保持宽高比，最大宽度1280像素）
-      const int maxWidth = 1280;
-      int newWidth = originalWidth;
-      int newHeight = originalHeight;
-      bool needsResize = false;
-
-      if (originalWidth > maxWidth) {
-        newWidth = maxWidth;
-        newHeight = (originalHeight * maxWidth / originalWidth).round();
-        needsResize = true;
-        _logDebug('Resizing to: ${newWidth}x${newHeight}');
-      }
-
-      // 调整图片尺寸（如果需要）
-      img.Image resizedImage = originalImage;
-      if (needsResize) {
-        resizedImage = img.copyResize(
-          originalImage,
-          width: newWidth,
-          height: newHeight,
-          interpolation: img.Interpolation.linear,
-        );
-      }
-
-      // 编码为 JPEG 格式，质量设置为 85（平衡质量和文件大小）
-      const int quality = 85;
-      final jpegBytes = img.encodeJpg(resizedImage, quality: quality);
-      final compressedBytes = Uint8List.fromList(jpegBytes);
-
-      // 如果压缩后的文件反而更大，或者原始文件很小（小于100KB），则保持原格式
-      const int minSizeForCompression = 100 * 1024; // 100KB
-      if (originalBytes.length < minSizeForCompression || compressedBytes.length >= originalBytes.length) {
-        _logDebug('Compression not beneficial, using original format');
-        // 如果需要调整尺寸但不需要压缩，使用PNG格式保存调整后的图片
-        if (needsResize) {
-          final resizedPngBytes = img.encodePng(resizedImage);
-          return {'bytes': Uint8List.fromList(resizedPngBytes), 'isJpeg': false};
-        }
-        return {'bytes': originalBytes, 'isJpeg': false};
-      }
-
-      _logDebug('Image compression completed with quality: $quality');
-      return {'bytes': compressedBytes, 'isJpeg': true};
-    } catch (e) {
-      _logDebug('Error compressing screenshot: $e, using original bytes');
-      return {'bytes': originalBytes, 'isJpeg': false};
-    }
+    });
   }
 
   // Modified playlist change handler to check for local files
@@ -428,7 +435,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         final videoName = playList.isNotEmpty && event.index < playList.length
             ? playList[event.index].extras!['name'] as String
             : "未知";
-        _logDebug('播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=${_isInitialLoading}');
+        _logDebug('播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading');
 
         // 如果是初始加载，跳过检查
         if (_isInitialLoading) {
@@ -436,8 +443,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           return;
         }
 
-        // 先保存当前视频进度，再更新状态 - 立即更新UI
-        await _saveCurrentProgress(updateUIImmediately: true); // 切换视频时保存进度
+        // 优化切换视频逻辑：先更新UI状态，然后异步处理其他操作
         if (mounted) {
           setState(() {
             currentPlayingIndex = event.index;
@@ -450,18 +456,8 @@ class VideoPlayerState extends State<VideoPlayer> {
             scrollToCurrentItem();
           });
 
-          // Get current video name
-          if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
-            final currentVideo = playList[currentPlayingIndex];
-            final videoName = currentVideo.extras!['name'] as String;
-
-            _logDebug('准备检查本地文件: 索引=$currentPlayingIndex, 视频=$videoName, 对话框显示=${_isShowingLocalFileDialog}');
-
-            // 每次都检查本地文件，不考虑是否已检查过
-            if (!_isShowingLocalFileDialog) {
-              await _checkAndPlayLocalFile(videoName);
-            }
-          }
+          // 异步处理保存进度和本地文件检查，避免阻塞UI
+          _handleVideoSwitchAsync(event.index);
         }
       }
     });
@@ -504,13 +500,11 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
 
-    // 添加对播放状态的监听，在暂停时保存进度
+    // 添加对播放状态的监听，在暂停时保存进度（使用防抖机制）
     player.stream.playing.listen((isPlaying) {
       if (!isPlaying && mounted) {
-        // 视频暂停时保存进度
-        _saveCurrentProgress().then((_) {
-          _logDebug('视频暂停，进度已保存');
-        });
+        // 使用防抖机制，避免频繁的暂停/播放操作触发多次保存
+        _debouncedSaveProgress();
       }
     });
   }
@@ -1080,6 +1074,9 @@ class VideoPlayerState extends State<VideoPlayer> {
     // Cancel the debounce timer
     _localFileDialogDebounce?.cancel();
 
+    // Cancel the save progress debounce timer
+    _saveProgressDebounceTimer?.cancel();
+
     // 重置进度保存标志，确保可以保存进度
 
     // 创建一个异步函数来处理清理工作
@@ -1280,10 +1277,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                         ),
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
-                      // buildSpeedButton(),
-                      // buildSubtitleButton(),
-                      // buildScreenshotButton(), // Added screenshot button
-                      // buildKeyboardShortcutsButton(),
+                      buildSpeedButton(),
+                      buildSubtitleButton(),
+                      buildScreenshotButton(), // Added screenshot button
+                      buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -3462,7 +3459,67 @@ class VideoPlayerState extends State<VideoPlayer> {
   // Build screenshot button
   Widget buildScreenshotButton() {
     return MaterialCustomButton(
-      onPressed: _takeScreenshot,
+      onPressed: () async {
+        _logDebug('截图按钮被点击');
+
+        // 显示开始截图的提示
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('正在截图...'),
+              backgroundColor: Colors.blue,
+              duration: Duration(seconds: 1),
+            ),
+          );
+        }
+
+        final result = await _takeScreenshot();
+        _logDebug('截图结果: $result');
+
+        if (result != null && mounted) {
+          // 获取文件大小信息
+          try {
+            final file = File(result);
+            final fileSize = await file.length();
+            final fileSizeKB = (fileSize / 1024).toStringAsFixed(1);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('截图已保存 (${fileSizeKB}KB)\n路径: $result'),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 3),
+                  action: SnackBarAction(
+                    label: '打开文件夹',
+                    onPressed: () {
+                      // 在macOS上打开文件夹
+                      Process.run('open', [File(result).parent.path]);
+                    },
+                  ),
+                ),
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('截图已保存: $result'),
+                  backgroundColor: Colors.green,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+          }
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('截图保存失败，请检查权限或存储空间'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      },
       icon: const Tooltip(
         message: 'Take Screenshot',
         child: Icon(
@@ -3686,5 +3743,65 @@ class _SpeedIndicatorOverlayState extends State<_SpeedIndicatorOverlay>
         ],
       ),
     );
+  }
+}
+
+
+
+// 后台线程压缩截图的函数
+Future<Map<String, dynamic>> _compressScreenshotInBackground(Uint8List originalBytes) async {
+  try {
+    // 解码原始图片
+    final img.Image? originalImage = img.decodeImage(originalBytes);
+    if (originalImage == null) {
+      return {'bytes': originalBytes, 'isJpeg': false};
+    }
+
+    // 获取原始尺寸
+    final originalWidth = originalImage.width;
+    final originalHeight = originalImage.height;
+
+    // 计算压缩后的尺寸（保持宽高比，最大宽度1280像素）
+    const int maxWidth = 1280;
+    int newWidth = originalWidth;
+    int newHeight = originalHeight;
+    bool needsResize = false;
+
+    if (originalWidth > maxWidth) {
+      newWidth = maxWidth;
+      newHeight = (originalHeight * maxWidth / originalWidth).round();
+      needsResize = true;
+    }
+
+    // 调整图片尺寸（如果需要）
+    img.Image resizedImage = originalImage;
+    if (needsResize) {
+      resizedImage = img.copyResize(
+        originalImage,
+        width: newWidth,
+        height: newHeight,
+        interpolation: img.Interpolation.linear,
+      );
+    }
+
+    // 编码为 JPEG 格式，质量设置为 85（平衡质量和文件大小）
+    const int quality = 85;
+    final jpegBytes = img.encodeJpg(resizedImage, quality: quality);
+    final compressedBytes = Uint8List.fromList(jpegBytes);
+
+    // 如果压缩后的文件反而更大，或者原始文件很小（小于100KB），则保持原格式
+    const int minSizeForCompression = 100 * 1024; // 100KB
+    if (originalBytes.length < minSizeForCompression || compressedBytes.length >= originalBytes.length) {
+      // 如果需要调整尺寸但不需要压缩，使用PNG格式保存调整后的图片
+      if (needsResize) {
+        final resizedPngBytes = img.encodePng(resizedImage);
+        return {'bytes': Uint8List.fromList(resizedPngBytes), 'isJpeg': false};
+      }
+      return {'bytes': originalBytes, 'isJpeg': false};
+    }
+
+    return {'bytes': compressedBytes, 'isJpeg': true};
+  } catch (e) {
+    return {'bytes': originalBytes, 'isJpeg': false};
   }
 }
