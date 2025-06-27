@@ -38,16 +38,30 @@ class IndexPage extends StatefulWidget {
 
 class _IndexState extends State<IndexPage> {
   int _selectedIndex = 0;
-  String? _pendingPath;
-  String? _pendingTitle;
-  
+
+  // 保存页面实例，避免重复创建
+  late final List<Widget> _pages;
+  late final GlobalKey<_HomePageWrapperState> _homePageKey;
+
   @override
   void initState() {
     super.initState();
     // 注册为当前活动实例
     IndexPage.currentState = this;
+
+    // 初始化页面key
+    _homePageKey = GlobalKey<_HomePageWrapperState>();
+
+    // 初始化页面列表
+    _pages = [
+      _HomePageWrapper(key: _homePageKey),
+      const FavoritesPage(),
+      const HistoryPage(),
+      const DownloadsPage(),
+      const PersonPage(),
+    ];
   }
-  
+
   @override
   void dispose() {
     // 移除引用，避免内存泄漏
@@ -56,51 +70,29 @@ class _IndexState extends State<IndexPage> {
     }
     super.dispose();
   }
-  
+
   // 添加方法，允许其他页面直接切换到主页并加载指定路径
   void navigateToHomeWithPath(String path, String? title) {
     print('_IndexState.navigateToHomeWithPath 被调用: path=$path, title=$title, 当前索引=$_selectedIndex');
+
+    // 通知HomePage更新路径
+    _homePageKey.currentState?.updatePath(path, title);
+
     setState(() {
-      _pendingPath = path;
-      _pendingTitle = title;
       _selectedIndex = 0; // 切换到首页
     });
-    print('导航状态已更新: _pendingPath=$_pendingPath, _pendingTitle=$_pendingTitle, _selectedIndex=$_selectedIndex');
+    print('导航状态已更新: path=$path, title=$title, _selectedIndex=$_selectedIndex');
   }
 
   @override
   Widget build(BuildContext context) {
-    // 构建主页面时考虑是否有待处理的路径
-    print('IndexPage.build: _pendingPath=$_pendingPath, _pendingTitle=$_pendingTitle, _selectedIndex=$_selectedIndex');
-    
-    // 根据选中的索引确定当前应该显示的页面
-    Widget currentPage;
-    switch (_selectedIndex) {
-      case 0:
-        currentPage = HomePage(
-          key: ValueKey('home-${_pendingPath ?? "root"}'),
-          initialUrl: _pendingPath,
-          initialTitle: _pendingTitle,
-        );
-        break;
-      case 1:
-        currentPage = const FavoritesPage();
-        break;
-      case 2:
-        currentPage = const HistoryPage();
-        break;
-      case 3:
-        currentPage = const DownloadsPage();
-        break;
-      case 4:
-        currentPage = const PersonPage();
-        break;
-      default:
-        currentPage = const HomePage();
-    }
-    
+    print('IndexPage.build: _selectedIndex=$_selectedIndex');
+
     return Scaffold(
-      body: currentPage,
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: ValueListenableBuilder<Map<String, DownloadTask>>(
         valueListenable: DownloadManager().tasks,
         builder: (context, tasks, child) {
@@ -148,17 +140,43 @@ class _IndexState extends State<IndexPage> {
             unselectedItemColor: Colors.grey,
             onTap: (index) {
               setState(() {
-                // 如果切换到其他页面，清除待处理的路径
-                if (index != 0) {
-                  _pendingPath = null;
-                  _pendingTitle = null;
-                }
                 _selectedIndex = index;
               });
             },
           );
         },
       ),
+    );
+  }
+}
+
+// HomePage包装器，用于保持状态并支持动态路径更新
+class _HomePageWrapper extends StatefulWidget {
+  const _HomePageWrapper({super.key});
+
+  @override
+  State<_HomePageWrapper> createState() => _HomePageWrapperState();
+}
+
+class _HomePageWrapperState extends State<_HomePageWrapper> {
+  String? _currentPath;
+  String? _currentTitle;
+
+  void updatePath(String? path, String? title) {
+    if (mounted) {
+      setState(() {
+        _currentPath = path;
+        _currentTitle = title;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return HomePage(
+      key: ValueKey('home-${_currentPath ?? "root"}'),
+      initialUrl: _currentPath,
+      initialTitle: _currentTitle,
     );
   }
 }

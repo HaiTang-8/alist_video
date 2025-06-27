@@ -15,7 +15,7 @@ class FavoritesPage extends StatefulWidget {
 }
 
 class _FavoritesPageState extends State<FavoritesPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   List<FavoriteDirectory> _favorites = [];
   bool _isLoading = true;
   String? _currentUsername;
@@ -23,6 +23,9 @@ class _FavoritesPageState extends State<FavoritesPage>
   final Set<FavoriteDirectory> _selectedItems = {};
   late final AnimationController _controller;
   String _debugMessage = '';
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -276,6 +279,7 @@ class _FavoritesPageState extends State<FavoritesPage>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须调用以保持状态
     return Scaffold(
       appBar: AppBar(
         title: Text(

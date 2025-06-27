@@ -35,7 +35,7 @@ class HistoryPage extends StatefulWidget {
 }
 
 class _HistoryPageState extends State<HistoryPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   Map<String, List<HistoricalRecord>> _groupedRecords = {};
   bool _isLoading = true;
   String? _currentUsername;
@@ -50,6 +50,9 @@ class _HistoryPageState extends State<HistoryPage>
 
   // Cache for screenshot paths to avoid repeated file checks
   final Map<String, String?> _screenshotPathCache = {};
+
+  @override
+  bool get wantKeepAlive => true;
 
   // 瀑布流相关状态
   final ScrollController _scrollController = ScrollController();
@@ -670,6 +673,7 @@ class _HistoryPageState extends State<HistoryPage>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须调用以保持状态
     return Scaffold(
       appBar: AppBar(
         leading: _isSelectMode

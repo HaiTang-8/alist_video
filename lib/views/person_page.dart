@@ -16,8 +16,11 @@ class PersonPage extends StatefulWidget {
   State<StatefulWidget> createState() => _PersonPageState();
 }
 
-class _PersonPageState extends State<PersonPage> {
+class _PersonPageState extends State<PersonPage> with AutomaticKeepAliveClientMixin {
   String _username = '';
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -68,6 +71,7 @@ class _PersonPageState extends State<PersonPage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须调用以保持状态
     return Scaffold(
       body: CustomScrollView(
         slivers: [

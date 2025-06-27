@@ -25,7 +25,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   List<FileItem> files = [];
   List<String> currentPath = ['/'];
   int _sortColumnIndex = 0;
@@ -41,6 +41,9 @@ class _HomePageState extends State<HomePage>
   
   // 添加一个映射来跟踪哪些文件已下载
   final Set<String> _localFiles = {};
+
+  @override
+  bool get wantKeepAlive => true;
 
   Future<void> _getList({bool refresh = false}) async {
     if (refresh) {
@@ -802,6 +805,7 @@ class _HomePageState extends State<HomePage>
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // 必须调用以保持状态
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 600;
 
