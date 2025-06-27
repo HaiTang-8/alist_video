@@ -1,6 +1,7 @@
 import 'package:alist_player/main.dart';
 import 'package:alist_player/utils/woo_http.dart';
 import 'package:alist_player/views/settings/database_api_settings.dart';
+import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
 import 'package:alist_player/views/settings/playback_settings_page.dart';
 import 'package:alist_player/views/settings/shared_preferences_viewer.dart';
 import 'package:flutter/material.dart';
@@ -221,7 +222,7 @@ class _PersonPageState extends State<PersonPage> {
                 _buildMenuItem(
                   icon: Icons.api_rounded,
                   title: 'API 设置',
-                  onTap: () => ApiSettingsDialog.show(context),
+                  onTap: () => ApiPresetSettingsDialog.show(context),
                 ),
                 _buildMenuItem(
                   icon: Icons.sync_alt_rounded,

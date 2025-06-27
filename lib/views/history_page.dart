@@ -60,6 +60,15 @@ class _HistoryPageState extends State<HistoryPage>
   List<HistoricalRecord> _allRecords = [];
   int _totalRecords = 0;
 
+  // 搜索相关状态
+  bool _isSearchMode = false;
+  final TextEditingController _searchController = TextEditingController();
+  final FocusNode _searchFocusNode = FocusNode();
+  String _searchQuery = '';
+  List<HistoricalRecord> _searchResults = [];
+  int _searchTotalRecords = 0;
+  Timer? _searchDebounceTimer;
+
   @override
   void initState() {
     super.initState();
@@ -81,6 +90,9 @@ class _HistoryPageState extends State<HistoryPage>
   void dispose() {
     _scrollController.dispose();
     _controller.dispose();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _searchDebounceTimer?.cancel();
     super.dispose();
   }
 
@@ -90,7 +102,11 @@ class _HistoryPageState extends State<HistoryPage>
             _scrollController.position.maxScrollExtent - 200 &&
         !_isLoadingMore &&
         _hasMoreData) {
-      _loadMoreHistory();
+      if (_searchQuery.isNotEmpty) {
+        _loadMoreSearchResults();
+      } else {
+        _loadMoreHistory();
+      }
     }
   }
 
@@ -193,6 +209,123 @@ class _HistoryPageState extends State<HistoryPage>
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
     }
+  }
+
+  // 搜索历史记录
+  Future<void> _searchHistory(String query) async {
+    if (_currentUsername == null) return;
+
+    try {
+      setState(() {
+        _isLoading = true;
+        _searchQuery = query.trim();
+      });
+
+      if (_searchQuery.isEmpty) {
+        // 如果搜索为空，恢复正常显示
+        await _loadHistory();
+        return;
+      }
+
+      // 获取搜索结果总数
+      _searchTotalRecords = await DatabaseHelper.instance.getSearchHistoricalRecordsCount(
+        userId: _currentUsername!.hashCode,
+        searchQuery: _searchQuery,
+      );
+
+      // 获取搜索结果
+      final records = await DatabaseHelper.instance.searchHistoricalRecords(
+        userId: _currentUsername!.hashCode,
+        searchQuery: _searchQuery,
+        limit: _pageSize,
+        offset: 0,
+      );
+
+      if (!mounted) return;
+
+      final List<HistoricalRecord> searchResults =
+          records.map((r) => HistoricalRecord.fromMap(r)).toList();
+
+      _searchResults = searchResults;
+      _hasMoreData = _searchResults.length < _searchTotalRecords;
+      _currentPage = 0;
+
+      // 按时间线分组搜索结果
+      _groupByTimeline(_searchResults);
+
+      setState(() {
+        _isLoading = false;
+      });
+      _controller.forward(from: 0);
+    } catch (e) {
+      print('Error searching history: $e');
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
+  }
+
+  // 加载更多搜索结果
+  Future<void> _loadMoreSearchResults() async {
+    if (_isLoadingMore || !_hasMoreData || _currentUsername == null || _searchQuery.isEmpty) return;
+
+    try {
+      setState(() => _isLoadingMore = true);
+
+      _currentPage++;
+      final records = await DatabaseHelper.instance.searchHistoricalRecords(
+        userId: _currentUsername!.hashCode,
+        searchQuery: _searchQuery,
+        limit: _pageSize,
+        offset: _currentPage * _pageSize,
+      );
+
+      if (!mounted) return;
+
+      final List<HistoricalRecord> moreResults =
+          records.map((r) => HistoricalRecord.fromMap(r)).toList();
+
+      _searchResults.addAll(moreResults);
+      _hasMoreData = _searchResults.length < _searchTotalRecords;
+
+      _groupByTimeline(_searchResults);
+
+      setState(() => _isLoadingMore = false);
+    } catch (e) {
+      print('Error loading more search results: $e');
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
+  // 处理搜索输入变化
+  void _onSearchChanged(String value) {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+      _searchHistory(value);
+    });
+  }
+
+  // 切换搜索模式
+  void _toggleSearchMode() {
+    setState(() {
+      _isSearchMode = !_isSearchMode;
+      if (!_isSearchMode) {
+        _searchController.clear();
+        _searchQuery = '';
+        _searchResults.clear();
+        _searchFocusNode.unfocus();
+        // 退出搜索模式时，如果在目录模式下且选择了目录，需要重置
+        if (!_isTimelineMode && _selectedDirectory != null) {
+          _selectedDirectory = null;
+        }
+        _loadHistory(); // 恢复正常显示
+      } else {
+        // 进入搜索模式时聚焦搜索框
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _searchFocusNode.requestFocus();
+        });
+      }
+    });
   }
 
   Future<void> _loadBasePath() async {
@@ -544,35 +677,65 @@ class _HistoryPageState extends State<HistoryPage>
                 icon: const Icon(Icons.close),
                 onPressed: _toggleSelectMode,
               )
-            : (!_isTimelineMode && _selectedDirectory != null)
+            : _isSearchMode
                 ? IconButton(
                     icon: const Icon(Icons.arrow_back),
-                    onPressed: () {
-                      setState(() => _selectedDirectory = null);
-                    },
+                    onPressed: _toggleSearchMode,
                   )
-                : null,
-        title: _isSelectMode
-            ? Text('已选择 ${_selectedItems.length} 项')
-            : Text(_isTimelineMode
-                ? '观看历史'
-                : (_selectedDirectory != null
-                    ? path.basename(_selectedDirectory!)
-                    : '观看历史')),
+                : (!_isTimelineMode && _selectedDirectory != null)
+                    ? IconButton(
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: () {
+                          setState(() => _selectedDirectory = null);
+                        },
+                      )
+                    : null,
+        title: _isSearchMode
+            ? TextField(
+                controller: _searchController,
+                focusNode: _searchFocusNode,
+                onChanged: _onSearchChanged,
+                decoration: const InputDecoration(
+                  hintText: '搜索视频名称或路径...',
+                  border: InputBorder.none,
+                  hintStyle: TextStyle(color: Colors.grey),
+                ),
+                style: const TextStyle(color: Colors.black),
+              )
+            : _isSelectMode
+                ? Text('已选择 ${_selectedItems.length} 项')
+                : Text(_isTimelineMode
+                    ? (_searchQuery.isNotEmpty ? '搜索结果' : '观看历史')
+                    : (_selectedDirectory != null
+                        ? path.basename(_selectedDirectory!)
+                        : '观看历史')),
         actions: [
           if (_isSelectMode)
             IconButton(
               icon: const Icon(Icons.delete),
               onPressed: _selectedItems.isEmpty ? null : _deleteSelected,
             )
-          else ...[
+          else if (_isSearchMode) ...[
+            if (_searchController.text.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.clear),
+                onPressed: () {
+                  _searchController.clear();
+                  _searchHistory('');
+                },
+              ),
+          ] else ...[
+            IconButton(
+              icon: const Icon(Icons.search),
+              onPressed: _toggleSearchMode,
+            ),
             IconButton(
               icon: const Icon(Icons.select_all),
               onPressed: _toggleSelectMode,
             ),
             IconButton(
               icon: Icon(_isTimelineMode ? Icons.folder : Icons.access_time),
-              onPressed: () {
+              onPressed: _searchQuery.isNotEmpty ? null : () {
                 setState(() {
                   _isTimelineMode = !_isTimelineMode;
                   _selectedDirectory = null;
@@ -619,7 +782,11 @@ class _HistoryPageState extends State<HistoryPage>
       ),
       body: RefreshIndicator(
         onRefresh: () async {
-          await _loadHistory();
+          if (_searchQuery.isNotEmpty) {
+            await _searchHistory(_searchQuery);
+          } else {
+            await _loadHistory();
+          }
           _controller.forward(from: 0);
         },
         child: AnimatedSwitcher(
@@ -627,7 +794,10 @@ class _HistoryPageState extends State<HistoryPage>
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
               : _groupedRecords.isEmpty
-                  ? const Center(child: Text('暂无观看历史'))
+                  ? Center(
+                      child: Text(_searchQuery.isNotEmpty
+                          ? '没有找到匹配的视频'
+                          : '暂无观看历史'))
                   : _buildContent(),
         ),
       ),
@@ -635,6 +805,11 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildContent() {
+    // 在搜索模式下，始终显示时间线视图
+    if (_searchQuery.isNotEmpty) {
+      return _buildTimelineView();
+    }
+
     if (!_isTimelineMode && _selectedDirectory == null) {
       return _buildDirectoryList();
     } else if (!_isTimelineMode && _selectedDirectory != null) {
@@ -684,7 +859,10 @@ class _HistoryPageState extends State<HistoryPage>
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
                 onTap: () {
-                  setState(() => _selectedDirectory = dirPath);
+                  // 在搜索模式下不允许进入目录详情
+                  if (_searchQuery.isEmpty) {
+                    setState(() => _selectedDirectory = dirPath);
+                  }
                 },
                 child: Padding(
                   padding: const EdgeInsets.all(16),
@@ -743,7 +921,27 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildDirectoryTimeline(String dirPath) {
-    final records = _groupedRecords[dirPath]!;
+    // 检查是否在搜索模式下，如果是则返回到正常模式
+    if (_searchQuery.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _selectedDirectory = null;
+        });
+      });
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    final records = _groupedRecords[dirPath];
+    if (records == null || records.isEmpty) {
+      // 如果找不到对应的目录记录，返回到目录列表
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        setState(() {
+          _selectedDirectory = null;
+        });
+      });
+      return const Center(child: Text('目录不存在或已被删除'));
+    }
+
     final timelineRecords = <String, List<HistoricalRecord>>{};
 
     for (var record in records) {

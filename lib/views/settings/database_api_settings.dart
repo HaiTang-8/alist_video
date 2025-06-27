@@ -4,6 +4,7 @@ import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/network_scanner.dart';
 import 'package:alist_player/utils/woo_http.dart';
+import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
 
 class DatabaseSettingsDialog extends StatefulWidget {
   final String host;
@@ -398,22 +399,8 @@ class ApiSettingsDialog extends StatefulWidget {
   });
 
   static Future<void> show(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentBaseUrl =
-        prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
-    final currentBaseDownloadUrl =
-        prefs.getString(AppConstants.baseDownloadUrlKey) ??
-            AppConstants.defaultBaseDownloadUrl;
-
-    if (!context.mounted) return;
-
-    await showDialog(
-      context: context,
-      builder: (context) => ApiSettingsDialog(
-        baseUrl: currentBaseUrl,
-        baseDownloadUrl: currentBaseDownloadUrl,
-      ),
-    );
+    // 使用新的API预设设置对话框
+    await ApiPresetSettingsDialog.show(context);
   }
 
   @override

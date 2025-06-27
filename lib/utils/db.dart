@@ -403,16 +403,16 @@ class DatabaseHelper {
   }) async {
     try {
       final results = await query('''
-        SELECT 
-          video_sha1, 
-          video_path, 
-          video_seek, 
-          user_id, 
-          change_time, 
-          video_name, 
+        SELECT
+          video_sha1,
+          video_path,
+          video_seek,
+          user_id,
+          change_time,
+          video_name,
           total_video_duration
-        FROM t_historical_records 
-        WHERE video_name = @name 
+        FROM t_historical_records
+        WHERE video_name = @name
         AND user_id = @userId
         ORDER BY change_time DESC
         LIMIT 1
@@ -426,6 +426,71 @@ class DatabaseHelper {
           : null;
     } catch (e) {
       print('Failed to get historical record by name: $e');
+      rethrow;
+    }
+  }
+
+  // 搜索历史记录（按视频名称和路径）
+  Future<List<Map<String, dynamic>>> searchHistoricalRecords({
+    required int userId,
+    required String searchQuery,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final results = await query('''
+        SELECT
+          video_sha1,
+          video_path,
+          video_seek,
+          user_id,
+          change_time,
+          video_name,
+          total_video_duration
+        FROM t_historical_records
+        WHERE user_id = @userId
+        AND (
+          LOWER(video_name) LIKE LOWER(@searchQuery)
+          OR LOWER(video_path) LIKE LOWER(@searchQuery)
+        )
+        ORDER BY change_time DESC
+        LIMIT @limit OFFSET @offset
+      ''', {
+        'userId': userId,
+        'searchQuery': '%$searchQuery%',
+        'limit': limit,
+        'offset': offset,
+      });
+
+      return results;
+    } catch (e) {
+      print('Failed to search historical records: $e');
+      rethrow;
+    }
+  }
+
+  // 获取搜索结果总数
+  Future<int> getSearchHistoricalRecordsCount({
+    required int userId,
+    required String searchQuery,
+  }) async {
+    try {
+      final results = await query('''
+        SELECT COUNT(*) as count
+        FROM t_historical_records
+        WHERE user_id = @userId
+        AND (
+          LOWER(video_name) LIKE LOWER(@searchQuery)
+          OR LOWER(video_path) LIKE LOWER(@searchQuery)
+        )
+      ''', {
+        'userId': userId,
+        'searchQuery': '%$searchQuery%',
+      });
+
+      return results.first['count'] as int;
+    } catch (e) {
+      print('Failed to get search historical records count: $e');
       rethrow;
     }
   }

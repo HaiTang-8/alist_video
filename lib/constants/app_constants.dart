@@ -110,4 +110,13 @@ class AppConstants {
 
   // 在现有代码中添加这一行
   static const String tokenKey = 'token';
+
+  // API配置预设相关
+  static const String apiPresetsKey = 'api_presets'; // 存储API配置预设列表
+  static const String currentApiPresetIdKey = 'current_api_preset_id'; // 当前使用的API配置预设ID
+  static const String customApiModeKey = 'custom_api_mode'; // 是否使用自定义API模式
+
+  // 默认API配置预设
+  static const String defaultPresetName = '本地服务器';
+  static const String defaultPresetDescription = '默认的本地AList服务器配置';
 }

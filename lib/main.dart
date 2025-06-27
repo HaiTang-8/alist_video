@@ -7,6 +7,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/views/index.dart';
 import 'package:alist_player/apis/login.dart';
 import 'package:alist_player/views/settings/database_api_settings.dart';
+import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
+import 'package:alist_player/utils/api_config_manager.dart';
+import 'package:alist_player/models/api_config_preset.dart';
 import 'package:toastification/toastification.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/constants/app_constants.dart';
@@ -63,6 +66,13 @@ void main() async {
     } catch (e) {
       print('启动配置服务器失败: $e');
     }
+  }
+
+  // 初始化API配置管理器
+  try {
+    await ApiConfigManager().initialize();
+  } catch (e) {
+    print('API配置管理器初始化失败: $e');
   }
 
   // 初始化下载管理器
@@ -217,10 +227,33 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  // API配置预设相关
+  final ApiConfigManager _configManager = ApiConfigManager();
+  List<ApiConfigPreset> _apiPresets = [];
+  ApiConfigPreset? _selectedPreset;
+  bool _isCustomMode = false;
+
   @override
   void initState() {
     super.initState();
     _loadSavedCredentials();
+    _initializeApiConfig();
+  }
+
+  /// 初始化API配置
+  Future<void> _initializeApiConfig() async {
+    await _configManager.initialize();
+    final presets = await _configManager.getAllPresets();
+    final currentPreset = await _configManager.getCurrentPreset();
+    final isCustom = await _configManager.isCustomApiMode();
+
+    if (mounted) {
+      setState(() {
+        _apiPresets = presets;
+        _selectedPreset = currentPreset;
+        _isCustomMode = isCustom;
+      });
+    }
   }
 
   Future<void> _loadSavedCredentials() async {
@@ -468,6 +501,53 @@ class _LoginPageState extends State<LoginPage> {
                                 ),
                         ),
                         const SizedBox(height: 16),
+                        // API配置预设选择器
+                        if (_apiPresets.isNotEmpty && !_isCustomMode)
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.grey.withValues(alpha: 0.3)),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: DropdownButtonHideUnderline(
+                              child: DropdownButton<String>(
+                                value: _selectedPreset?.id,
+                                hint: const Text('选择API配置'),
+                                isExpanded: true,
+                                items: _apiPresets.map((preset) {
+                                  return DropdownMenuItem<String>(
+                                    value: preset.id,
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Text(
+                                          preset.name,
+                                          style: const TextStyle(fontWeight: FontWeight.w500),
+                                        ),
+                                        Text(
+                                          preset.baseUrl,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                                onChanged: (String? newValue) async {
+                                  if (newValue != null) {
+                                    await _configManager.setCurrentPreset(newValue);
+                                    await _initializeApiConfig(); // 重新加载配置
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                        if (_apiPresets.isNotEmpty && !_isCustomMode)
+                          const SizedBox(height: 16),
                         // Settings Row
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -480,7 +560,7 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             const SizedBox(width: 16),
                             TextButton.icon(
-                              onPressed: () => ApiSettingsDialog.show(context),
+                              onPressed: () => ApiPresetSettingsDialog.show(context),
                               icon: const Icon(Icons.api_rounded),
                               label: const Text('API 设置'),
                             ),
