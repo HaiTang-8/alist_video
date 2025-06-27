@@ -9,6 +9,7 @@ import 'package:alist_player/apis/login.dart';
 import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
 import 'package:alist_player/utils/api_config_manager.dart';
+import 'package:alist_player/utils/database_config_manager.dart';
 import 'package:alist_player/models/api_config_preset.dart';
 import 'package:toastification/toastification.dart';
 import 'package:alist_player/utils/db.dart';
@@ -73,6 +74,13 @@ void main() async {
     await ApiConfigManager().initialize();
   } catch (e) {
     print('API配置管理器初始化失败: $e');
+  }
+
+  // 初始化数据库配置管理器
+  try {
+    await DatabaseConfigManager().initialize();
+  } catch (e) {
+    print('数据库配置管理器初始化失败: $e');
   }
 
   // 初始化下载管理器

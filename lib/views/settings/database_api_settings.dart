@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
+import 'package:alist_player/views/settings/database_preset_settings_dialog.dart';
 
 class DatabaseSettingsDialog extends StatefulWidget {
   final String host;
@@ -21,50 +22,8 @@ class DatabaseSettingsDialog extends StatefulWidget {
   });
 
   static Future<void> show(BuildContext context) async {
-    final prefs = await SharedPreferences.getInstance();
-    final currentHost =
-        prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost;
-    final currentName =
-        prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName;
-    final currentUser =
-        prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser;
-    final currentPassword = prefs.getString(AppConstants.dbPasswordKey) ??
-        AppConstants.defaultDbPassword;
-    final currentPort =
-        prefs.getInt(AppConstants.dbPortKey) ?? AppConstants.defaultDbPort;
-
-    if (!context.mounted) return;
-
-    // 检查是否为移动端
-    final isMobile = MediaQuery.of(context).size.width < 600;
-
-    if (isMobile) {
-      // 移动端使用全屏页面
-      await Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => DatabaseSettingsDialog(
-            host: currentHost,
-            name: currentName,
-            user: currentUser,
-            password: currentPassword,
-            port: currentPort,
-          ),
-          fullscreenDialog: true,
-        ),
-      );
-    } else {
-      // 桌面端使用对话框
-      await showDialog(
-        context: context,
-        builder: (context) => DatabaseSettingsDialog(
-          host: currentHost,
-          name: currentName,
-          user: currentUser,
-          password: currentPassword,
-          port: currentPort,
-        ),
-      );
-    }
+    // 使用新的数据库预设设置对话框
+    await DatabasePresetSettingsDialog.show(context);
   }
 
   @override

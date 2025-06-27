@@ -119,4 +119,13 @@ class AppConstants {
   // 默认API配置预设
   static const String defaultPresetName = '本地服务器';
   static const String defaultPresetDescription = '默认的本地AList服务器配置';
+
+  // 数据库配置预设相关
+  static const String dbPresetsKey = 'db_presets'; // 存储数据库配置预设列表
+  static const String currentDbPresetIdKey = 'current_db_preset_id'; // 当前使用的数据库配置预设ID
+  static const String customDbModeKey = 'custom_db_mode'; // 是否使用自定义数据库模式
+
+  // 默认数据库配置预设
+  static const String defaultDbPresetName = '本地数据库';
+  static const String defaultDbPresetDescription = '默认的本地PostgreSQL数据库配置';
 }
