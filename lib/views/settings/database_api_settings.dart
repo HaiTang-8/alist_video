@@ -2,8 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
-import 'package:alist_player/utils/network_scanner.dart';
-import 'package:alist_player/utils/woo_http.dart';
 import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
 
 class DatabaseSettingsDialog extends StatefulWidget {
@@ -37,16 +35,36 @@ class DatabaseSettingsDialog extends StatefulWidget {
 
     if (!context.mounted) return;
 
-    await showDialog(
-      context: context,
-      builder: (context) => DatabaseSettingsDialog(
-        host: currentHost,
-        name: currentName,
-        user: currentUser,
-        password: currentPassword,
-        port: currentPort,
-      ),
-    );
+    // 检查是否为移动端
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    if (isMobile) {
+      // 移动端使用全屏页面
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => DatabaseSettingsDialog(
+            host: currentHost,
+            name: currentName,
+            user: currentUser,
+            password: currentPassword,
+            port: currentPort,
+          ),
+          fullscreenDialog: true,
+        ),
+      );
+    } else {
+      // 桌面端使用对话框
+      await showDialog(
+        context: context,
+        builder: (context) => DatabaseSettingsDialog(
+          host: currentHost,
+          name: currentName,
+          user: currentUser,
+          password: currentPassword,
+          port: currentPort,
+        ),
+      );
+    }
   }
 
   @override
@@ -171,6 +189,44 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    if (isMobile) {
+      return _buildMobileLayout(context);
+    } else {
+      return _buildDesktopLayout(context);
+    }
+  }
+
+  /// 构建移动端布局
+  Widget _buildMobileLayout(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('数据库设置'),
+        leading: IconButton(
+          icon: const Icon(Icons.close),
+          onPressed: () => Navigator.pop(context),
+        ),
+        actions: [
+          IconButton(
+            onPressed: _isTesting ? null : () => _saveSettings(context),
+            icon: _isTesting
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.check),
+            tooltip: _isTesting ? '测试连接中...' : '保存设置',
+          ),
+        ],
+      ),
+      body: _buildFormContent(context, true),
+    );
+  }
+
+  /// 构建桌面端布局
+  Widget _buildDesktopLayout(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
@@ -206,55 +262,109 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
               ),
             ),
             const SizedBox(height: 24),
+            _buildFormContent(context, false),
+            const SizedBox(height: 32),
+            _buildDesktopButtons(context),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 构建表单内容
+  Widget _buildFormContent(BuildContext context, bool isMobile) {
+    return Padding(
+      padding: EdgeInsets.all(isMobile ? 16.0 : 0.0),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (isMobile) ...[
+              const SizedBox(height: 8),
+              Text(
+                '配置数据库连接信息',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 16,
+                ),
+              ),
+              const SizedBox(height: 24),
+            ],
             _buildTextField(
               controller: _hostController,
               label: '主机地址',
               icon: Icons.dns_rounded,
               hint: '例如: localhost 或 192.168.1.100',
+              isMobile: isMobile,
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: _buildTextField(
-                    controller: _nameController,
-                    label: '数据库名',
-                    icon: Icons.storage_rounded,
-                    hint: '数据库名称',
+            SizedBox(height: isMobile ? 20 : 16),
+            if (isMobile) ...[
+              // 移动端垂直布局
+              _buildTextField(
+                controller: _nameController,
+                label: '数据库名',
+                icon: Icons.storage_rounded,
+                hint: '数据库名称',
+                isMobile: isMobile,
+              ),
+              const SizedBox(height: 20),
+              _buildTextField(
+                controller: _portController,
+                label: '端口',
+                icon: Icons.numbers_rounded,
+                hint: '3306',
+                keyboardType: TextInputType.number,
+                isMobile: isMobile,
+              ),
+            ] else ...[
+              // 桌面端水平布局
+              Row(
+                children: [
+                  Expanded(
+                    flex: 2,
+                    child: _buildTextField(
+                      controller: _nameController,
+                      label: '数据库名',
+                      icon: Icons.storage_rounded,
+                      hint: '数据库名称',
+                      isMobile: isMobile,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _buildTextField(
-                    controller: _portController,
-                    label: '端口',
-                    icon: Icons.numbers_rounded,
-                    hint: '3306',
-                    keyboardType: TextInputType.number,
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildTextField(
+                      controller: _portController,
+                      label: '端口',
+                      icon: Icons.numbers_rounded,
+                      hint: '3306',
+                      keyboardType: TextInputType.number,
+                      isMobile: isMobile,
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                ],
+              ),
+            ],
+            SizedBox(height: isMobile ? 20 : 16),
             _buildTextField(
               controller: _userController,
               label: '用户名',
               icon: Icons.person_outline_rounded,
               hint: '数据库用户名',
+              isMobile: isMobile,
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: isMobile ? 20 : 16),
             _buildTextField(
               controller: _passwordController,
               label: '密码',
               icon: Icons.lock_outline_rounded,
               hint: '数据库密码',
               obscureText: !_showPassword,
+              isMobile: isMobile,
               suffixIcon: IconButton(
                 icon: Icon(
                   _showPassword ? Icons.visibility_off : Icons.visibility,
                   color: Colors.grey[400],
-                  size: 20,
+                  size: isMobile ? 24 : 20,
                 ),
                 onPressed: () {
                   setState(() {
@@ -263,69 +373,71 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
                 },
               ),
             ),
-            const SizedBox(height: 32),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                  ),
-                  child: Text(
-                    '取消',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _isTesting ? null : () => _saveSettings(context),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_isTesting)
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      else
-                        const Icon(Icons.save_rounded, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        _isTesting ? '测试连接中...' : '保存设置',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
           ],
         ),
       ),
+    );
+  }
+
+  /// 构建桌面端按钮
+  Widget _buildDesktopButtons(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 12,
+            ),
+          ),
+          child: Text(
+            '取消',
+            style: TextStyle(
+              color: Colors.grey[600],
+              fontSize: 16,
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        ElevatedButton(
+          onPressed: _isTesting ? null : () => _saveSettings(context),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 24,
+              vertical: 12,
+            ),
+            backgroundColor: Theme.of(context).primaryColor,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isTesting)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else
+                const Icon(Icons.save_rounded, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                _isTesting ? '测试连接中...' : '保存设置',
+                style: const TextStyle(fontSize: 16),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -337,18 +449,19 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
     bool obscureText = false,
     TextInputType? keyboardType,
     Widget? suffixIcon,
+    bool isMobile = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 14,
+          style: TextStyle(
+            fontSize: isMobile ? 16 : 14,
             fontWeight: FontWeight.w500,
           ),
         ),
-        const SizedBox(height: 8),
+        SizedBox(height: isMobile ? 12 : 8),
         Container(
           decoration: BoxDecoration(
             color: Colors.grey[50],
@@ -362,15 +475,19 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
+              prefixIcon: Icon(
+                icon,
+                color: Colors.grey[400],
+                size: isMobile ? 24 : 20,
+              ),
               suffixIcon: suffixIcon,
               border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
+              contentPadding: EdgeInsets.symmetric(
                 horizontal: 16,
-                vertical: 12,
+                vertical: isMobile ? 16 : 12,
               ),
             ),
-            style: const TextStyle(fontSize: 15),
+            style: TextStyle(fontSize: isMobile ? 16 : 15),
           ),
         ),
       ],
@@ -388,571 +505,17 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
   }
 }
 
-class ApiSettingsDialog extends StatefulWidget {
-  final String baseUrl;
-  final String baseDownloadUrl;
-
-  const ApiSettingsDialog({
-    super.key,
-    required this.baseUrl,
-    required this.baseDownloadUrl,
-  });
-
+class ApiSettingsDialog {
   static Future<void> show(BuildContext context) async {
     // 使用新的API预设设置对话框
     await ApiPresetSettingsDialog.show(context);
   }
-
-  @override
-  State<ApiSettingsDialog> createState() => _ApiSettingsDialogState();
 }
 
-class _ApiSettingsDialogState extends State<ApiSettingsDialog> {
-  late TextEditingController _baseUrlController;
-  late TextEditingController _baseDownloadUrlController;
-  bool _isSaving = false;
-  bool _isScanning = false;
-  int _scanProgress = 0;
-  int _scanMax = 100;
-  List<NetworkDevice> _discoveredDevices = [];
 
-  @override
-  void initState() {
-    super.initState();
-    _baseUrlController = TextEditingController(text: widget.baseUrl);
-    _baseDownloadUrlController =
-        TextEditingController(text: widget.baseDownloadUrl);
-  }
 
-  // 扫描局域网设备
-  Future<void> _scanLocalDevices() async {
-    setState(() {
-      _isScanning = true;
-      _scanProgress = 0;
-      _scanMax = 255;
-      _discoveredDevices = [];
-    });
 
-    try {
-      final scanner = NetworkScanner();
-      final devices = await scanner.scanDevices(
-        onProgress: (current, max) {
-          setState(() {
-            _scanProgress = current;
-            _scanMax = max;
-          });
-        },
-        // AList默认端口是5244
-        port: 5244,
-        timeout: const Duration(milliseconds: 100),
-      );
 
-      setState(() {
-        _discoveredDevices = devices;
-      });
-      
-      if (_discoveredDevices.isEmpty) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('未发现局域网设备'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      } else {
-        // 显示设备选择对话框
-        if (!mounted) return;
-        _showDeviceSelectionDialog();
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('扫描出错: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      setState(() {
-        _isScanning = false;
-      });
-    }
-  }
 
-  // 显示设备选择对话框
-  void _showDeviceSelectionDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Row(
-            children: [
-              Icon(
-                Icons.devices_rounded,
-                color: Theme.of(context).primaryColor,
-              ),
-              const SizedBox(width: 8),
-              const Text('选择局域网设备'),
-            ],
-          ),
-          content: SizedBox(
-            width: double.maxFinite,
-            height: 300,
-            child: _discoveredDevices.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.wifi_off_rounded,
-                          size: 48,
-                          color: Colors.grey[400],
-                        ),
-                        const SizedBox(height: 16),
-                        Text(
-                          '未发现设备',
-                          style: TextStyle(
-                            color: Colors.grey[600],
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
-                  )
-                : ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _discoveredDevices.length,
-                    itemBuilder: (context, index) {
-                      final device = _discoveredDevices[index];
-                      
-                      // 检测设备状态
-                      _checkDeviceStatus(device, setState);
-                      
-                      return Card(
-                        elevation: 0,
-                        margin: const EdgeInsets.symmetric(vertical: 4),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: device.isLocalDevice
-                                ? Colors.purple.shade200
-                                : device.status == DeviceStatus.online
-                                    ? Colors.green.shade200
-                                    : device.status == DeviceStatus.offline
-                                        ? Colors.red.shade200
-                                        : Colors.grey.shade200,
-                            width: device.isLocalDevice ? 2 : 1,
-                          ),
-                        ),
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          leading: Icon(
-                            device.isLocalDevice
-                                ? Icons.computer_outlined
-                                : Icons.devices_other_rounded,
-                            color: device.isLocalDevice
-                                ? Colors.purple
-                                : device.status == DeviceStatus.online
-                                    ? Colors.green
-                                    : device.status == DeviceStatus.offline
-                                        ? Colors.red
-                                        : Colors.grey,
-                            size: 36,
-                          ),
-                          title: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  device.ip,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                    color: device.isLocalDevice ? Colors.purple : null,
-                                  ),
-                                ),
-                              ),
-                              if (device.isLocalDevice)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 6,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.purple.shade100,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    '本机',
-                                    style: TextStyle(
-                                      color: Colors.purple.shade700,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                            ],
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (device.deviceName != null && !device.isLocalDevice)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 4),
-                                  child: Text(
-                                    device.deviceName!,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w500,
-                                      color: Colors.grey[800],
-                                    ),
-                                  ),
-                                ),
-                              const SizedBox(height: 4),
-                              Text('响应时间: ${device.responseTime.inMilliseconds}ms'),
-                              const SizedBox(height: 2),
-                              Row(
-                                children: [
-                                  Container(
-                                    width: 8,
-                                    height: 8,
-                                    decoration: BoxDecoration(
-                                      shape: BoxShape.circle,
-                                      color: device.isLocalDevice
-                                          ? Colors.purple
-                                          : device.status == DeviceStatus.online
-                                              ? Colors.green
-                                              : device.status == DeviceStatus.offline
-                                                  ? Colors.red
-                                                  : Colors.grey,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    device.isLocalDevice
-                                        ? '本机'
-                                        : device.status == DeviceStatus.online
-                                            ? '在线'
-                                            : device.status == DeviceStatus.offline
-                                                ? '离线'
-                                                : '未知',
-                                    style: TextStyle(
-                                      color: device.isLocalDevice
-                                          ? Colors.purple
-                                          : device.status == DeviceStatus.online
-                                              ? Colors.green
-                                              : device.status == DeviceStatus.offline
-                                                  ? Colors.red
-                                                  : Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                          onTap: device.status == DeviceStatus.online
-                              ? () {
-                                  _selectDevice(device);
-                                  Navigator.pop(context);
-                                }
-                              : null,
-                          enabled: device.status == DeviceStatus.online,
-                          trailing: device.status == DeviceStatus.online
-                              ? const Icon(Icons.arrow_forward_ios, size: 16)
-                              : device.status == DeviceStatus.unknown
-                                  ? const SizedBox(
-                                      width: 16,
-                                      height: 16,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : null,
-                        ),
-                      );
-                    },
-                  ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () {
-                // 重新扫描
-                Navigator.pop(context);
-                _scanLocalDevices();
-              },
-              child: const Text('重新扫描'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
-  // 检查设备状态
-  Future<void> _checkDeviceStatus(NetworkDevice device, StateSetter setState) async {
-    if (device.status == DeviceStatus.unknown) {
-      // 异步检查设备状态
-      Future.microtask(() async {
-        await device.checkStatus();
-        setState(() {});
-      });
-    }
-  }
 
-  // 选择设备
-  void _selectDevice(NetworkDevice device) {
-    setState(() {
-      // 更新URL，使用选中的IP地址
-      final String baseUrl = 'http://${device.ip}:5244';
-      final String baseDownloadUrl = 'http://${device.ip}:5244/d';
-      
-      _baseUrlController.text = baseUrl;
-      _baseDownloadUrlController.text = baseDownloadUrl;
-    });
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('已选择设备: ${device.ip}'),
-        backgroundColor: Colors.green,
-      ),
-    );
-  }
-
-  Future<void> _saveSettings() async {
-    setState(() {
-      _isSaving = true;
-    });
-
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await Future.wait([
-        prefs.setString(AppConstants.baseUrlKey, _baseUrlController.text),
-        prefs.setString(
-            AppConstants.baseDownloadUrlKey, _baseDownloadUrlController.text),
-      ]);
-
-      // 立即更新HTTP客户端的baseUrl，使设置立即生效
-      await WooHttpUtil().updateBaseUrl();
-
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('API 设置已保存并立即生效'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('保存失败: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isSaving = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: 400,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.api_rounded,
-                  color: Theme.of(context).primaryColor,
-                  size: 28,
-                ),
-                const SizedBox(width: 12),
-                const Text(
-                  'API 设置',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '配置 AList API 地址',
-              style: TextStyle(
-                color: Colors.grey[600],
-                fontSize: 14,
-              ),
-            ),
-            const SizedBox(height: 24),
-            // 添加扫描按钮
-            OutlinedButton.icon(
-              onPressed: _isScanning ? null : _scanLocalDevices,
-              icon: _isScanning
-                  ? SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                            Theme.of(context).primaryColor),
-                      ),
-                    )
-                  : const Icon(Icons.wifi_find),
-              label: _isScanning
-                  ? Text('扫描中 $_scanProgress/$_scanMax')
-                  : const Text('扫描局域网设备'),
-              style: OutlinedButton.styleFrom(
-                side: BorderSide(color: Theme.of(context).primaryColor),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            _buildTextField(
-              controller: _baseUrlController,
-              label: '基础 URL',
-              icon: Icons.link_rounded,
-              hint: '例如: https://alist.example.com',
-            ),
-            const SizedBox(height: 16),
-            _buildTextField(
-              controller: _baseDownloadUrlController,
-              label: '播放 URL',
-              icon: Icons.download_rounded,
-              hint: '例如: https://alist.example.com/d',
-            ),
-            const SizedBox(height: 32),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                  ),
-                  child: Text(
-                    '取消',
-                    style: TextStyle(
-                      color: Colors.grey[600],
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                ElevatedButton(
-                  onPressed: _isSaving ? null : _saveSettings,
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 12,
-                    ),
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (_isSaving)
-                        const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      else
-                        const Icon(Icons.save_rounded, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        _isSaving ? '保存中...' : '保存设置',
-                        style: const TextStyle(fontSize: 16),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    required TextEditingController controller,
-    required String label,
-    required IconData icon,
-    required String hint,
-  }) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: Colors.grey[50],
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey[200]!),
-          ),
-          child: TextField(
-            controller: controller,
-            decoration: InputDecoration(
-              hintText: hint,
-              hintStyle: TextStyle(color: Colors.grey[400]),
-              prefixIcon: Icon(icon, color: Colors.grey[400], size: 20),
-              border: InputBorder.none,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-            ),
-            style: const TextStyle(fontSize: 15),
-          ),
-        ),
-      ],
-    );
-  }
-
-  @override
-  void dispose() {
-    _baseUrlController.dispose();
-    _baseDownloadUrlController.dispose();
-    super.dispose();
-  }
-}
