@@ -48,7 +48,6 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
   // 自定义模式相关
   late TextEditingController _baseUrlController;
   late TextEditingController _baseDownloadUrlController;
-  bool _isCustomMode = false;
   bool _isSaving = false;
 
   @override
@@ -84,7 +83,6 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
       setState(() {
         _presets = presets;
         _selectedPreset = currentPreset;
-        _isCustomMode = isCustom;
         _baseUrlController.text = baseUrl;
         _baseDownloadUrlController.text = baseDownloadUrl;
         _isLoadingPresets = false;

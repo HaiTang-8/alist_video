@@ -674,6 +674,8 @@ class _HistoryPageState extends State<HistoryPage>
   @override
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return Scaffold(
       appBar: AppBar(
         leading: _isSelectMode
@@ -733,10 +735,11 @@ class _HistoryPageState extends State<HistoryPage>
               icon: const Icon(Icons.search),
               onPressed: _toggleSearchMode,
             ),
-            IconButton(
-              icon: const Icon(Icons.select_all),
-              onPressed: _toggleSelectMode,
-            ),
+            if (!isMobile) // 桌面端显示所有按钮
+              IconButton(
+                icon: const Icon(Icons.select_all),
+                onPressed: _toggleSelectMode,
+              ),
             IconButton(
               icon: Icon(_isTimelineMode ? Icons.folder : Icons.access_time),
               onPressed: _searchQuery.isNotEmpty ? null : () {
@@ -747,40 +750,115 @@ class _HistoryPageState extends State<HistoryPage>
                 });
               },
             ),
-            IconButton(
-              icon: const Icon(Icons.delete_sweep),
-              onPressed: _groupedRecords.isEmpty
-                  ? null
-                  : () {
-                      showDialog(
-                        context: context,
-                        builder: (context) => AlertDialog(
-                          title: const Text('清空历史记录'),
-                          content: const Text('确定要清空所有历史记录吗？此操作不可恢复。'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.pop(context),
-                              child: const Text('取消'),
-                            ),
-                            TextButton(
-                              onPressed: () {
-                                Navigator.pop(context);
-                                _clearAllHistory();
-                              },
-                              child: const Text(
-                                '确定',
-                                style: TextStyle(color: Colors.red),
+            if (!isMobile) // 桌面端显示清空按钮
+              IconButton(
+                icon: const Icon(Icons.delete_sweep),
+                onPressed: _groupedRecords.isEmpty
+                    ? null
+                    : () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('清空历史记录'),
+                            content: const Text('确定要清空所有历史记录吗？此操作不可恢复。'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('取消'),
                               ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-            ),
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadHistory,
-            ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _clearAllHistory();
+                                },
+                                child: const Text(
+                                  '确定',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+              ),
+            if (isMobile) // 移动端显示更多菜单
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  switch (value) {
+                    case 'select_all':
+                      _toggleSelectMode();
+                      break;
+                    case 'clear_all':
+                      if (_groupedRecords.isNotEmpty) {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('清空历史记录'),
+                            content: const Text('确定要清空所有历史记录吗？此操作不可恢复。'),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('取消'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(context);
+                                  _clearAllHistory();
+                                },
+                                child: const Text(
+                                  '确定',
+                                  style: TextStyle(color: Colors.red),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }
+                      break;
+                    case 'refresh':
+                      _loadHistory();
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'select_all',
+                    child: Row(
+                      children: [
+                        Icon(Icons.select_all),
+                        SizedBox(width: 8),
+                        Text('多选模式'),
+                      ],
+                    ),
+                  ),
+                  if (_groupedRecords.isNotEmpty)
+                    const PopupMenuItem(
+                      value: 'clear_all',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete_sweep, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('清空历史', style: TextStyle(color: Colors.red)),
+                        ],
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'refresh',
+                    child: Row(
+                      children: [
+                        Icon(Icons.refresh),
+                        SizedBox(width: 8),
+                        Text('刷新'),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else
+              IconButton(
+                icon: const Icon(Icons.refresh),
+                onPressed: _loadHistory,
+              ),
           ],
         ],
       ),
@@ -824,9 +902,11 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildDirectoryList() {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     // 目录模式不需要瀑布流，显示所有目录
     return ListView.builder(
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.all(isMobile ? 8 : 16),
       itemCount: _groupedRecords.length,
       itemBuilder: (context, index) {
         final dirPath = _groupedRecords.keys.elementAt(index);
@@ -859,9 +939,9 @@ class _HistoryPageState extends State<HistoryPage>
               ),
             ),
             child: Card(
-              margin: const EdgeInsets.only(bottom: 12),
+              margin: EdgeInsets.only(bottom: isMobile ? 8 : 12),
               child: InkWell(
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(isMobile ? 8 : 12),
                 onTap: () {
                   // 在搜索模式下不允许进入目录详情
                   if (_searchQuery.isEmpty) {
@@ -869,47 +949,47 @@ class _HistoryPageState extends State<HistoryPage>
                   }
                 },
                 child: Padding(
-                  padding: const EdgeInsets.all(16),
+                  padding: EdgeInsets.all(isMobile ? 12 : 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.folder, size: 20),
-                          const SizedBox(width: 8),
+                          Icon(Icons.folder, size: isMobile ? 18 : 20),
+                          SizedBox(width: isMobile ? 6 : 8),
                           Expanded(
                             child: Text(
                               dirName,
-                              style: const TextStyle(
-                                fontSize: 16,
+                              style: TextStyle(
+                                fontSize: isMobile ? 14 : 16,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 4,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: isMobile ? 6 : 8,
+                              vertical: isMobile ? 2 : 4,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
+                              borderRadius: BorderRadius.circular(isMobile ? 8 : 12),
                             ),
                             child: Text(
                               '${records.length}个视频',
-                              style: const TextStyle(
-                                fontSize: 12,
+                              style: TextStyle(
+                                fontSize: isMobile ? 10 : 12,
                                 color: Colors.blue,
                               ),
                             ),
                           ),
                         ],
                       ),
-                      const SizedBox(height: 8),
+                      SizedBox(height: isMobile ? 4 : 8),
                       Text(
                         '最近观看：${timeago.format(latestRecord.changeTime, locale: 'zh_CN')}',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: isMobile ? 11 : 13,
                           color: Colors.grey[600],
                         ),
                       ),
@@ -991,6 +1071,8 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildDateGroup(String key, List<HistoricalRecord> records) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return SlideTransition(
       position: Tween<Offset>(
         begin: const Offset(0, 0.2),
@@ -1004,30 +1086,31 @@ class _HistoryPageState extends State<HistoryPage>
         child: IntrinsicHeight(
           child: Row(
             children: [
+              // 移动端使用更窄的时间线
               SizedBox(
-                width: 60,
+                width: isMobile ? 40 : 60,
                 child: Column(
                   children: [
                     Container(
                       width: 2,
-                      height: 24,
+                      height: isMobile ? 16 : 24,
                       color: Colors.grey[300],
                     ),
                     Container(
-                      width: 12,
-                      height: 12,
+                      width: isMobile ? 8 : 12,
+                      height: isMobile ? 8 : 12,
                       decoration: BoxDecoration(
                         color: Theme.of(context).primaryColor,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: Colors.white,
-                          width: 2,
+                          width: isMobile ? 1 : 2,
                         ),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.grey.withOpacity(0.3),
-                            blurRadius: 4,
-                            offset: const Offset(0, 2),
+                            blurRadius: isMobile ? 2 : 4,
+                            offset: Offset(0, isMobile ? 1 : 2),
                           ),
                         ],
                       ),
@@ -1046,22 +1129,27 @@ class _HistoryPageState extends State<HistoryPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: const EdgeInsets.fromLTRB(0, 16, 16, 12),
+                      padding: EdgeInsets.fromLTRB(
+                        0,
+                        isMobile ? 8 : 16,
+                        isMobile ? 8 : 16,
+                        isMobile ? 6 : 12
+                      ),
                       child: Row(
                         children: [
                           Text(
                             _getGroupTitle(key),
                             style: TextStyle(
-                              fontSize: 15,
+                              fontSize: isMobile ? 14 : 15,
                               fontWeight: FontWeight.w600,
                               color: Colors.grey[800],
                             ),
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 6),
                           Text(
                             '(${records.length})',
                             style: TextStyle(
-                              fontSize: 13,
+                              fontSize: isMobile ? 11 : 13,
                               color: Colors.grey[600],
                             ),
                           ),
@@ -1069,7 +1157,7 @@ class _HistoryPageState extends State<HistoryPage>
                       ),
                     ),
                     ...records.map((record) => _buildHistoryCard(record)),
-                    const SizedBox(height: 16),
+                    SizedBox(height: isMobile ? 8 : 16),
                   ],
                 ),
               ),
@@ -1103,6 +1191,9 @@ class _HistoryPageState extends State<HistoryPage>
   }
 
   Widget _buildHistoryCard(HistoricalRecord record) {
+    // 检查是否为移动端
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
     return GestureDetector(
       onSecondaryTapDown: (details) {
         _showContextMenu(context, details.globalPosition, record);
@@ -1149,9 +1240,12 @@ class _HistoryPageState extends State<HistoryPage>
               },
               child: Card(
                 elevation: 0,
-                margin: const EdgeInsets.only(right: 16, bottom: 8),
+                margin: EdgeInsets.only(
+                  right: isMobile ? 8 : 16,
+                  bottom: isMobile ? 6 : 8,
+                ),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(isMobile ? 6 : 8),
                   side: BorderSide(
                     color: _selectedItems.contains(record.videoSha1)
                         ? Colors.blue
@@ -1243,80 +1337,10 @@ class _HistoryPageState extends State<HistoryPage>
                   child: Stack(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 显示截图
-                            _buildScreenshotPreview(record),
-                            const SizedBox(width: 12),
-                            // 视频详情
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _getDisplayPath(record.videoPath),
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Colors.grey[600],
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    record.videoName,
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      Icon(Icons.access_time,
-                                          size: 14, color: Colors.grey[600]),
-                                      const SizedBox(width: 4),
-                                      Expanded(
-                                        child: Text(
-                                          '${timeago.format(record.changeTime, locale: 'zh_CN')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
-                                          style: TextStyle(
-                                            fontSize: 14,
-                                            color: Colors.grey[600],
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                  LinearProgressIndicator(
-                                    value: record.totalVideoDuration > 0
-                                        ? (record.videoSeek /
-                                                record.totalVideoDuration)
-                                            .clamp(0.0, 1.0)
-                                        : 0.0,
-                                    backgroundColor: Colors.grey[200],
-                                    valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.blue[400]!),
-                                    minHeight: 4,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.grey[600],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                        padding: EdgeInsets.all(isMobile ? 8 : 12),
+                        child: isMobile
+                          ? _buildMobileCardContent(record)
+                          : _buildDesktopCardContent(record),
                       ),
                       if (_isSelectMode)
                         Positioned(
@@ -1346,6 +1370,250 @@ class _HistoryPageState extends State<HistoryPage>
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // 构建移动端卡片内容 - 更紧凑的布局
+  Widget _buildMobileCardContent(HistoricalRecord record) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 第一行：视频名称和截图
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 缩小的截图预览
+            _buildMobileScreenshotPreview(record),
+            const SizedBox(width: 8),
+            // 视频信息
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // 视频名称 - 减少行数
+                  Text(
+                    record.videoName,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  // 路径信息 - 更小的字体
+                  Text(
+                    _getDisplayPath(record.videoPath),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[600],
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  // 时间信息 - 简化显示
+                  Text(
+                    timeago.format(record.changeTime, locale: 'zh_CN'),
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey[500],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        // 第二行：进度条和百分比
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            LinearProgressIndicator(
+              value: record.totalVideoDuration > 0
+                  ? (record.videoSeek / record.totalVideoDuration).clamp(0.0, 1.0)
+                  : 0.0,
+              backgroundColor: Colors.grey[200],
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
+              minHeight: 3,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
+              style: TextStyle(
+                fontSize: 10,
+                color: Colors.grey[500],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  // 构建桌面端卡片内容 - 保持原有布局
+  Widget _buildDesktopCardContent(HistoricalRecord record) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 显示截图
+        _buildScreenshotPreview(record),
+        const SizedBox(width: 12),
+        // 视频详情
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _getDisplayPath(record.videoPath),
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                record.videoName,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.access_time,
+                      size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      '${timeago.format(record.changeTime, locale: 'zh_CN')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey[600],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: record.totalVideoDuration > 0
+                    ? (record.videoSeek / record.totalVideoDuration).clamp(0.0, 1.0)
+                    : 0.0,
+                backgroundColor: Colors.grey[200],
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
+                minHeight: 4,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // 构建移动端专用的截图预览 - 更小尺寸
+  Widget _buildMobileScreenshotPreview(HistoricalRecord record) {
+    return FutureBuilder<String?>(
+      future: _getScreenshotPath(record),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return _buildMobileScreenshotPlaceholder();
+        }
+
+        final screenshotPath = snapshot.data;
+        if (screenshotPath == null) {
+          return _buildMobileScreenshotPlaceholder();
+        }
+
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            width: 80,  // 移动端使用更小的宽度
+            height: 45, // 移动端使用更小的高度
+            decoration: BoxDecoration(
+              color: Colors.black,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.file(
+                  File(screenshotPath),
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return _buildMobileScreenshotPlaceholder();
+                  },
+                ),
+                // 播放图标覆盖层 - 更小的图标
+                Positioned.fill(
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.5),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 16,
+                      ),
+                    ),
+                  ),
+                ),
+                // 底部进度指示器
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: LinearProgressIndicator(
+                    value: record.totalVideoDuration > 0
+                        ? (record.videoSeek / record.totalVideoDuration).clamp(0.0, 1.0)
+                        : 0.0,
+                    backgroundColor: Colors.black45,
+                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
+                    minHeight: 2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 构建移动端截图占位符
+  Widget _buildMobileScreenshotPlaceholder() {
+    return Container(
+      width: 80,
+      height: 45,
+      decoration: BoxDecoration(
+        color: Colors.grey[200],
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: const Center(
+        child: Icon(
+          Icons.video_library,
+          color: Colors.grey,
+          size: 20,
         ),
       ),
     );
