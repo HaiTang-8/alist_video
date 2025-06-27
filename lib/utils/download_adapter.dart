@@ -96,6 +96,15 @@ class DownloadAdapter {
     }
   }
 
+  // 刷新任务状态
+  Future<void> refreshTasks() async {
+    if (isMobilePlatform) {
+      await _platformManager.refreshTasks();
+    } else {
+      await _legacyManager.refreshTasks();
+    }
+  }
+
   // 监听任务变化
   void addTaskListener(VoidCallback listener) {
     if (isMobilePlatform) {

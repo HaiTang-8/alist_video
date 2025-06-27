@@ -39,6 +39,22 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
         ),
         actions: [
           IconButton(
+            icon: const Icon(Icons.refresh_outlined),
+            tooltip: '刷新任务状态',
+            color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            onPressed: () async {
+              await DownloadAdapter().refreshTasks();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('任务状态已刷新'),
+                    duration: Duration(seconds: 1),
+                  ),
+                );
+              }
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.folder_open_outlined),
             tooltip: '打开下载文件夹',
             color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),

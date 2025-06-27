@@ -90,20 +90,76 @@ class DownloadManager {
   Future<void> _loadTasks() async {
     final prefs = await SharedPreferences.getInstance();
     final tasksJson = prefs.getStringList('download_tasks') ?? [];
+    final validTasks = <String, DownloadTask>{};
 
     for (final taskStr in tasksJson) {
       try {
         final taskMap = json.decode(taskStr);
         final task = DownloadTask.fromMap(taskMap);
-        if (task.status != '已完成') {
-          task.status = '已暂停';
+
+        // 验证任务的有效性
+        if (await _validateTask(task)) {
+          if (task.status != '已完成') {
+            task.status = '已暂停';
+          }
+          validTasks[task.path] = task;
         }
-        _tasks[task.path] = task;
       } catch (e) {
         print('Error loading task: $e');
       }
     }
+
+    _tasks.clear();
+    _tasks.addAll(validTasks);
     _downloadTaskController.value = Map.from(_tasks);
+
+    // 如果有无效任务被清理，立即保存更新后的任务列表
+    if (validTasks.length != tasksJson.length) {
+      await _saveTasks();
+    }
+  }
+
+  // 验证任务的有效性
+  Future<bool> _validateTask(DownloadTask task) async {
+    try {
+      // 检查文件路径是否有效
+      if (task.filePath.isEmpty) {
+        return false;
+      }
+
+      final file = File(task.filePath);
+
+      if (task.status == '已完成') {
+        // 对于已完成的任务，检查文件是否存在
+        if (!await file.exists()) {
+          return false;
+        }
+
+        // 如果有总字节数信息，验证文件大小是否匹配
+        if (task.totalBytes != null && task.totalBytes! > 0) {
+          final fileSize = await file.length();
+          if (fileSize != task.totalBytes) {
+            // 文件大小不匹配，可能文件被修改或损坏
+            return false;
+          }
+        }
+      } else {
+        // 对于未完成的任务，检查部分下载文件
+        if (await file.exists()) {
+          // 更新已接收字节数
+          task.receivedBytes = await file.length();
+        } else {
+          // 文件不存在，重置进度
+          task.receivedBytes = 0;
+          task.progress = 0;
+        }
+      }
+
+      return true;
+    } catch (e) {
+      print('Error validating task ${task.fileName}: $e');
+      return false;
+    }
   }
 
   // 保存任务到本地
@@ -115,6 +171,11 @@ class DownloadManager {
   }
 
   ValueNotifier<Map<String, DownloadTask>> get tasks => _downloadTaskController;
+
+  // 刷新和验证所有任务状态
+  Future<void> refreshTasks() async {
+    await _loadTasks();
+  }
 
   Future<void> addTask(String path, String fileName) async {
     try {
@@ -279,20 +340,36 @@ class DownloadManager {
   Future<void> removeTask(String path, {bool deleteFile = true}) async {
     final task = _tasks[path];
     if (task != null) {
-      task.cancelToken?.cancel('用户删除任务');
-      _tasks.remove(path);
-      _downloadTaskController.value = Map.from(_tasks);
-      await _saveTasks();
+      try {
+        // 1. 先取消下载任务
+        task.cancelToken?.cancel('用户删除任务');
 
-      if (deleteFile) {
-        try {
-          final file = File(task.filePath);
-          if (await file.exists()) {
-            await file.delete();
+        // 2. 删除文件（如果需要）
+        if (deleteFile && task.filePath.isNotEmpty) {
+          try {
+            final file = File(task.filePath);
+            if (await file.exists()) {
+              await file.delete();
+            }
+          } catch (e) {
+            print("Error deleting file: $e");
+            // 即使文件删除失败，也继续删除任务记录
           }
-        } catch (e) {
-          print("Error deleting file: $e");
         }
+
+        // 3. 从内存中移除任务
+        _tasks.remove(path);
+
+        // 4. 立即更新UI
+        _downloadTaskController.value = Map.from(_tasks);
+
+        // 5. 保存到持久化存储
+        await _saveTasks();
+
+      } catch (e) {
+        print("Error removing task: $e");
+        // 如果出现错误，尝试重新加载任务以保持一致性
+        await _loadTasks();
       }
     }
   }

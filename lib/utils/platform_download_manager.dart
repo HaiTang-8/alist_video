@@ -285,23 +285,77 @@ class PlatformDownloadManager {
   Future<void> _loadTasks() async {
     final prefs = await SharedPreferences.getInstance();
     final tasksJson = prefs.getStringList('unified_download_tasks') ?? [];
+    final validTasks = <String, UnifiedDownloadTask>{};
 
     for (final taskStr in tasksJson) {
       try {
         final taskMap = json.decode(taskStr);
         final task = UnifiedDownloadTask.fromMap(taskMap);
 
-        // 如果任务未完成，设置为暂停状态
-        if (task.status != DownloadStatus.completed) {
-          task.status = DownloadStatus.paused;
+        // 验证任务的有效性
+        if (await _validateTask(task)) {
+          // 如果任务未完成，设置为暂停状态
+          if (task.status != DownloadStatus.completed) {
+            task.status = DownloadStatus.paused;
+          }
+          validTasks[task.id] = task;
         }
-
-        _tasks[task.id] = task;
       } catch (e) {
         debugPrint('Error loading task: $e');
       }
     }
+
+    _tasks.clear();
+    _tasks.addAll(validTasks);
     _taskController.value = Map.from(_tasks);
+
+    // 如果有无效任务被清理，立即保存更新后的任务列表
+    if (validTasks.length != tasksJson.length) {
+      await _saveTasks();
+    }
+  }
+
+  // 验证任务的有效性
+  Future<bool> _validateTask(UnifiedDownloadTask task) async {
+    try {
+      // 检查文件路径是否有效
+      if (task.filePath.isEmpty) {
+        return false;
+      }
+
+      final file = File(task.filePath);
+
+      if (task.status == DownloadStatus.completed) {
+        // 对于已完成的任务，检查文件是否存在
+        if (!await file.exists()) {
+          return false;
+        }
+
+        // 如果有总字节数信息，验证文件大小是否匹配
+        if (task.totalBytes != null && task.totalBytes! > 0) {
+          final fileSize = await file.length();
+          if (fileSize != task.totalBytes) {
+            // 文件大小不匹配，可能文件被修改或损坏
+            return false;
+          }
+        }
+      } else {
+        // 对于未完成的任务，检查部分下载文件
+        if (await file.exists()) {
+          // 更新已接收字节数
+          task.receivedBytes = await file.length();
+        } else {
+          // 文件不存在，重置进度
+          task.receivedBytes = 0;
+          task.progress = 0;
+        }
+      }
+
+      return true;
+    } catch (e) {
+      debugPrint('Error validating task ${task.fileName}: $e');
+      return false;
+    }
   }
 
   // 保存任务
@@ -316,6 +370,11 @@ class PlatformDownloadManager {
     _tasks[task.id] = task;
     _taskController.value = Map.from(_tasks);
     _saveTasks();
+  }
+
+  // 刷新任务状态
+  Future<void> refreshTasks() async {
+    await _loadTasks();
   }
 
   // 显示通知
