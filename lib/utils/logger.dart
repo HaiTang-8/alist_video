@@ -19,7 +19,7 @@ class AppLogger {
   
   AppLogger._internal();
   
-  static const String _logDirName = 'alist_player_logs';
+  static const String _logDirName = 'alist_player/logs';
   static const int _maxLogFiles = 10; // 最多保留10个日志文件
   static const int _maxLogFileSize = 5 * 1024 * 1024; // 5MB
   
