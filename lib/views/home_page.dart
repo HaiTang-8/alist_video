@@ -72,7 +72,7 @@ class _HomePageState extends State<HomePage>
                       ))
                   .toList() ??
               [];
-          _sort((file) => file.name.toLowerCase(), 0, true);
+          _sort((file) => file.modified.millisecondsSinceEpoch, 2, false);
         });
         
         // 检查当前目录是否已收藏
