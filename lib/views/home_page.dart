@@ -1152,22 +1152,48 @@ class _HomePageState extends State<HomePage>
                 ),
                 child: Row(
                   children: [
-                    if (_isSelectMode)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 12),
-                        child: Checkbox(
-                          value: _selectedFiles.contains(file),
-                          onChanged: (checked) {
-                            setState(() {
-                              if (checked == true) {
-                                _selectedFiles.add(file);
-                              } else {
-                                _selectedFiles.remove(file);
-                              }
-                            });
-                          },
-                        ),
-                      ),
+                    // 固定宽度的选择区域，使用小尺寸选择指示器
+                    SizedBox(
+                      width: _isSelectMode ? 32 : 0,
+                      child: _isSelectMode
+                          ? Center(
+                              child: GestureDetector(
+                                onTap: () {
+                                  setState(() {
+                                    if (_selectedFiles.contains(file)) {
+                                      _selectedFiles.remove(file);
+                                    } else {
+                                      _selectedFiles.add(file);
+                                    }
+                                  });
+                                },
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: _selectedFiles.contains(file)
+                                        ? Theme.of(context).primaryColor
+                                        : Colors.transparent,
+                                    border: Border.all(
+                                      color: _selectedFiles.contains(file)
+                                          ? Theme.of(context).primaryColor
+                                          : Colors.grey[400]!,
+                                      width: 2,
+                                    ),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: _selectedFiles.contains(file)
+                                      ? const Icon(
+                                          Icons.check,
+                                          color: Colors.white,
+                                          size: 14,
+                                        )
+                                      : null,
+                                ),
+                              ),
+                            )
+                          : null,
+                    ),
                     Expanded(
                       child: Row(
                         children: [
@@ -1320,7 +1346,7 @@ class _HomePageState extends State<HomePage>
           curve: const Interval(0, 0.6),
         ),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           decoration: BoxDecoration(
             color: Colors.white,
             boxShadow: [
@@ -1452,7 +1478,7 @@ class _HomePageState extends State<HomePage>
     final allVideoFilesSelected = videoFiles.isNotEmpty && selectedVideoFiles.length == videoFiles.length;
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
       decoration: BoxDecoration(
         color: Colors.white,
         boxShadow: [
