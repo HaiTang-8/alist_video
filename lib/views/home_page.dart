@@ -6,6 +6,7 @@ import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
@@ -869,10 +870,10 @@ class _HomePageState extends State<HomePage>
       ),
       body: Column(
         children: <Widget>[
-          // 美化后的面包屑导航栏
-          _buildBreadcrumb(),
-          if (_isSelectMode && _selectedFiles.isNotEmpty)
-            _buildBatchOperationBar(),
+          // 根据模式显示面包屑导航栏或批量操作栏
+          _isSelectMode && _selectedFiles.isNotEmpty
+              ? _buildBatchOperationBar()
+              : _buildBreadcrumb(),
           const Divider(height: 1.0),
           // 美化后的文件列表
           Expanded(
@@ -1105,7 +1106,7 @@ class _HomePageState extends State<HomePage>
         child: Container(
           decoration: BoxDecoration(
             color: _selectedFiles.contains(file)
-                ? Colors.blue.withOpacity(0.1)
+                ? Colors.blue.withValues(alpha: 0.1)
                 : Colors.white,
             border: Border(
               bottom: BorderSide(color: Colors.grey[100]!),
@@ -1135,7 +1136,15 @@ class _HomePageState extends State<HomePage>
                   }
                 }
               },
-              hoverColor: Colors.blue.withOpacity(0.05),
+              onLongPress: () {
+                // 长按启用多选模式
+                HapticFeedback.mediumImpact();
+                setState(() {
+                  _isSelectMode = true;
+                  _selectedFiles.add(file);
+                });
+              },
+              hoverColor: Colors.blue.withValues(alpha: 0.05),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 16.0,
@@ -1178,7 +1187,7 @@ class _HomePageState extends State<HomePage>
                                 child: Container(
                                   padding: const EdgeInsets.all(2),
                                   decoration: BoxDecoration(
-                                    color: Colors.green.withOpacity(0.1),
+                                    color: Colors.green.withValues(alpha: 0.1),
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                   child: const Icon(
@@ -1316,7 +1325,7 @@ class _HomePageState extends State<HomePage>
             color: Colors.white,
             boxShadow: [
               BoxShadow(
-                color: Colors.grey.withOpacity(0.1),
+                color: Colors.grey.withValues(alpha: 0.1),
                 spreadRadius: 1,
                 blurRadius: 3,
                 offset: const Offset(0, 1),
@@ -1328,7 +1337,7 @@ class _HomePageState extends State<HomePage>
               // 刷新按钮
               Container(
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
+                  color: Colors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Material(
@@ -1379,7 +1388,7 @@ class _HomePageState extends State<HomePage>
                                     color: isLast
                                         ? Theme.of(context)
                                             .primaryColor
-                                            .withOpacity(0.1)
+                                            .withValues(alpha: 0.1)
                                         : Colors.transparent,
                                     borderRadius: BorderRadius.circular(6),
                                   ),
@@ -1438,39 +1447,199 @@ class _HomePageState extends State<HomePage>
   }
 
   Widget _buildBatchOperationBar() {
+    final videoFiles = files.where((file) => file.type == 2).toList();
+    final selectedVideoFiles = _selectedFiles.where((file) => file.type == 2).toList();
+    final allVideoFilesSelected = videoFiles.isNotEmpty && selectedVideoFiles.length == videoFiles.length;
+
     return Container(
-      padding: const EdgeInsets.all(8),
-      color: Colors.grey[100],
+      padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withValues(alpha: 0.1),
+            spreadRadius: 1,
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text('已选择 ${_selectedFiles.length} 项'),
-          TextButton.icon(
-            icon: const Icon(Icons.download),
-            label: const Text('批量下载'),
-            onPressed: () {
-              for (var file in _selectedFiles) {
-                if (file.type == 2) {
-                  print('${currentPath.join('/').substring(1)}/${file.name}');
-                  // 只下载文件，不下载文件夹
+          // 退出多选按钮
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.grey.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () {
+                  setState(() {
+                    _isSelectMode = false;
+                    _selectedFiles.clear();
+                  });
+                },
+                child: const Padding(
+                  padding: EdgeInsets.all(8.0),
+                  child: Icon(
+                    Icons.close,
+                    color: Colors.grey,
+                    size: 20.0,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12.0),
+          // 选择状态
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${_selectedFiles.length}',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '已选择 ${_selectedFiles.length} 个项目',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: Colors.grey[800],
+              ),
+            ),
+          ),
+          // 全选按钮
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: _toggleSelectAll,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
+                  border: Border.all(
+                    color: Theme.of(context).primaryColor,
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      allVideoFilesSelected ? Icons.deselect : Icons.select_all,
+                      size: 16,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      allVideoFilesSelected ? '取消全选' : '全选',
+                      style: TextStyle(
+                        color: Theme.of(context).primaryColor,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          // 批量下载按钮
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: selectedVideoFiles.isNotEmpty ? () {
+                for (var file in selectedVideoFiles) {
                   DownloadManager().addTask(
                     currentPath.join('/'),
                     file.name,
                   );
                 }
-              }
-              setState(() {
-                _isSelectMode = false;
-                _selectedFiles.clear();
-              });
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已添加到下载队列')),
-              );
-            },
+                setState(() {
+                  _isSelectMode = false;
+                  _selectedFiles.clear();
+                });
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('已添加 ${selectedVideoFiles.length} 个文件到下载队列')),
+                );
+              } : null,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                decoration: BoxDecoration(
+                  color: selectedVideoFiles.isNotEmpty
+                      ? Colors.blue.withValues(alpha: 0.1)
+                      : Colors.grey.withValues(alpha: 0.1),
+                  border: Border.all(
+                    color: selectedVideoFiles.isNotEmpty
+                        ? Colors.blue
+                        : Colors.grey,
+                    width: 1,
+                  ),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.download_outlined,
+                      size: 16,
+                      color: selectedVideoFiles.isNotEmpty
+                          ? Colors.blue
+                          : Colors.grey,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      '批量下载',
+                      style: TextStyle(
+                        color: selectedVideoFiles.isNotEmpty
+                            ? Colors.blue
+                            : Colors.grey,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ],
       ),
     );
+  }
+
+
+
+  void _toggleSelectAll() {
+    final videoFiles = files.where((file) => file.type == 2).toList();
+    final selectedVideoFiles = _selectedFiles.where((file) => file.type == 2).toList();
+
+    setState(() {
+      if (selectedVideoFiles.length == videoFiles.length && videoFiles.isNotEmpty) {
+        // 如果所有视频文件都已选中，则取消全选
+        _selectedFiles.removeWhere((file) => file.type == 2);
+      } else {
+        // 否则选中所有视频文件
+        _selectedFiles.addAll(videoFiles);
+      }
+    });
   }
 }
 
