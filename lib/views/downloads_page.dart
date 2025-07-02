@@ -138,16 +138,16 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     int failedTasks = tasks.values.where((task) => task.status == '错误').length;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
           ),
         ],
         border: Border.all(
@@ -158,11 +158,11 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
       child: Row(
         children: [
           _buildStatItem('总计', totalTasks, Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           _buildStatItem('下载中', downloadingTasks, Colors.blue),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           _buildStatItem('已完成', completedTasks, Colors.green),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           _buildStatItem('失败', failedTasks, Colors.red),
         ],
       ),
@@ -177,16 +177,16 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
           Text(
             count.toString(),
             style: TextStyle(
-              fontSize: 18,
+              fontSize: 16,
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 1),
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
             ),
           ),
@@ -621,7 +621,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 10),
                       // 进度条
                       Container(
                         height: 3,
@@ -640,7 +640,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                           ),
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 5),
                       // 文件大小信息 - 单独一行
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
