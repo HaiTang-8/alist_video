@@ -110,6 +110,8 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
 
           return Column(
             children: [
+              // 统计信息行
+              _buildStatisticsBar(tasks),
               if (_isSelectMode && _selectedTasks.isNotEmpty)
                 _buildBatchOperationBar(tasks),
               Expanded(
@@ -128,6 +130,71 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     );
   }
 
+  Widget _buildStatisticsBar(Map<String, DownloadTask> tasks) {
+    // 计算各种状态的任务数量
+    int totalTasks = tasks.length;
+    int downloadingTasks = tasks.values.where((task) => task.status == '下载中').length;
+    int completedTasks = tasks.values.where((task) => task.status == '已完成').length;
+    int failedTasks = tasks.values.where((task) => task.status == '错误').length;
+
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          _buildStatItem('总计', totalTasks, Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 16),
+          _buildStatItem('下载中', downloadingTasks, Colors.blue),
+          const SizedBox(width: 16),
+          _buildStatItem('已完成', completedTasks, Colors.green),
+          const SizedBox(width: 16),
+          _buildStatItem('失败', failedTasks, Colors.red),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String label, int count, Color color) {
+    return Expanded(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            count.toString(),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBatchOperationBar(Map<String, DownloadTask> tasks) {
     final selectedTasks = tasks.entries
         .where((entry) => _selectedTasks.contains(entry.key))
@@ -139,15 +206,15 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     final allSelected = _selectedTasks.length == tasks.length;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
           ),
         ],
         border: Border.all(
@@ -157,73 +224,75 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
       ),
       child: Column(
         children: [
-          // 顶部选择状态栏
+          // 顶部选择状态栏 - 与导航栏同高度
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+            height: 56, // 标准AppBar高度
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
               borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
+                topLeft: Radius.circular(12),
+                topRight: Radius.circular(12),
               ),
             ),
             child: Row(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Text(
                     '${_selectedTasks.length}',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onPrimary,
                       fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                      fontSize: 12,
                     ),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     '已选择 ${_selectedTasks.length} 个项目',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 14,
                       fontWeight: FontWeight.w500,
                       color: Theme.of(context).colorScheme.onSurface,
                     ),
                   ),
                 ),
+                // 批量下载按钮
                 Material(
                   color: Colors.transparent,
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(24),
+                    borderRadius: BorderRadius.circular(20),
                     onTap: () => _toggleSelectAll(tasks),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
                         border: Border.all(
                           color: Theme.of(context).colorScheme.primary,
-                          width: 1.5,
+                          width: 1,
                         ),
-                        borderRadius: BorderRadius.circular(24),
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
                             allSelected ? Icons.deselect : Icons.select_all,
-                            size: 18,
+                            size: 16,
                             color: Theme.of(context).colorScheme.primary,
                           ),
-                          const SizedBox(width: 6),
+                          const SizedBox(width: 4),
                           Text(
                             allSelected ? '取消全选' : '全选',
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.primary,
                               fontWeight: FontWeight.w500,
-                              fontSize: 14,
+                              fontSize: 12,
                             ),
                           ),
                         ],
@@ -236,7 +305,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
           ),
           // 操作按钮区域
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(12),
             child: Row(
               children: [
                 if (hasDownloading)
@@ -296,13 +365,13 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(8),
         onTap: onPressed,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
           decoration: BoxDecoration(
             color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: color.withValues(alpha: 0.3),
               width: 1,
@@ -314,14 +383,14 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
               Icon(
                 icon,
                 color: color,
-                size: 24,
+                size: 20,
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 label,
                 style: TextStyle(
                   color: color,
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w500,
                 ),
                 textAlign: TextAlign.center,
@@ -442,17 +511,17 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     final isSelected = _selectedTasks.contains(task.path);
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
         color: _isSelectMode && isSelected
             ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3)
             : Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 6,
+            offset: const Offset(0, 1),
           ),
         ],
         border: Border.all(
@@ -465,7 +534,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(12),
           onLongPress: () {
             // 长按启用多选模式
             HapticFeedback.mediumImpact();
@@ -492,22 +561,22 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                   _showContextMenu(context, details.globalPosition, task);
                 },
           child: Padding(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(12),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 // 文件图标或复选框
                 Container(
                   width: 48,
                   height: 48,
-                  margin: const EdgeInsets.only(right: 16),
+                  margin: const EdgeInsets.only(right: 12),
                   child: _isSelectMode
                       ? Container(
                           decoration: BoxDecoration(
                             color: isSelected
                                 ? Theme.of(context).colorScheme.primary
                                 : Colors.transparent,
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(
                               color: isSelected
                                   ? Theme.of(context).colorScheme.primary
@@ -526,7 +595,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                       : Container(
                           decoration: BoxDecoration(
                             color: _getFileTypeColor(task.fileName).withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Icon(
                             _getFileTypeIcon(task.fileName),
@@ -540,63 +609,28 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // 文件名和操作按钮
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  task.fileName,
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: Theme.of(context).colorScheme.onSurface,
-                                    height: 1.2,
-                                  ),
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                                const SizedBox(height: 4),
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                      decoration: BoxDecoration(
-                                        color: _getStatusColor(task.status).withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Text(
-                                        task.status,
-                                        style: TextStyle(
-                                          color: _getStatusColor(task.status),
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (!_isSelectMode) ...[
-                            const SizedBox(width: 8),
-                            _buildActionIcon(task),
-                          ],
-                        ],
+                      // 文件名
+                      Text(
+                        task.fileName,
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(context).colorScheme.onSurface,
+                          height: 1.2,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 4),
                       // 进度条
                       Container(
-                        height: 6,
+                        height: 3,
                         decoration: BoxDecoration(
                           color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(3),
+                          borderRadius: BorderRadius.circular(2),
                         ),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
+                          borderRadius: BorderRadius.circular(2),
                           child: LinearProgressIndicator(
                             value: task.progress,
                             backgroundColor: Colors.transparent,
@@ -606,7 +640,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                           ),
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 3),
                       // 文件大小信息 - 单独一行
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -615,7 +649,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                             '${_formatSize(task.receivedBytes)} / ${_formatSize(task.totalBytes ?? 0)}',
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                              fontSize: 12,
+                              fontSize: 11,
                               fontWeight: FontWeight.w400,
                             ),
                           ),
@@ -623,7 +657,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                             '${(task.progress * 100).toStringAsFixed(1)}%',
                             style: TextStyle(
                               color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                              fontSize: 12,
+                              fontSize: 11,
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -631,7 +665,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                       ),
                       // 下载速度和剩余时间信息 - 单独一行
                       if (task.status == '下载中' && task.speed != null && task.speed! > 0) ...[
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 2),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
@@ -639,15 +673,15 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                               children: [
                                 Icon(
                                   Icons.download,
-                                  size: 12,
+                                  size: 11,
                                   color: Theme.of(context).colorScheme.primary,
                                 ),
-                                const SizedBox(width: 4),
+                                const SizedBox(width: 3),
                                 Text(
                                   '${_formatSpeed(task.speed!)}/s',
                                   style: TextStyle(
                                     color: Theme.of(context).colorScheme.primary,
-                                    fontSize: 12,
+                                    fontSize: 11,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
@@ -658,7 +692,7 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                                 '剩余 ${_calculateRemainingTime(task)}',
                                 style: TextStyle(
                                   color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
-                                  fontSize: 11,
+                                  fontSize: 10,
                                 ),
                               ),
                           ],
@@ -666,12 +700,12 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                       ],
                       // 错误信息
                       if (task.error != null) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 4),
                         Container(
-                          padding: const EdgeInsets.all(12),
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: Colors.red.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                             border: Border.all(
                               color: Colors.red.withValues(alpha: 0.2),
                               width: 1,
@@ -679,18 +713,18 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                           ),
                           child: Row(
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.error_outline,
                                 color: Colors.red,
-                                size: 16,
+                                size: 14,
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
                                   task.error!,
                                   style: const TextStyle(
                                     color: Colors.red,
-                                    fontSize: 12,
+                                    fontSize: 11,
                                   ),
                                 ),
                               ),
@@ -701,6 +735,11 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                     ],
                   ),
                 ),
+                // 操作按钮列 - 垂直居中在最右侧
+                if (!_isSelectMode) ...[
+                  const SizedBox(width: 12),
+                  _buildActionIcon(task),
+                ],
               ],
             ),
           ),
@@ -919,58 +958,103 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     switch (task.status) {
       case '下载中':
         return Container(
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
             color: Colors.orange.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: IconButton(
-            icon: const Icon(Icons.pause, size: 20),
-            color: Colors.orange,
-            tooltip: '暂停',
-            onPressed: () => DownloadManager().pauseTask(task.path),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => DownloadManager().pauseTask(task.path),
+              child: Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.pause,
+                  size: 24,
+                  color: Colors.orange,
+                ),
+              ),
+            ),
           ),
         );
       case '已暂停':
         return Container(
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
             color: Colors.green.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: IconButton(
-            icon: const Icon(Icons.play_arrow, size: 20),
-            color: Colors.green,
-            tooltip: '继续',
-            onPressed: () => DownloadManager().resumeTask(task.path),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => DownloadManager().resumeTask(task.path),
+              child: Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.play_arrow,
+                  size: 24,
+                  color: Colors.green,
+                ),
+              ),
+            ),
           ),
         );
       case '错误':
         return Container(
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
             color: Colors.red.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
-            color: Colors.red,
-            tooltip: '重试',
-            onPressed: () => DownloadManager().restartTask(task.path),
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => DownloadManager().restartTask(task.path),
+              child: Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                child: const Icon(
+                  Icons.refresh,
+                  size: 24,
+                  color: Colors.red,
+                ),
+              ),
+            ),
           ),
         );
       case '已完成':
         return Container(
+          width: 32,
+          height: 32,
           decoration: BoxDecoration(
             color: Colors.green.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: IconButton(
-            icon: const Icon(Icons.check_circle, size: 20),
-            color: Colors.green,
-            tooltip: '已完成',
-            onPressed: null,
+          child: Container(
+            width: 32,
+            height: 32,
+            alignment: Alignment.center,
+            child: const Icon(
+              Icons.check_circle,
+              size: 24,
+              color: Colors.green,
+            ),
           ),
         );
       default:
-        return const SizedBox();
+        return const SizedBox(width: 32, height: 32);
     }
   }
 
