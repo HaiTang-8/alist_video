@@ -110,10 +110,10 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
 
           return Column(
             children: [
-              // 统计信息行
-              _buildStatisticsBar(tasks),
-              if (_isSelectMode && _selectedTasks.isNotEmpty)
-                _buildBatchOperationBar(tasks),
+              // 根据模式显示统计信息或批量操作
+              _isSelectMode
+                ? _buildBatchOperationBar(tasks)
+                : _buildStatisticsBar(tasks),
               Expanded(
                 child: ListView.builder(
                   itemCount: tasks.length,
@@ -206,10 +206,11 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     final allSelected = _selectedTasks.length == tasks.length;
 
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.04),
@@ -218,139 +219,112 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
           ),
         ],
         border: Border.all(
-          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+          color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.1),
           width: 1,
         ),
       ),
-      child: Column(
+      child: Row(
         children: [
-          // 顶部选择状态栏 - 与导航栏同高度
+          // 选择状态
           Container(
-            height: 56, // 标准AppBar高度
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(12),
-                topRight: Radius.circular(12),
+              color: Theme.of(context).colorScheme.primary,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              '${_selectedTasks.length}',
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
               ),
             ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '已选择 ${_selectedTasks.length} 个项目',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Theme.of(context).colorScheme.onSurface,
+              ),
+            ),
+          ),
+          // 全选/取消全选按钮
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _toggleSelectAll(tasks),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  border: Border.all(
                     color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(16),
+                    width: 1,
                   ),
-                  child: Text(
-                    '${_selectedTasks.length}',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
+                  borderRadius: BorderRadius.circular(16),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    '已选择 ${_selectedTasks.length} 个项目',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: Theme.of(context).colorScheme.onSurface,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      allSelected ? Icons.deselect : Icons.select_all,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.primary,
                     ),
-                  ),
-                ),
-                // 批量下载按钮
-                Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(20),
-                    onTap: () => _toggleSelectAll(tasks),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        border: Border.all(
-                          color: Theme.of(context).colorScheme.primary,
-                          width: 1,
-                        ),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            allSelected ? Icons.deselect : Icons.select_all,
-                            size: 16,
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            allSelected ? '取消全选' : '全选',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontWeight: FontWeight.w500,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(width: 4),
+                    Text(
+                      allSelected ? '取消全选' : '全选',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
+                        fontWeight: FontWeight.w500,
+                        fontSize: 11,
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-          // 操作按钮区域
-          Container(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                if (hasDownloading)
-                  Expanded(
-                    child: _buildActionButton(
-                      icon: Icons.pause_circle_outline,
-                      label: '暂停全部',
-                      color: Colors.orange,
-                      onPressed: () {
-                        for (var task in selectedTasks) {
-                          if (task.status == '下载中') {
-                            DownloadManager().pauseTask(task.path);
-                          }
-                        }
-                      },
-                    ),
-                  ),
-                if (hasDownloading && hasPaused) const SizedBox(width: 12),
-                if (hasPaused)
-                  Expanded(
-                    child: _buildActionButton(
-                      icon: Icons.play_circle_outline,
-                      label: '开始全部',
-                      color: Colors.green,
-                      onPressed: () {
-                        for (var task in selectedTasks) {
-                          if (task.status == '已暂停') {
-                            DownloadManager().resumeTask(task.path);
-                          }
-                        }
-                      },
-                    ),
-                  ),
-                if ((hasDownloading || hasPaused)) const SizedBox(width: 12),
-                Expanded(
-                  child: _buildActionButton(
-                    icon: Icons.delete_outline,
-                    label: '删除',
-                    color: Colors.red,
-                    onPressed: () => _showBatchDeleteDialog(selectedTasks),
-                  ),
-                ),
-              ],
+          // 操作按钮 - 紧凑布局
+          if (selectedTasks.isNotEmpty) ...[
+            const SizedBox(width: 8),
+            if (hasDownloading)
+              _buildCompactActionButton(
+                icon: Icons.pause,
+                color: Colors.orange,
+                onPressed: () {
+                  for (var task in selectedTasks) {
+                    if (task.status == '下载中') {
+                      DownloadManager().pauseTask(task.path);
+                    }
+                  }
+                },
+              ),
+            if (hasPaused) ...[
+              if (hasDownloading) const SizedBox(width: 6),
+              _buildCompactActionButton(
+                icon: Icons.play_arrow,
+                color: Colors.green,
+                onPressed: () {
+                  for (var task in selectedTasks) {
+                    if (task.status == '已暂停') {
+                      DownloadManager().resumeTask(task.path);
+                    }
+                  }
+                },
+              ),
+            ],
+            const SizedBox(width: 6),
+            _buildCompactActionButton(
+              icon: Icons.delete_outline,
+              color: Colors.red,
+              onPressed: () => _showBatchDeleteDialog(selectedTasks),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -396,6 +370,37 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                 textAlign: TextAlign.center,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactActionButton({
+    required IconData icon,
+    required Color color,
+    required VoidCallback onPressed,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onPressed,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: color.withValues(alpha: 0.3),
+              width: 1,
+            ),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: color,
           ),
         ),
       ),
