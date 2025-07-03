@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../utils/download_manager.dart';
 import '../utils/download_adapter.dart';
 import 'log_viewer_page.dart';
+import 'local_video_player.dart';
 import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 
@@ -326,52 +327,6 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required Color color,
-    required VoidCallback onPressed,
-  }) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onPressed,
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: color.withValues(alpha: 0.3),
-              width: 1,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                color: color,
-                size: 20,
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w500,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1040,24 +995,66 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
           ),
         );
       case '已完成':
-        return Container(
-          width: 32,
-          height: 32,
-          decoration: BoxDecoration(
-            color: Colors.green.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Container(
+        // 如果是视频文件，显示播放按钮；否则显示完成图标
+        if (_isVideoFile(task.fileName)) {
+          return Container(
             width: 32,
             height: 32,
-            alignment: Alignment.center,
-            child: const Icon(
-              Icons.check_circle,
-              size: 24,
-              color: Colors.green,
+            decoration: BoxDecoration(
+              color: Colors.blue.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
             ),
-          ),
-        );
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(8),
+                onTap: () async {
+                  final file = File(task.filePath);
+                  if (await file.exists()) {
+                    if (mounted) {
+                      LocalVideoPlayer.playLocalVideo(context, task.filePath, task.fileName);
+                    }
+                  } else {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('视频文件不存在')),
+                      );
+                    }
+                  }
+                },
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.play_arrow,
+                    size: 24,
+                    color: Colors.blue,
+                  ),
+                ),
+              ),
+            ),
+          );
+        } else {
+          return Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Container(
+              width: 32,
+              height: 32,
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.check_circle,
+                size: 24,
+                color: Colors.green,
+              ),
+            ),
+          );
+        }
       default:
         return const SizedBox(width: 32, height: 32);
     }
@@ -1075,6 +1072,24 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
         Offset.zero & overlay.size,
       ),
       items: [
+        if (task.status == '已完成' && _isVideoFile(task.fileName))
+          PopupMenuItem(
+            child: const Row(
+              children: [
+                Icon(Icons.play_arrow, size: 18),
+                SizedBox(width: 8),
+                Text('播放视频'),
+              ],
+            ),
+            onTap: () async {
+              Future.delayed(const Duration(milliseconds: 10), () async {
+                final file = File(task.filePath);
+                if (await file.exists() && mounted) {
+                  LocalVideoPlayer.playLocalVideo(context, task.filePath, task.fileName);
+                }
+              });
+            },
+          ),
         if (task.status == '已完成')
           PopupMenuItem(
             child: const Text('打开文件'),
@@ -1396,5 +1411,25 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
         SnackBar(content: Text('扫描失败: ${e.toString()}')),
       );
     }
+  }
+
+  // 检查是否为视频文件
+  bool _isVideoFile(String fileName) {
+    final extension = fileName.toLowerCase().split('.').last;
+    const videoExtensions = [
+      // 常见视频格式
+      'mp4', 'avi', 'mkv', 'mov', 'wmv', 'flv', 'webm', 'm4v',
+      '3gp', 'mpg', 'mpeg', 'ts', 'mts', 'm2ts', 'vob', 'asf',
+      'rm', 'rmvb', 'divx', 'xvid', 'f4v', 'ogv',
+      // 高清视频格式
+      'mp2', 'mpe', 'mpv', 'm1v', 'm2v', 'mp2v', 'mpg2', 'mpeg2',
+      // 其他格式
+      'dat', 'bin', 'ifo', 'img', 'iso', 'nrg', 'gho', 'fla',
+      // 流媒体格式
+      'm3u8', 'hls', 'dash', 'mpd',
+      // 音视频容器格式
+      'mxf', 'gxf', 'r3d', 'braw', 'ari', 'arw',
+    ];
+    return videoExtensions.contains(extension);
   }
 }
