@@ -89,6 +89,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加字幕相关状态
   SubtitleTrack? _currentSubtitle;
 
+  // 添加音轨相关状态
+  AudioTrack? _currentAudio;
+
   // 添加一个字幕文件列表
   final List<SubtitleInfo> _availableSubtitles = [];
 
@@ -475,12 +478,15 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 打印当前视频的字幕轨道列表
       _logDebug('当前视频字幕轨道列表: ${tracks.subtitle.length}个轨道');
+      // 打印当前视频的音轨列表
+      _logDebug('当前视频音轨列表: ${tracks.audio.length}个轨道');
     });
 
-    // 监听当前选中的字幕
+    // 监听当前选中的字幕和音轨
     player.stream.track.listen((track) {
       setState(() {
         _currentSubtitle = track.subtitle;
+        _currentAudio = track.audio;
       });
     });
 
@@ -1278,6 +1284,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
+                      buildAudioTrackButton(),
                       buildSubtitleButton(),
                       buildScreenshotButton(), // Added screenshot button
                       buildKeyboardShortcutsButton(),
@@ -1373,6 +1380,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
+                      buildAudioTrackButton(),
                       buildSubtitleButton(),
                       buildScreenshotButton(), // Added screenshot button
                       buildKeyboardShortcutsButton(),
@@ -1517,6 +1525,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 const MaterialPositionIndicator(),
                 const Spacer(), // 将全屏按钮推到最右边
                 buildSpeedButton(),
+                buildAudioTrackButton(),
                 buildSubtitleButton(),
                 buildScreenshotButton(), // Added screenshot button
                 buildKeyboardShortcutsButton(),
@@ -1545,6 +1554,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 const MaterialPositionIndicator(),
                 const Spacer(), // 将全屏按钮推到最右边
                 buildSpeedButton(),
+                buildAudioTrackButton(),
                 buildSubtitleButton(),
                 buildScreenshotButton(), // Added screenshot button
                 buildKeyboardShortcutsButton(),
@@ -2685,6 +2695,203 @@ class VideoPlayerState extends State<VideoPlayer> {
         ),
       ),
     );
+  }
+
+  // 添加音轨选择按钮
+  Widget buildAudioTrackButton() {
+    return MaterialCustomButton(
+      onPressed: () {
+        showDialog(
+          context: context,
+          builder: (context) => StatefulBuilder(
+            builder: (context, setDialogState) => Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Container(
+                width: 400,
+                constraints: BoxConstraints(
+                  maxWidth: MediaQuery.of(context).size.width * 0.9,
+                  maxHeight: MediaQuery.of(context).size.height * 0.8,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Row(
+                        children: [
+                          Icon(Icons.audiotrack,
+                              color: Theme.of(context).primaryColor),
+                          const SizedBox(width: 12),
+                          const Text('选择音轨',
+                              style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                              )),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 自动选择选项
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: _buildAudioTrackOption(
+                                context,
+                                AudioTrack.auto(),
+                                '自动选择',
+                                setDialogState,
+                              ),
+                            ),
+
+                            // 禁用音轨选项
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: _buildAudioTrackOption(
+                                context,
+                                AudioTrack.no(),
+                                '禁用音轨',
+                                setDialogState,
+                              ),
+                            ),
+
+                            // 可用音轨列表
+                            if (player.state.tracks.audio.isNotEmpty)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8, bottom: 8),
+                                child: Text(
+                                  '可用音轨',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.grey[800],
+                                  ),
+                                ),
+                              ),
+
+                            ...player.state.tracks.audio.map((track) {
+                              final displayName = _getAudioTrackDisplayName(track);
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: _buildAudioTrackOption(
+                                  context,
+                                  track,
+                                  displayName,
+                                  setDialogState,
+                                ),
+                              );
+                            }),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      icon: Icon(
+        _currentAudio?.id == 'no' ? Icons.volume_off : Icons.audiotrack,
+        color: Colors.white,
+      ),
+    );
+  }
+
+  // 获取音轨显示名称
+  String _getAudioTrackDisplayName(AudioTrack track) {
+    if (track.title?.isNotEmpty == true) {
+      return track.title!;
+    }
+    if (track.language?.isNotEmpty == true) {
+      return track.language!;
+    }
+    return '音轨 ${track.id}';
+  }
+
+  // 构建音轨选项
+  Widget _buildAudioTrackOption(BuildContext context, AudioTrack track,
+      String label, StateSetter setDialogState) {
+    final isSelected = _isAudioTrackSelected(track);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () async {
+          final wasPlaying = player.state.playing;
+          await player.pause();
+
+          try {
+            await player.setAudioTrack(track);
+            setDialogState(() {
+              _currentAudio = track;
+            });
+            _logDebug('音轨切换成功: $label (ID: ${track.id})');
+
+            if (wasPlaying) {
+              await player.play();
+            }
+          } catch (e) {
+            _logDebug('音轨切换失败: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('切换音轨失败: $label'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+
+          if (mounted) {
+            Navigator.pop(context);
+          }
+        },
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 12,
+          ),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? Colors.blue.withValues(alpha: 0.1)
+                : Colors.grey[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isSelected ? Colors.blue : Colors.grey[300]!,
+              width: 1,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.blue : Colors.grey[800],
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 判断音轨是否被选中
+  bool _isAudioTrackSelected(AudioTrack track) {
+    if (track.id == 'auto') {
+      return _currentAudio?.id == 'auto';
+    }
+    if (track.id == 'no') {
+      return _currentAudio?.id == 'no';
+    }
+    return _currentAudio?.id == track.id;
   }
 
   // 添加错误处理方法
