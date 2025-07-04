@@ -210,32 +210,4 @@ class DatabaseConfigPreset {
       return '[]';
     }
   }
-
-  /// 验证主机地址格式
-  static bool _isValidHost(String host) {
-    if (host.trim().isEmpty) return false;
-    
-    // 检查是否为IP地址
-    final ipRegex = RegExp(r'^(\d{1,3}\.){3}\d{1,3}$');
-    if (ipRegex.hasMatch(host)) {
-      // 验证IP地址范围
-      final parts = host.split('.');
-      for (final part in parts) {
-        final num = int.tryParse(part);
-        if (num == null || num < 0 || num > 255) {
-          return false;
-        }
-      }
-      return true;
-    }
-    
-    // 检查是否为域名（简单验证）
-    final domainRegex = RegExp(r'^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)*$');
-    return domainRegex.hasMatch(host) || host == 'localhost';
-  }
-
-  /// 验证端口号
-  static bool _isValidPort(int port) {
-    return port > 0 && port <= 65535;
-  }
 }
