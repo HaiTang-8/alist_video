@@ -48,6 +48,19 @@ class FsApi {
     });
     return FsResp.fromJson(res.data);
   }
+
+  static Future<FsResp> rename({
+    required String path,
+    required String name,
+    String password = '',
+  }) async {
+    var res = await WooHttpUtil().post('/api/fs/rename', data: {
+      'path': path,
+      'name': name,
+      'password': password,
+    });
+    return FsResp.fromJson(res.data);
+  }
 }
 
 class FsGetResponse {

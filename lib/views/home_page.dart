@@ -1,10 +1,12 @@
 import 'dart:ui';
 
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/models/file_item.dart';
 import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
+import 'package:alist_player/widgets/batch_rename_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -855,7 +857,12 @@ class _HomePageState extends State<HomePage>
               icon: const Icon(Icons.search),
               onPressed: _showSearchDialog,
             ),
-            if (files.isNotEmpty)
+            if (files.isNotEmpty) ...[
+              // 批量重命名按钮
+              IconButton(
+                icon: const Icon(Icons.drive_file_rename_outline),
+                onPressed: () => _showBatchRenameDialog(),
+              ),
               IconButton(
                 icon: Icon(_isSelectMode ? Icons.close : Icons.checklist),
                 onPressed: () {
@@ -865,6 +872,7 @@ class _HomePageState extends State<HomePage>
                   });
                 },
               ),
+            ],
           ],
         ],
       ),
@@ -1653,6 +1661,20 @@ class _HomePageState extends State<HomePage>
 
 
 
+  void _showBatchRenameDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => BatchRenameDialog(
+        files: files,
+        currentPath: currentPath.join('/'),
+        onRenameComplete: () {
+          // 重新加载文件列表
+          _getList(refresh: true);
+        },
+      ),
+    );
+  }
+
   void _toggleSelectAll() {
     final videoFiles = files.where((file) => file.type == 2).toList();
     final selectedVideoFiles = _selectedFiles.where((file) => file.type == 2).toList();
@@ -1667,24 +1689,4 @@ class _HomePageState extends State<HomePage>
       }
     });
   }
-}
-
-class FileItem {
-  final String name;
-  final int size;
-  final DateTime modified;
-  final int type;
-  final String sha1;
-  final String parent;
-  HistoricalRecord? historyRecord; // 添加历史记录字段
-
-  FileItem({
-    required this.name,
-    required this.size,
-    required this.modified,
-    required this.type,
-    required this.sha1,
-    required this.parent,
-    this.historyRecord,
-  });
 }
