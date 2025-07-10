@@ -7,6 +7,7 @@ import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:alist_player/widgets/batch_rename_dialog.dart';
+import 'package:alist_player/widgets/quick_regex_rename_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -858,9 +859,16 @@ class _HomePageState extends State<HomePage>
               onPressed: _showSearchDialog,
             ),
             if (files.isNotEmpty) ...[
+              // 快捷正则重命名按钮
+              IconButton(
+                icon: const Icon(Icons.find_replace),
+                tooltip: '快捷正则重命名',
+                onPressed: () => _showQuickRegexRenameDialog(),
+              ),
               // 批量重命名按钮
               IconButton(
                 icon: const Icon(Icons.drive_file_rename_outline),
+                tooltip: '批量重命名',
                 onPressed: () => _showBatchRenameDialog(),
               ),
               IconButton(
@@ -1688,5 +1696,19 @@ class _HomePageState extends State<HomePage>
         _selectedFiles.addAll(videoFiles);
       }
     });
+  }
+
+  void _showQuickRegexRenameDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => QuickRegexRenameDialog(
+        files: files,
+        currentPath: currentPath.join('/'),
+        onRenameComplete: () {
+          // 重新加载文件列表
+          _getList(refresh: true);
+        },
+      ),
+    );
   }
 }

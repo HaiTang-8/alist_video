@@ -495,6 +495,74 @@ class DatabaseHelper {
     }
   }
 
+  // 批量更新历史记录的文件路径和名称（用于文件重命名后同步数据库）
+  Future<void> batchUpdateHistoricalRecordPaths({
+    required List<Map<String, dynamic>> renameMap,
+    required String basePath,
+    required int userId,
+  }) async {
+    try {
+      print('开始批量更新历史记录路径，共 ${renameMap.length} 个项目');
+
+      int successCount = 0;
+      int failCount = 0;
+
+      for (var rename in renameMap) {
+        final oldName = rename['oldName'] as String;
+        final newName = rename['newName'] as String;
+        final fileType = rename['type'] as int; // 1=文件夹, 2=文件
+
+        try {
+          if (fileType == 1) {
+            // 文件夹重命名：更新 video_path 中包含该文件夹路径的记录
+            final oldFolderPath = '$basePath/$oldName';
+            final newFolderPath = '$basePath/$newName';
+
+            await query('''
+              UPDATE t_historical_records
+              SET video_path = REPLACE(video_path, @oldFolderPath, @newFolderPath)
+              WHERE video_path LIKE @oldFolderPathPattern
+              AND user_id = @userId
+            ''', {
+              'oldFolderPath': oldFolderPath,
+              'newFolderPath': newFolderPath,
+              'oldFolderPathPattern': '$oldFolderPath%',
+              'userId': userId,
+            });
+
+            print('更新文件夹历史记录成功: $oldName -> $newName');
+          } else if (fileType == 2) {
+            // 文件重命名：更新 video_name
+            await query('''
+              UPDATE t_historical_records
+              SET video_name = @newName
+              WHERE video_path = @basePath
+              AND video_name = @oldName
+              AND user_id = @userId
+            ''', {
+              'newName': newName,
+              'basePath': basePath,
+              'oldName': oldName,
+              'userId': userId,
+            });
+
+            print('更新文件历史记录成功: $oldName -> $newName');
+          }
+
+          successCount++;
+        } catch (e) {
+          failCount++;
+          print('更新历史记录失败: $oldName -> $newName, 错误: $e');
+        }
+      }
+
+      print('批量更新历史记录完成: 成功 $successCount 个, 失败 $failCount 个');
+    } catch (e) {
+      print('批量更新历史记录异常: $e');
+      rethrow;
+    }
+  }
+
   Future<void> saveHistoricalRecord(HistoricalRecord record) async {
     try {
       if (record.screenshot != null) {

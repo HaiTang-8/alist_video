@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:alist_player/models/file_item.dart';
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/utils/db.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
 
 class RenamePreview {
   final String originalName;
@@ -44,7 +48,6 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
   // 选项
   bool _matchCase = false;
   bool _onlyFirstMatch = false;
-  bool _useRegex = false;
 
   // 内置正则模式
   int _builtInRegexPattern = -1; // -1: 自定义, 0: 删除[]内容, 1: 删除()内容, 2: 删除【】内容, 3: 删除所有括号内容
@@ -180,6 +183,128 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
     }
   }
 
+  // 重命名截图文件的方法
+  Future<void> _renameScreenshotFiles({
+    required String oldName,
+    required String newName,
+    required String basePath,
+    required int fileType, // 1=文件夹, 2=文件
+  }) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final screenshotDir = Directory('${directory.path}/alist_player');
+
+      if (!await screenshotDir.exists()) {
+        return; // 截图目录不存在，无需处理
+      }
+
+      if (fileType == 1) {
+        // 文件夹重命名：需要重命名所有包含该文件夹路径的截图文件
+        await _renameFolderScreenshots(
+          screenshotDir: screenshotDir,
+          oldFolderName: oldName,
+          newFolderName: newName,
+          basePath: basePath,
+        );
+      } else if (fileType == 2) {
+        // 视频文件重命名：重命名对应的截图文件
+        await _renameVideoScreenshots(
+          screenshotDir: screenshotDir,
+          oldVideoName: oldName,
+          newVideoName: newName,
+          videoPath: basePath,
+        );
+      }
+
+    } catch (e) {
+      debugPrint('重命名截图文件失败: $oldName -> $newName, 错误: $e');
+      // 截图文件重命名失败不影响主要的重命名流程
+    }
+  }
+
+  // 重命名文件夹相关的截图文件
+  Future<void> _renameFolderScreenshots({
+    required Directory screenshotDir,
+    required String oldFolderName,
+    required String newFolderName,
+    required String basePath,
+  }) async {
+    try {
+      // 构建旧的和新的文件夹路径
+      final String oldFolderPath = '$basePath/$oldFolderName';
+      final String newFolderPath = '$basePath/$newFolderName';
+
+      // 清理路径中的非法字符
+      final String sanitizedOldFolderPath = oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewFolderPath = newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+
+      // 遍历截图目录中的所有文件
+      final List<FileSystemEntity> files = screenshotDir.listSync();
+
+      for (final file in files) {
+        if (file is File) {
+          final String fileName = file.path.split('/').last;
+
+          // 检查文件名是否包含旧的文件夹路径
+          if (fileName.startsWith('screenshot_$sanitizedOldFolderPath')) {
+            // 构建新的文件名
+            final String newFileName = fileName.replaceFirst(
+              'screenshot_$sanitizedOldFolderPath',
+              'screenshot_$sanitizedNewFolderPath',
+            );
+
+            final String newFilePath = '${screenshotDir.path}/$newFileName';
+
+            // 重命名文件
+            await file.rename(newFilePath);
+            debugPrint('文件夹截图重命名成功: $fileName -> $newFileName');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('重命名文件夹截图失败: $oldFolderName -> $newFolderName, 错误: $e');
+    }
+  }
+
+  // 重命名视频文件的截图文件
+  Future<void> _renameVideoScreenshots({
+    required Directory screenshotDir,
+    required String oldVideoName,
+    required String newVideoName,
+    required String videoPath,
+  }) async {
+    try {
+      // 清理文件名中的非法字符，与视频播放器中的逻辑保持一致
+      final String sanitizedVideoPath = videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedOldVideoName = oldVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewVideoName = newVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+
+      // 尝试重命名 JPEG 格式的截图文件
+      final String oldJpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.jpg';
+      final String newJpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.jpg';
+      final File oldJpegFile = File('${screenshotDir.path}/$oldJpegFileName');
+      final File newJpegFile = File('${screenshotDir.path}/$newJpegFileName');
+
+      if (await oldJpegFile.exists()) {
+        await oldJpegFile.rename(newJpegFile.path);
+        debugPrint('视频截图重命名成功: $oldJpegFileName -> $newJpegFileName');
+      }
+
+      // 尝试重命名 PNG 格式的截图文件（向后兼容）
+      final String oldPngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.png';
+      final String newPngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.png';
+      final File oldPngFile = File('${screenshotDir.path}/$oldPngFileName');
+      final File newPngFile = File('${screenshotDir.path}/$newPngFileName');
+
+      if (await oldPngFile.exists()) {
+        await oldPngFile.rename(newPngFile.path);
+        debugPrint('视频截图重命名成功: $oldPngFileName -> $newPngFileName');
+      }
+    } catch (e) {
+      debugPrint('重命名视频截图失败: $oldVideoName -> $newVideoName, 错误: $e');
+    }
+  }
+
   Future<void> _performBatchRename() async {
     try {
       // 显示进度对话框
@@ -199,18 +324,35 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
 
       int successCount = 0;
       int failCount = 0;
+      List<Map<String, dynamic>> successfulRenames = [];
 
       // 逐个重命名文件
-      for (var preview in _previewList) {
+      for (int i = 0; i < _previewList.length; i++) {
+        final preview = _previewList[i];
         if (preview.hasChanged) {
           try {
             final response = await FsApi.rename(
               path: '${widget.currentPath}/${preview.originalName}',
               name: preview.newName,
             );
-            
+
             if (response.code == 200) {
               successCount++;
+              // 记录成功的重命名操作，用于后续更新数据库
+              // 包含文件类型信息以便正确更新数据库
+              successfulRenames.add({
+                'oldName': preview.originalName,
+                'newName': preview.newName,
+                'type': widget.files[i].type, // 1=文件夹, 2=文件
+              });
+
+              // 重命名对应的截图文件（无论是文件还是文件夹）
+              await _renameScreenshotFiles(
+                oldName: preview.originalName,
+                newName: preview.newName,
+                basePath: widget.currentPath,
+                fileType: widget.files[i].type,
+              );
             } else {
               failCount++;
               debugPrint('重命名失败: ${preview.originalName} -> ${preview.newName}, 错误: ${response.message}');
@@ -221,14 +363,36 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
           }
         }
       }
-      
+
+      // 如果有成功的重命名操作，更新数据库中的历史记录
+      if (successfulRenames.isNotEmpty) {
+        try {
+          // 获取当前用户名
+          final prefs = await SharedPreferences.getInstance();
+          final currentUsername = prefs.getString('current_username') ?? 'unknown';
+          final userId = currentUsername.hashCode;
+
+          // 批量更新数据库中的历史记录路径
+          await DatabaseHelper.instance.batchUpdateHistoricalRecordPaths(
+            renameMap: successfulRenames,
+            basePath: widget.currentPath,
+            userId: userId,
+          );
+
+          debugPrint('数据库历史记录更新完成');
+        } catch (e) {
+          debugPrint('更新数据库历史记录失败: $e');
+          // 数据库更新失败不影响文件重命名的成功状态
+        }
+      }
+
       // 关闭进度对话框
       if (mounted) {
         Navigator.of(context).pop();
-        
+
         // 关闭重命名对话框
         Navigator.of(context).pop();
-        
+
         // 显示结果
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -237,15 +401,15 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
           ),
         );
       }
-      
+
       // 刷新文件列表
       widget.onRenameComplete();
-      
+
     } catch (e) {
       // 关闭进度对话框
       if (mounted) {
         Navigator.of(context).pop();
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('批量重命名失败: $e'),
