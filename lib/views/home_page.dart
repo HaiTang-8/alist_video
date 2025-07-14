@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:alist_player/apis/fs.dart';
@@ -11,6 +12,7 @@ import 'package:alist_player/widgets/quick_regex_rename_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:toastification/toastification.dart';
 
@@ -1153,12 +1155,9 @@ class _HomePageState extends State<HomePage>
                 }
               },
               onLongPress: () {
-                // 长按启用多选模式
+                // 长按显示上下文菜单
                 HapticFeedback.mediumImpact();
-                setState(() {
-                  _isSelectMode = true;
-                  _selectedFiles.add(file);
-                });
+                _showContextMenu(context, file);
               },
               hoverColor: Colors.blue.withValues(alpha: 0.05),
               child: Padding(
@@ -1710,5 +1709,286 @@ class _HomePageState extends State<HomePage>
         },
       ),
     );
+  }
+
+  // 显示上下文菜单
+  void _showContextMenu(BuildContext context, FileItem file) {
+    showModalBottomSheet(
+      context: context,
+      builder: (BuildContext context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('重命名'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSingleRenameDialog(file);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.select_all),
+                title: const Text('启用多选模式'),
+                onTap: () {
+                  Navigator.pop(context);
+                  setState(() {
+                    _isSelectMode = true;
+                    _selectedFiles.add(file);
+                  });
+                },
+              ),
+              if (file.type == 2) // 只对视频文件显示下载选项
+                ListTile(
+                  leading: const Icon(Icons.download),
+                  title: const Text('下载'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    DownloadManager().addTask(
+                      currentPath.join('/'),
+                      file.name,
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('已添加 ${file.name} 到下载队列')),
+                    );
+                  },
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 显示单个文件重命名对话框
+  void _showSingleRenameDialog(FileItem file) {
+    final TextEditingController controller = TextEditingController(text: file.name);
+
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Text('重命名${file.type == 1 ? '文件夹' : '文件'}'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: '新名称',
+              border: OutlineInputBorder(),
+            ),
+            autofocus: true,
+            onSubmitted: (value) {
+              if (value.trim().isNotEmpty && value.trim() != file.name) {
+                Navigator.pop(context);
+                _renameSingleFile(file, value.trim());
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () {
+                final newName = controller.text.trim();
+                if (newName.isNotEmpty && newName != file.name) {
+                  Navigator.pop(context);
+                  _renameSingleFile(file, newName);
+                }
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // 重命名单个文件
+  Future<void> _renameSingleFile(FileItem file, String newName) async {
+    try {
+      final response = await FsApi.rename(
+        path: '${currentPath.join('/')}/${file.name}',
+        name: newName,
+      );
+
+      if (response.code == 200) {
+        // 重命名截图文件
+        await _renameSingleScreenshotFile(
+          oldName: file.name,
+          newName: newName,
+          basePath: currentPath.join('/'),
+          fileType: file.type,
+        );
+
+        // 更新数据库记录
+        await _updateDatabaseForSingleRename(
+          oldName: file.name,
+          newName: newName,
+          fileType: file.type,
+        );
+
+        // 重新加载文件列表
+        _getList(refresh: true);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${file.name} 重命名为 $newName 成功')),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('重命名失败: ${response.message}')),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('重命名失败: $e')),
+        );
+      }
+    }
+  }
+
+  // 重命名单个文件的截图文件
+  Future<void> _renameSingleScreenshotFile({
+    required String oldName,
+    required String newName,
+    required String basePath,
+    required int fileType,
+  }) async {
+    try {
+      final directory = await getApplicationDocumentsDirectory();
+      final screenshotDir = Directory('${directory.path}/alist_player');
+
+      if (!await screenshotDir.exists()) {
+        return;
+      }
+
+      if (fileType == 1) {
+        // 文件夹重命名：需要重命名所有包含该文件夹路径的截图文件
+        await _renameFolderScreenshotsForSingle(
+          screenshotDir: screenshotDir,
+          oldFolderName: oldName,
+          newFolderName: newName,
+          basePath: basePath,
+        );
+      } else if (fileType == 2) {
+        // 视频文件重命名：重命名对应的截图文件
+        await _renameVideoScreenshotsForSingle(
+          screenshotDir: screenshotDir,
+          oldVideoName: oldName,
+          newVideoName: newName,
+          videoPath: basePath,
+        );
+      }
+    } catch (e) {
+      debugPrint('重命名截图文件失败: $oldName -> $newName, 错误: $e');
+    }
+  }
+
+  // 重命名文件夹相关的截图文件（单个文件版本）
+  Future<void> _renameFolderScreenshotsForSingle({
+    required Directory screenshotDir,
+    required String oldFolderName,
+    required String newFolderName,
+    required String basePath,
+  }) async {
+    try {
+      final String oldFolderPath = '$basePath/$oldFolderName';
+      final String newFolderPath = '$basePath/$newFolderName';
+
+      final String sanitizedOldFolderPath = oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewFolderPath = newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+
+      final List<FileSystemEntity> files = screenshotDir.listSync();
+
+      for (final file in files) {
+        if (file is File) {
+          final String fileName = file.path.split('/').last;
+
+          if (fileName.startsWith('screenshot_$sanitizedOldFolderPath')) {
+            final String newFileName = fileName.replaceFirst(
+              'screenshot_$sanitizedOldFolderPath',
+              'screenshot_$sanitizedNewFolderPath',
+            );
+
+            final String newFilePath = '${screenshotDir.path}/$newFileName';
+            await file.rename(newFilePath);
+            debugPrint('文件夹截图重命名成功: $fileName -> $newFileName');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('重命名文件夹截图失败: $oldFolderName -> $newFolderName, 错误: $e');
+    }
+  }
+
+  // 重命名视频文件相关的截图文件（单个文件版本）
+  Future<void> _renameVideoScreenshotsForSingle({
+    required Directory screenshotDir,
+    required String oldVideoName,
+    required String newVideoName,
+    required String videoPath,
+  }) async {
+    try {
+      final String sanitizedOldVideoPath = '$videoPath/$oldVideoName'.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewVideoPath = '$videoPath/$newVideoName'.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+
+      final List<FileSystemEntity> files = screenshotDir.listSync();
+
+      for (final file in files) {
+        if (file is File) {
+          final String fileName = file.path.split('/').last;
+
+          if (fileName.startsWith('screenshot_$sanitizedOldVideoPath')) {
+            final String newFileName = fileName.replaceFirst(
+              'screenshot_$sanitizedOldVideoPath',
+              'screenshot_$sanitizedNewVideoPath',
+            );
+
+            final String newFilePath = '${screenshotDir.path}/$newFileName';
+            await file.rename(newFilePath);
+            debugPrint('视频截图重命名成功: $fileName -> $newFileName');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('重命名视频截图失败: $oldVideoName -> $newVideoName, 错误: $e');
+    }
+  }
+
+  // 更新数据库记录（单个文件重命名）
+  Future<void> _updateDatabaseForSingleRename({
+    required String oldName,
+    required String newName,
+    required int fileType,
+  }) async {
+    try {
+      // 获取当前用户名
+      final prefs = await SharedPreferences.getInstance();
+      final currentUsername = prefs.getString('current_username') ?? 'unknown';
+      final userId = currentUsername.hashCode;
+
+      // 使用现有的批量更新方法，传入单个重命名项
+      final renameMap = [{
+        'oldName': oldName,
+        'newName': newName,
+        'type': fileType,
+      }];
+
+      await DatabaseHelper.instance.batchUpdateHistoricalRecordPaths(
+        renameMap: renameMap,
+        basePath: currentPath.join('/'),
+        userId: userId,
+      );
+
+      debugPrint('数据库记录更新成功: $oldName -> $newName');
+    } catch (e) {
+      debugPrint('更新数据库记录失败: $oldName -> $newName, 错误: $e');
+    }
   }
 }
