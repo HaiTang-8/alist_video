@@ -101,6 +101,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加搜索结果状态
   String _subtitleSearchQuery = '';
 
+  // 添加智能匹配字幕相关变量
+  SubtitleInfo? _smartMatchedSubtitle;
+
   // 处理错误管理相关变量
   final Map<String, DateTime> _shownErrors = {};
   static const _errorCooldown = Duration(seconds: 5);
@@ -265,6 +268,13 @@ class VideoPlayerState extends State<VideoPlayer> {
           if (!_isShowingLocalFileDialog) {
             await _checkAndPlayLocalFile(videoName);
           }
+
+          // 延迟一段时间后自动应用智能匹配的字幕，确保视频已经开始播放
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (mounted) {
+              _autoApplySmartMatchedSubtitle();
+            }
+          });
         }
 
         final totalTime = DateTime.now().difference(startTime).inMilliseconds;
@@ -430,6 +440,13 @@ class VideoPlayerState extends State<VideoPlayer> {
     Future.delayed(const Duration(seconds: 2), () {
       _isInitialLoading = false;
       _logDebug('初始加载标记设置为false');
+    });
+
+    // 3秒后尝试智能匹配初始视频的字幕
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        _autoApplySmartMatchedSubtitle();
+      }
     });
 
     // Modified playlist change handler to check for local files
@@ -1657,6 +1674,123 @@ class VideoPlayerState extends State<VideoPlayer> {
     return '${path}_$name'.hashCode.toString();
   }
 
+  // 智能匹配字幕方法
+  SubtitleInfo? _smartMatchSubtitle(String videoName) {
+    if (_availableSubtitles.isEmpty) return null;
+
+    _logDebug('开始智能匹配字幕，视频名称: $videoName');
+
+    // 提取视频名称中的SxxxExx模式
+    final seasonEpisodePattern = RegExp(r'[Ss](\d+)[Ee](\d+)', caseSensitive: false);
+    final videoMatch = seasonEpisodePattern.firstMatch(videoName);
+
+    if (videoMatch == null) {
+      _logDebug('视频名称中未找到SxxxExx模式，尝试直接名称匹配');
+      // 如果没有找到SxxxExx模式，尝试直接匹配文件名（去除扩展名）
+      final videoNameWithoutExt = videoName.replaceAll(RegExp(r'\.[^.]+$'), '');
+
+      for (final subtitle in _availableSubtitles) {
+        final subtitleNameWithoutExt = subtitle.name.replaceAll(RegExp(r'\.[^.]+$'), '');
+        if (subtitleNameWithoutExt.toLowerCase().contains(videoNameWithoutExt.toLowerCase()) ||
+            videoNameWithoutExt.toLowerCase().contains(subtitleNameWithoutExt.toLowerCase())) {
+          _logDebug('通过名称匹配找到字幕: ${subtitle.name}');
+          return subtitle;
+        }
+      }
+      return null;
+    }
+
+    final season = videoMatch.group(1)!;
+    final episode = videoMatch.group(2)!;
+    _logDebug('提取到季集信息: S${season}E${episode}');
+
+    // 创建多种可能的匹配模式
+    final patterns = [
+      RegExp('S${season}E${episode}', caseSensitive: false),
+      RegExp('s${season}e${episode}', caseSensitive: false),
+      RegExp('S${season.padLeft(2, '0')}E${episode.padLeft(2, '0')}', caseSensitive: false),
+      RegExp('s${season.padLeft(2, '0')}e${episode.padLeft(2, '0')}', caseSensitive: false),
+      RegExp('${season}x${episode.padLeft(2, '0')}', caseSensitive: false),
+      RegExp('${season.padLeft(2, '0')}x${episode.padLeft(2, '0')}', caseSensitive: false),
+    ];
+
+    // 按优先级匹配字幕
+    for (final pattern in patterns) {
+      for (final subtitle in _availableSubtitles) {
+        if (pattern.hasMatch(subtitle.name)) {
+          _logDebug('智能匹配成功，找到字幕: ${subtitle.name}');
+          return subtitle;
+        }
+      }
+    }
+
+    _logDebug('智能匹配失败，未找到匹配的字幕');
+    return null;
+  }
+
+  // 自动应用智能匹配的字幕
+  Future<void> _autoApplySmartMatchedSubtitle() async {
+    if (_availableSubtitles.isEmpty) return;
+
+    final currentVideoName = playList.isNotEmpty && currentPlayingIndex < playList.length
+        ? playList[currentPlayingIndex].extras!['name'] as String
+        : '';
+
+    if (currentVideoName.isEmpty) return;
+
+    final matchedSubtitle = _smartMatchSubtitle(currentVideoName);
+    if (matchedSubtitle != null) {
+      _smartMatchedSubtitle = matchedSubtitle;
+      _logDebug('自动应用智能匹配的字幕: ${matchedSubtitle.name}');
+
+      try {
+        final wasPlaying = player.state.playing;
+        await player.pause();
+
+        // 先清除当前字幕
+        await player.setSubtitleTrack(SubtitleTrack.no());
+
+        // 加载匹配的外部字幕
+        await player.setSubtitleTrack(
+          SubtitleTrack.uri(
+            matchedSubtitle.rawUrl,
+            title: matchedSubtitle.name,
+          ),
+        );
+
+        setState(() {
+          _currentSubtitle = SubtitleTrack.uri(
+            matchedSubtitle.rawUrl,
+            title: matchedSubtitle.name,
+          );
+        });
+
+        _logDebug('智能匹配字幕加载成功: ${matchedSubtitle.name}');
+
+        if (wasPlaying) {
+          await player.play();
+        }
+
+        // 显示提示信息
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('已自动加载匹配字幕: ${matchedSubtitle.name}'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        _logDebug('自动加载智能匹配字幕失败: $e');
+        _smartMatchedSubtitle = null;
+      }
+    } else {
+      _smartMatchedSubtitle = null;
+      _logDebug('未找到匹配的字幕，不自动加载');
+    }
+  }
+
   // 获取中文星期几
   String _getChineseWeekday(int weekday) {
     const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -2431,6 +2565,80 @@ class VideoPlayerState extends State<VideoPlayer> {
                               });
                             },
                           ),
+                          const SizedBox(height: 12),
+                          // 添加智能匹配按钮
+                          if (_availableSubtitles.isNotEmpty)
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton.icon(
+                                onPressed: () async {
+                                  final currentVideoName = playList.isNotEmpty && currentPlayingIndex < playList.length
+                                      ? playList[currentPlayingIndex].extras!['name'] as String
+                                      : '';
+
+                                  if (currentVideoName.isNotEmpty) {
+                                    final matchedSubtitle = _smartMatchSubtitle(currentVideoName);
+                                    if (matchedSubtitle != null) {
+                                      // 自动加载匹配的字幕
+                                      final wasPlaying = player.state.playing;
+                                      await player.pause();
+
+                                      try {
+                                        await player.setSubtitleTrack(SubtitleTrack.no());
+                                        await player.setSubtitleTrack(
+                                          SubtitleTrack.uri(
+                                            matchedSubtitle.rawUrl,
+                                            title: matchedSubtitle.name,
+                                          ),
+                                        );
+
+                                        setDialogState(() {
+                                          _smartMatchedSubtitle = matchedSubtitle;
+                                          _currentSubtitle = SubtitleTrack.uri(
+                                            matchedSubtitle.rawUrl,
+                                            title: matchedSubtitle.name,
+                                          );
+                                        });
+
+                                        if (wasPlaying) {
+                                          await player.play();
+                                        }
+
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('智能匹配成功: ${matchedSubtitle.name}'),
+                                            backgroundColor: Colors.green,
+                                            duration: const Duration(seconds: 2),
+                                          ),
+                                        );
+                                      } catch (e) {
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            content: Text('加载字幕失败: ${matchedSubtitle.name}'),
+                                            backgroundColor: Colors.red,
+                                          ),
+                                        );
+                                      }
+                                    } else {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('未找到匹配的字幕'),
+                                          backgroundColor: Colors.orange,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                                icon: const Icon(Icons.auto_fix_high, size: 18),
+                                label: const Text('智能匹配字幕'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.blue[50],
+                                  foregroundColor: Colors.blue[700],
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                ),
+                              ),
+                            ),
                         ],
                       ),
                     ),
@@ -2499,12 +2707,39 @@ class VideoPlayerState extends State<VideoPlayer> {
                               Padding(
                                 padding:
                                     const EdgeInsets.only(top: 16, bottom: 8),
-                                child: Text(
-                                  '外部字幕文件',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.grey[800],
-                                  ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      '外部字幕文件',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.grey[800],
+                                      ),
+                                    ),
+                                    if (_smartMatchedSubtitle != null)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.green.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(4),
+                                          border: Border.all(
+                                            color: Colors.green.withOpacity(0.3),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          '已智能匹配',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            color: Colors.green[700],
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
                                 ),
                               ),
 
@@ -2607,12 +2842,41 @@ class VideoPlayerState extends State<VideoPlayer> {
               width: 1,
             ),
           ),
-          child: Text(
-            subtitle.name,
-            style: TextStyle(
-              color: isSelected ? Colors.blue : Colors.grey[800],
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
-            ),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  subtitle.name,
+                  style: TextStyle(
+                    color: isSelected ? Colors.blue : Colors.grey[800],
+                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  ),
+                ),
+              ),
+              if (_smartMatchedSubtitle?.name == subtitle.name)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(
+                      color: Colors.green.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Text(
+                    '智能匹配',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.green[700],
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
       ),
