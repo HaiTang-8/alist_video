@@ -285,6 +285,41 @@ class VideoPlayerState extends State<VideoPlayer> {
     });
   }
 
+  // 异步处理视频切换时的操作（不包含进度保存），避免阻塞UI
+  void _handleVideoSwitchAsyncWithoutProgressSave(int newIndex) {
+    _logDebug('_handleVideoSwitchAsyncWithoutProgressSave 被调用: newIndex=$newIndex');
+    Future.microtask(() async {
+      try {
+        final startTime = DateTime.now();
+
+        // 检查本地文件
+        if (playList.isNotEmpty && newIndex < playList.length) {
+          final currentVideo = playList[newIndex];
+          final videoName = currentVideo.extras!['name'] as String;
+
+          _logDebug('异步检查本地文件: 索引=$newIndex, 视频=$videoName');
+
+          // 如果没有显示对话框，检查本地文件
+          if (!_isShowingLocalFileDialog) {
+            await _checkAndPlayLocalFile(videoName);
+          }
+
+          // 延迟一段时间后自动应用智能匹配的字幕，确保视频已经开始播放
+          Future.delayed(const Duration(milliseconds: 1500), () {
+            if (mounted) {
+              _autoApplySmartMatchedSubtitle();
+            }
+          });
+        }
+
+        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
+        _logDebug('视频切换异步处理完成（无进度保存），耗时: ${totalTime}ms');
+      } catch (e) {
+        _logDebug('视频切换异步处理失败（无进度保存）: $e');
+      }
+    });
+  }
+
   // Method to take a screenshot
   // Returns the file path if successful, null otherwise.
   Future<String?> _takeScreenshot({String? specificVideoName}) async {
@@ -463,8 +498,12 @@ class VideoPlayerState extends State<VideoPlayer> {
           return;
         }
 
-        // 优化切换视频逻辑：先更新UI状态，然后异步处理其他操作
+        // 优化切换视频逻辑：先保存进度，再更新UI状态，然后异步处理其他操作
         if (mounted) {
+          // 在设置_isLoading=true之前先保存当前视频进度
+          _logDebug('播放列表变化，准备保存当前视频进度');
+          await _saveCurrentProgress(updateUIImmediately: true);
+
           setState(() {
             currentPlayingIndex = event.index;
             _isLoading = true;
@@ -476,8 +515,8 @@ class VideoPlayerState extends State<VideoPlayer> {
             scrollToCurrentItem();
           });
 
-          // 异步处理保存进度和本地文件检查，避免阻塞UI
-          _handleVideoSwitchAsync(event.index);
+          // 异步处理本地文件检查等其他操作
+          _handleVideoSwitchAsyncWithoutProgressSave(event.index);
         }
       }
     });
