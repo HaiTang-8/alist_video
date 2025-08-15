@@ -128,7 +128,7 @@ class _HistoryPageState extends State<HistoryPage>
       _currentUsername = prefs.getString('current_username');
 
       // Clear the screenshot cache when refreshing
-      _screenshotPathCache.clear();
+      _clearImageCache();
 
       if (_currentUsername != null) {
         // 获取总记录数
@@ -648,6 +648,31 @@ class _HistoryPageState extends State<HistoryPage>
     }
   }
 
+  // Get file modification time to use as cache key
+  Future<int> _getFileModificationTime(String filePath) async {
+    try {
+      final file = File(filePath);
+      if (await file.exists()) {
+        final stat = await file.stat();
+        return stat.modified.millisecondsSinceEpoch;
+      }
+      return 0;
+    } catch (e) {
+      print('Error getting file modification time: $e');
+      return 0;
+    }
+  }
+
+  // Clear image cache to force reload
+  void _clearImageCache() {
+    // Clear our screenshot path cache
+    _screenshotPathCache.clear();
+
+    // Clear Flutter's image cache
+    imageCache.clear();
+    imageCache.clearLiveImages();
+  }
+
   // Preload screenshots in the background to avoid UI stutters
   Future<void> _preloadScreenshots() async {
     if (_groupedRecords.isEmpty) return;
@@ -864,6 +889,9 @@ class _HistoryPageState extends State<HistoryPage>
       ),
       body: RefreshIndicator(
         onRefresh: () async {
+          // Clear image cache before refreshing
+          _clearImageCache();
+
           if (_searchQuery.isNotEmpty) {
             await _searchHistory(_searchQuery);
           } else {
@@ -1554,11 +1582,25 @@ class _HistoryPageState extends State<HistoryPage>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.file(
-                  File(screenshotPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    return _buildMobileScreenshotPlaceholder();
+                FutureBuilder<int>(
+                  future: _getFileModificationTime(screenshotPath),
+                  builder: (context, timeSnapshot) {
+                    // 使用文件修改时间作为缓存键，确保图片更新时能重新加载
+                    final cacheKey = timeSnapshot.hasData
+                        ? '${screenshotPath}_${timeSnapshot.data}'
+                        : screenshotPath;
+
+                    return Image.file(
+                      File(screenshotPath),
+                      fit: BoxFit.cover,
+                      key: ValueKey(cacheKey),
+                      errorBuilder: (context, error, stackTrace) {
+                        // 当图片加载失败时，清除对应的缓存
+                        final recordCacheKey = '${record.videoPath}_${record.videoName}';
+                        _screenshotPathCache.remove(recordCacheKey);
+                        return _buildMobileScreenshotPlaceholder();
+                      },
+                    );
                   },
                 ),
                 // 播放图标覆盖层 - 更小的图标
@@ -1627,12 +1669,12 @@ class _HistoryPageState extends State<HistoryPage>
         if (snapshot.connectionState == ConnectionState.waiting) {
           return _buildScreenshotPlaceholder();
         }
-        
+
         final screenshotPath = snapshot.data;
         if (screenshotPath == null) {
           return _buildScreenshotPlaceholder();
         }
-        
+
         return ClipRRect(
           borderRadius: BorderRadius.circular(1),
           child: Container(
@@ -1645,12 +1687,26 @@ class _HistoryPageState extends State<HistoryPage>
             child: Stack(
               fit: StackFit.expand,
               children: [
-                Image.file(
-                  File(screenshotPath),
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) {
-                    print('Error loading image: $error');
-                    return _buildScreenshotPlaceholder();
+                FutureBuilder<int>(
+                  future: _getFileModificationTime(screenshotPath),
+                  builder: (context, timeSnapshot) {
+                    // 使用文件修改时间作为缓存键，确保图片更新时能重新加载
+                    final cacheKey = timeSnapshot.hasData
+                        ? '${screenshotPath}_${timeSnapshot.data}'
+                        : screenshotPath;
+
+                    return Image.file(
+                      File(screenshotPath),
+                      fit: BoxFit.cover,
+                      key: ValueKey(cacheKey),
+                      errorBuilder: (context, error, stackTrace) {
+                        print('Error loading image: $error');
+                        // 当图片加载失败时，清除对应的缓存
+                        final recordCacheKey = '${record.videoPath}_${record.videoName}';
+                        _screenshotPathCache.remove(recordCacheKey);
+                        return _buildScreenshotPlaceholder();
+                      },
+                    );
                   },
                 ),
                 // Add a play icon overlay
