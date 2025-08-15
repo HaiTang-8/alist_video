@@ -128,4 +128,8 @@ class AppConstants {
   // 默认数据库配置预设
   static const String defaultDbPresetName = '本地数据库';
   static const String defaultDbPresetDescription = '默认的本地PostgreSQL数据库配置';
+
+  // 本地播放优先设置
+  static const String preferLocalPlaybackKey = 'prefer_local_playback'; // 是否优先使用本地文件播放
+  static const bool defaultPreferLocalPlayback = true; // 默认优先使用本地文件
 }

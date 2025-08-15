@@ -82,6 +82,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加防抖机制相关变量
   Timer? _saveProgressDebounceTimer;
   bool _isSavingProgress = false;
+  bool _isReloadingInterface = false; // 标志是否正在重新加载界面
 
   // 将 late 移除，提供默认值
   List<double> _playbackSpeeds = AppConstants.defaultPlaybackSpeeds;
@@ -131,15 +132,6 @@ class VideoPlayerState extends State<VideoPlayer> {
   // Add a map to store local file paths for videos
   final Map<String, String> _localFilePaths = {};
 
-  // Track if we're currently showing the local file dialog
-  bool _isShowingLocalFileDialog = false;
-
-  // Add a flag to track if we've already checked the current video
-  // final Set<String> _alreadyCheckedVideos = {};
-
-  // Add a debounce timer for local file dialogs
-  Timer? _localFileDialogDebounce;
-
   // Add a set to track which videos have local versions for UI display
   final Set<String> _localVideos = {};
 
@@ -148,6 +140,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加历史记录映射，用于存储播放列表中每个视频的历史记录
   final Map<String, HistoricalRecord> _videoHistoryRecords = {};
+
+  // 本地优先播放设置
+  bool _preferLocalPlayback = AppConstants.defaultPreferLocalPlayback;
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
@@ -170,6 +165,8 @@ class VideoPlayerState extends State<VideoPlayer> {
         seconds: prefs.getInt(AppConstants.longSeekKey) ??
             AppConstants.defaultLongSeekDuration.inSeconds,
       );
+      _preferLocalPlayback = prefs.getBool(AppConstants.preferLocalPlaybackKey) ??
+          AppConstants.defaultPreferLocalPlayback;
     });
   }
 
@@ -227,15 +224,15 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 取消之前的定时器
     _saveProgressDebounceTimer?.cancel();
 
-    // 如果正在保存进度，跳过
-    if (_isSavingProgress) {
-      _logDebug('正在保存进度中，跳过此次保存请求');
+    // 如果正在保存进度或正在重新加载界面，跳过
+    if (_isSavingProgress || _isReloadingInterface) {
+      _logDebug('正在保存进度中或重新加载界面中，跳过此次保存请求: isSaving=$_isSavingProgress, isReloading=$_isReloadingInterface');
       return;
     }
 
     // 设置新的定时器，500ms后执行保存
     _saveProgressDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-      if (mounted && !_isSavingProgress) {
+      if (mounted && !_isSavingProgress && !_isReloadingInterface) {
         _isSavingProgress = true;
         _saveCurrentProgress().then((_) {
           _logDebug('防抖保存进度完成');
@@ -255,19 +252,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       try {
         final startTime = DateTime.now();
 
-        // 检查本地文件
+        // 延迟一段时间后自动应用智能匹配的字幕，确保视频已经开始播放
         if (playList.isNotEmpty && newIndex < playList.length) {
-          final currentVideo = playList[newIndex];
-          final videoName = currentVideo.extras!['name'] as String;
-
-          _logDebug('异步检查本地文件: 索引=$newIndex, 视频=$videoName');
-
-          // 如果没有显示对话框，检查本地文件
-          if (!_isShowingLocalFileDialog) {
-            await _checkAndPlayLocalFile(videoName);
-          }
-
-          // 延迟一段时间后自动应用智能匹配的字幕，确保视频已经开始播放
           Future.delayed(const Duration(milliseconds: 1500), () {
             if (mounted) {
               _autoApplySmartMatchedSubtitle();
@@ -582,9 +568,14 @@ class VideoPlayerState extends State<VideoPlayer> {
             playList.add(element);
             index++;
           }
-
-          _logDebug('播放列表加载完成: 总数=${playList.length}, 初始索引=$playIndex');
         });
+
+        // 如果启用本地优先播放，检查并替换本地文件地址
+        if (_preferLocalPlayback) {
+          await _replaceWithLocalFiles();
+        }
+
+        _logDebug('播放列表加载完成: 总数=${playList.length}, 初始索引=$playIndex');
 
         // 修改字幕文件收集方式
         final subtitleFiles = res.data?.content
@@ -634,44 +625,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           _logDebug('播放列表首次加载完成: 当前索引=${event.index}');
         });
 
-        await player.open(playable, play: false);
-
-        // Initial check for the first video's local version
-        if (playList.isNotEmpty && playIndex < playList.length) {
-          final videoName = playList[playIndex].extras!['name'] as String;
-          final downloadTaskKey = "${widget.path}/$videoName";
-
-          _logDebug('初始检查本地文件: 视频=$videoName');
-
-          final localFilePath = await _checkLocalFile(downloadTaskKey);
-
-          if (localFilePath != null && mounted) {
-            _logDebug('发现本地文件: 视频=$videoName, 路径=$localFilePath');
-            setState(() => _isShowingLocalFileDialog = true);
-
-            final playLocal = await _showLocalFileDialog();
-            if (playLocal && mounted) {
-              _logDebug('用户选择播放本地文件: 视频=$videoName');
-              await _playLocalFileVersion(localFilePath, videoName);
-            } else if (mounted) {
-              _logDebug('用户选择播放在线文件: 视频=$videoName');
-              // Continue with streamed version
-              await player.play();
-            }
-
-            setState(() => _isShowingLocalFileDialog = false);
-          } else {
-            _logDebug('未找到本地文件或组件已卸载: 视频=$videoName');
-            if (mounted) {
-              // No local file, play the stream version
-              await player.play();
-            }
-          }
-        } else if (mounted) {
-          _logDebug('播放列表为空或索引无效');
-          // No videos in playlist or invalid index
-          await player.play();
-        }
+        await player.open(playable, play: true);
 
         // 避免与播放列表变化监听冲突，手动设置初始值
         if (mounted && !_isInitialLoading) {
@@ -753,6 +707,232 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
+  // 替换播放列表中的本地文件地址
+  Future<void> _replaceWithLocalFiles() async {
+    if (playList.isEmpty) return;
+
+    try {
+      final downloadManager = DownloadManager();
+      bool hasReplacement = false;
+
+      for (int i = 0; i < playList.length; i++) {
+        final videoName = playList[i].extras?['name'] as String?;
+        if (videoName != null) {
+          final task = downloadManager.findTask(widget.path, videoName);
+
+          if (task != null && task.status == '已完成') {
+            // 检查文件是否真实存在
+            final file = File(task.filePath);
+            if (await file.exists()) {
+              // 创建本地文件的Media对象
+              final localMedia = Media(
+                'file://${task.filePath}',
+                extras: playList[i].extras,
+              );
+
+              // 替换播放列表中的项目
+              playList[i] = localMedia;
+
+              // 缓存本地文件路径
+              _localFilePaths["${widget.path}/$videoName"] = task.filePath;
+
+              // 添加到本地视频集合
+              _localVideos.add(videoName);
+
+              hasReplacement = true;
+              _logDebug('替换为本地文件: $videoName -> ${task.filePath}');
+            }
+          }
+        }
+      }
+
+      if (hasReplacement) {
+        _logDebug('本地文件替换完成，共替换 ${_localVideos.length} 个文件');
+      } else {
+        _logDebug('未找到可替换的本地文件');
+      }
+    } catch (e) {
+      _logDebug('替换本地文件时发生错误: $e');
+    }
+  }
+
+  // 切换本地优先播放设置
+  Future<void> _toggleLocalPlaybackPreference() async {
+    try {
+      _logDebug('开始切换本地优先播放设置...');
+
+      // 先保存当前播放进度
+      await _saveCurrentPlaybackProgress();
+
+      final prefs = await SharedPreferences.getInstance();
+      final newPreference = !_preferLocalPlayback;
+
+      // 保存设置到SharedPreferences
+      await prefs.setBool(AppConstants.preferLocalPlaybackKey, newPreference);
+
+      setState(() {
+        _preferLocalPlayback = newPreference;
+      });
+
+      _logDebug('本地优先播放设置已切换为: ${newPreference ? "启用" : "禁用"}');
+
+      // 显示提示信息
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              newPreference ? '已启用本地优先播放，正在重新加载列表...' : '已禁用本地优先播放，正在重新加载列表...',
+            ),
+            duration: const Duration(seconds: 2),
+            backgroundColor: newPreference ? Colors.green : Colors.orange,
+          ),
+        );
+      }
+
+      // 重新加载整个界面
+      await _reloadEntireInterface();
+
+    } catch (e) {
+      _logDebug('切换本地优先播放设置时发生错误: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('设置切换失败: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
+  // 保存当前播放进度
+  Future<void> _saveCurrentPlaybackProgress() async {
+    try {
+      if (playList.isEmpty || currentPlayingIndex >= playList.length) {
+        _logDebug('没有正在播放的视频，跳过进度保存');
+        return;
+      }
+
+      final currentVideo = playList[currentPlayingIndex];
+      final videoName = currentVideo.extras!['name'] as String;
+      final currentPosition = player.state.position;
+      final totalDuration = player.state.duration;
+
+      if (currentPosition.inSeconds <= 0 || totalDuration.inSeconds <= 0) {
+        _logDebug('播放位置或总时长无效，跳过进度保存: 位置=${currentPosition.inSeconds}秒, 总时长=${totalDuration.inSeconds}秒');
+        return;
+      }
+
+      // 检查当前是否播放本地文件
+      final isPlayingLocalFile = currentVideo.uri.startsWith('file://');
+      _logDebug('保存当前播放进度: 视频=$videoName, 位置=${currentPosition.inSeconds}秒, 总时长=${totalDuration.inSeconds}秒, 本地文件=$isPlayingLocalFile');
+
+      // 无论是本地文件还是在线文件，都使用相同的标识符和路径
+      // 这样确保本地播放和在线播放的进度记录是同一条
+      final videoSha1 = _getVideoSha1(widget.path, videoName);
+      final userId = (_currentUsername ?? 'unknown').hashCode;
+
+      // 使用DatabaseHelper的upsertHistoricalRecord方法保存到数据库
+      // 始终使用widget.path作为videoPath，确保本地和在线播放的记录一致
+      await DatabaseHelper.instance.upsertHistoricalRecord(
+        videoSha1: videoSha1,
+        videoPath: widget.path,
+        videoSeek: currentPosition.inSeconds,
+        userId: userId,
+        videoName: videoName,
+        totalVideoDuration: totalDuration.inSeconds,
+      );
+
+      // 创建历史记录对象用于本地缓存
+      final record = HistoricalRecord(
+        videoSha1: videoSha1,
+        videoPath: widget.path,
+        videoName: videoName,
+        userId: userId,
+        changeTime: DateTime.now(),
+        videoSeek: currentPosition.inSeconds,
+        totalVideoDuration: totalDuration.inSeconds,
+      );
+
+      // 更新本地缓存
+      final videoKey = "${widget.path}/$videoName";
+      _videoHistoryRecords[videoKey] = record;
+
+      _logDebug('播放进度保存成功: $videoName (${isPlayingLocalFile ? "本地文件" : "在线文件"})');
+
+    } catch (e) {
+      _logDebug('保存播放进度时发生错误: $e');
+    }
+  }
+
+  // 重新加载整个界面
+  Future<void> _reloadEntireInterface() async {
+    try {
+      _logDebug('开始重新加载整个界面...');
+
+      // 设置重新加载标志，防止防抖保存覆盖进度
+      _isReloadingInterface = true;
+
+      // 暂停播放并关闭播放器
+      await player.pause();
+      await player.stop();
+
+      // 清空所有状态（保留历史记录缓存）
+      setState(() {
+        _isLoading = true;
+        _localVideos.clear();
+        _localFilePaths.clear();
+        // 不清空 _videoHistoryRecords，因为这是从数据库加载的历史记录
+        _availableSubtitles.clear();
+        playList.clear();
+        currentPlayingIndex = 0;
+        playIndex = 0;
+        _hasSeekInitialPosition = false;
+        _isInitialLoading = true;
+      });
+
+      // 重新初始化播放器设置
+      player.setPlaylistMode(PlaylistMode.none);
+
+      // 重新加载播放列表
+      await _openAndSeekVideo();
+
+      // 重新加载历史记录，确保进度条正确显示
+      await _loadPlaylistHistoryRecords();
+
+      setState(() {
+        _isLoading = false;
+        _isInitialLoading = false;
+      });
+
+      // 清除重新加载标志，恢复防抖保存功能
+      _isReloadingInterface = false;
+
+      _logDebug('整个界面重新加载完成');
+
+    } catch (e) {
+      _logDebug('重新加载整个界面时发生错误: $e');
+
+      // 即使出错也要清除重新加载标志
+      _isReloadingInterface = false;
+
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isInitialLoading = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('重新加载失败: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    }
+  }
+
   // 加载播放列表中所有视频的历史记录
   Future<void> _loadPlaylistHistoryRecords() async {
     if (_currentUsername == null || playList.isEmpty) return;
@@ -816,66 +996,9 @@ class VideoPlayerState extends State<VideoPlayer> {
     return null;
   }
 
-  // Show a dialog asking if the user wants to play the local file
-  Future<bool> _showLocalFileDialog() async {
-    return await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('播放本地文件'),
-        content: const Text('该视频已下载到本地，是否播放本地文件？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('在线播放'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('播放本地文件'),
-          ),
-        ],
-      ),
-    ) ?? false;
-  }
 
-  // Play the local version of a video while maintaining the playlist
-  Future<void> _playLocalFileVersion(String filePath, String videoName) async {
-    setState(() => _isLoading = true);
 
-    try {
-      // Create a temporary Media object for the local file
-      final localMedia = Media(
-        'file://$filePath',
-        extras: {'name': videoName},
-      );
 
-      // Replace just the current media in the player
-      await player.stop();
-
-      // Create a new playlist with the local file replacing the current entry
-      final List<Media> updatedPlaylist = List.from(playList);
-      updatedPlaylist[currentPlayingIndex] = localMedia;
-
-      // Open the updated playlist
-      await player.open(
-        Playlist(updatedPlaylist, index: currentPlayingIndex),
-        play: true,
-      );
-
-      setState(() => _isLoading = false);
-      print('Playing local file: $filePath');
-    } catch (e) {
-      print('Error playing local file: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('播放本地文件失败: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      }
-    }
-  }
 
   // 立即更新UI中的播放进度，然后异步保存到数据库
   Future<void> _saveCurrentProgress({
@@ -1096,9 +1219,6 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   @override
   void dispose() {
-    // Cancel the debounce timer
-    _localFileDialogDebounce?.cancel();
-
     // Cancel the save progress debounce timer
     _saveProgressDebounceTimer?.cancel();
 
@@ -2034,43 +2154,10 @@ class VideoPlayerState extends State<VideoPlayer> {
 
               // 获取要切换到的视频信息
               final videoName = playList[index].extras!['name'] as String;
-              final videoKey = "${widget.path}/$videoName";
 
               _logDebug('手动点击列表项: 索引=$index, 视频=$videoName');
 
-              // 检查是否存在本地文件，不考虑是否已经检查过
-              if (!_isShowingLocalFileDialog) {
-                final localFilePath = await _checkLocalFile(videoKey);
-
-                if (localFilePath != null && mounted) {
-                  _logDebug('手动点击: 发现本地文件，显示对话框: $videoName');
-                  setState(() => _isShowingLocalFileDialog = true);
-
-                  final playLocal = await _showLocalFileDialog();
-                  if (playLocal && mounted) {
-                    // 先切换到该视频，然后播放本地版本
-                    player.jump(index);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      scrollToCurrentItem();
-                    });
-                    await _playLocalFileVersion(localFilePath, videoName);
-                  } else if (mounted) {
-                    // 播放在线版本
-                    player.jump(index);
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      scrollToCurrentItem();
-                    });
-                    await player.play();
-                  }
-
-                  if (mounted) {
-                    setState(() => _isShowingLocalFileDialog = false);
-                  }
-                  return; // 已处理完毕，退出
-                }
-              }
-
-              // 如果没有本地文件或对话框已显示，直接切换
+              // 直接切换到选中的视频
               player.jump(index);
               WidgetsBinding.instance.addPostFrameCallback((_) {
                 scrollToCurrentItem();
@@ -2159,6 +2246,18 @@ class VideoPlayerState extends State<VideoPlayer> {
               });
             },
             tooltip: _isAscending ? '降序排列' : '升序排',
+          ),
+          // 添加本地优先播放切换按钮
+          IconButton(
+            icon: Icon(
+              _preferLocalPlayback ? Icons.storage : Icons.cloud,
+              size: 20,
+              color: _preferLocalPlayback ? Colors.green : Colors.grey,
+            ),
+            onPressed: () {
+              _toggleLocalPlaybackPreference();
+            },
+            tooltip: _preferLocalPlayback ? '本地优先 (点击切换为在线优先)' : '在线优先 (点击切换为本地优先)',
           ),
         ],
       ),
@@ -3784,64 +3883,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
-  // New method to handle local file checking and dialog
-  Future<void> _checkAndPlayLocalFile(String videoName) async {
-    // Cancel any pending debounce timer
-    _localFileDialogDebounce?.cancel();
 
-    // If already showing a dialog, don't show another
-    if (_isShowingLocalFileDialog) {
-      _logDebug('跳过本地文件检查: 对话框已显示, 视频=$videoName');
-      return;
-    }
-
-    final videoKey = "${widget.path}/$videoName";
-    _logDebug('检查本地文件: 视频=$videoName, 键值=$videoKey');
-
-    // Use debounce to prevent multiple dialogs when rapidly switching videos
-    _localFileDialogDebounce = Timer(const Duration(milliseconds: 300), () async {
-      // Check if this video has a local version
-      _logDebug('开始检查本地文件 (debounce后): 视频=$videoName');
-      final localFilePath = await _checkLocalFile(videoKey);
-
-      // If local file exists and we're not already showing the dialog
-      if (localFilePath != null && mounted && !_isShowingLocalFileDialog) {
-        _logDebug('找到本地文件，准备显示对话框: 视频=$videoName, 路径=$localFilePath');
-        setState(() => _isShowingLocalFileDialog = true);
-
-        // Pause playback while showing dialog
-        await player.pause();
-
-        // Show dialog asking user if they want to play the local file
-        if (mounted) {
-          _logDebug('显示本地文件对话框: 视频=$videoName');
-          final playLocal = await _showLocalFileDialog();
-          if (playLocal && mounted) {
-            _logDebug('用户选择播放本地文件: 视频=$videoName');
-            // Play local version
-            await _playLocalFileVersion(localFilePath, videoName);
-          } else if (mounted) {
-            _logDebug('用户选择播放在线文件: 视频=$videoName');
-            // Continue with streamed version
-            await player.play();
-          }
-        }
-
-        if (mounted) {
-          _logDebug('关闭本地文件对话框: 视频=$videoName');
-          setState(() => _isShowingLocalFileDialog = false);
-        }
-      } else {
-        if (localFilePath == null) {
-          _logDebug('未找到本地文件: 视频=$videoName');
-        } else if (!mounted) {
-          _logDebug('组件已卸载，不显示对话框: 视频=$videoName');
-        } else if (_isShowingLocalFileDialog) {
-          _logDebug('对话框已显示，不重复显示: 视频=$videoName');
-        }
-      }
-    });
-  }
 
   Future<void> _loadPlaybackSpeeds() async {
     final prefs = await SharedPreferences.getInstance();
