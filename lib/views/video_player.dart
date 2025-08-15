@@ -248,43 +248,6 @@ class VideoPlayerState extends State<VideoPlayer> {
     });
   }
 
-  // 异步处理视频切换时的操作，避免阻塞UI
-  void _handleVideoSwitchAsync(int newIndex) {
-    Future.microtask(() async {
-      try {
-        final startTime = DateTime.now();
-
-        // 先保存当前视频进度（异步，不等待完成）
-        _saveCurrentProgress(updateUIImmediately: true);
-
-        // 检查本地文件
-        if (playList.isNotEmpty && newIndex < playList.length) {
-          final currentVideo = playList[newIndex];
-          final videoName = currentVideo.extras!['name'] as String;
-
-          _logDebug('异步检查本地文件: 索引=$newIndex, 视频=$videoName');
-
-          // 如果没有显示对话框，检查本地文件
-          if (!_isShowingLocalFileDialog) {
-            await _checkAndPlayLocalFile(videoName);
-          }
-
-          // 延迟一段时间后自动应用智能匹配的字幕，确保视频已经开始播放
-          Future.delayed(const Duration(milliseconds: 1500), () {
-            if (mounted) {
-              _autoApplySmartMatchedSubtitle();
-            }
-          });
-        }
-
-        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
-        _logDebug('视频切换异步处理完成，耗时: ${totalTime}ms');
-      } catch (e) {
-        _logDebug('视频切换异步处理失败: $e');
-      }
-    });
-  }
-
   // 异步处理视频切换时的操作（不包含进度保存），避免阻塞UI
   void _handleVideoSwitchAsyncWithoutProgressSave(int newIndex) {
     _logDebug('_handleVideoSwitchAsyncWithoutProgressSave 被调用: newIndex=$newIndex');
