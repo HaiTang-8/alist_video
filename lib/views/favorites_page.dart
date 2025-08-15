@@ -290,7 +290,13 @@ class _FavoritesPageState extends State<FavoritesPage>
           ),
         ),
         actions: [
-          // 移除调试刷新按钮，只在有内容或选择模式时显示操作按钮
+          // 刷新按钮
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refresh,
+            tooltip: '刷新',
+          ),
+          // 只在有内容或选择模式时显示操作按钮
           if (_favorites.isNotEmpty)
             IconButton(
               icon: Icon(_isSelectMode ? Icons.close : Icons.checklist),
