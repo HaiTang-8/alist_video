@@ -11,6 +11,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dio/dio.dart';
 import '../apis/fs.dart';
 import 'logger.dart';
+import 'download_settings_manager.dart';
 
 // 下载任务状态枚举
 enum DownloadStatus {
@@ -107,6 +108,11 @@ class PlatformDownloadManager {
   ReceivePort? _port;
 
   bool _isInitialized = false;
+
+  // 下载设置管理器和队列控制
+  final DownloadSettingsManager _settingsManager = DownloadSettingsManager();
+  final List<String> _downloadQueue = [];
+  int _activeDownloads = 0;
 
   PlatformDownloadManager._internal();
 
@@ -256,22 +262,34 @@ class PlatformDownloadManager {
         break;
       case 3: // DownloadTaskStatus.complete
         task.status = DownloadStatus.completed;
-        _showNotification(task.fileName);
+        _activeDownloads--;
+        _showNotificationIfEnabled(task.fileName);
         break;
       case 4: // DownloadTaskStatus.paused
         task.status = DownloadStatus.paused;
+        _activeDownloads--;
         break;
       case 5: // DownloadTaskStatus.failed
         task.status = DownloadStatus.failed;
+        _activeDownloads--;
         break;
       case 6: // DownloadTaskStatus.canceled
         task.status = DownloadStatus.canceled;
+        _activeDownloads--;
         break;
       default:
         break;
     }
 
     _updateTask(task);
+
+    // 如果任务完成、失败、暂停或取消，处理下载队列
+    if (task.status == DownloadStatus.completed ||
+        task.status == DownloadStatus.failed ||
+        task.status == DownloadStatus.paused ||
+        task.status == DownloadStatus.canceled) {
+      _processDownloadQueue();
+    }
   }
 
   // 静态回调函数（flutter_downloader 要求）
@@ -372,9 +390,52 @@ class PlatformDownloadManager {
     _saveTasks();
   }
 
+  /// 将任务加入下载队列
+  Future<void> _queueDownload(String taskId) async {
+    final task = _tasks[taskId];
+    if (task == null) return;
+
+    // 检查当前活跃下载数量
+    final maxConcurrent = await _settingsManager.getMaxConcurrentDownloads();
+
+    if (_activeDownloads < maxConcurrent) {
+      // 可以立即开始下载
+      await _startDownload(task);
+    } else {
+      // 加入等待队列
+      if (!_downloadQueue.contains(taskId)) {
+        _downloadQueue.add(taskId);
+        task.status = DownloadStatus.waiting;
+        _updateTask(task);
+      }
+    }
+  }
+
+  /// 处理下载队列，启动下一个等待的任务
+  Future<void> _processDownloadQueue() async {
+    final maxConcurrent = await _settingsManager.getMaxConcurrentDownloads();
+
+    while (_activeDownloads < maxConcurrent && _downloadQueue.isNotEmpty) {
+      final taskId = _downloadQueue.removeAt(0);
+      final task = _tasks[taskId];
+
+      if (task != null && task.status == DownloadStatus.waiting) {
+        await _startDownload(task);
+      }
+    }
+  }
+
   // 刷新任务状态
   Future<void> refreshTasks() async {
     await _loadTasks();
+  }
+
+  // 显示通知（如果启用）
+  void _showNotificationIfEnabled(String fileName) async {
+    final enableNotifications = await _settingsManager.getEnableNotifications();
+    if (enableNotifications) {
+      _showNotification(fileName);
+    }
   }
 
   // 显示通知
@@ -477,8 +538,15 @@ class PlatformDownloadManager {
       await AppLogger().info('DownloadTask', 'Task added to queue: $taskId');
 
       if (task.status != DownloadStatus.paused) {
-        await AppLogger().info('DownloadTask', 'Starting download: $taskId');
-        await _startDownload(task);
+        // 检查是否自动开始下载
+        final autoStart = await _settingsManager.getAutoStartDownload();
+        if (autoStart) {
+          await AppLogger().info('DownloadTask', 'Queueing download: $taskId');
+          await _queueDownload(taskId);
+        } else {
+          task.status = DownloadStatus.waiting;
+          _updateTask(task);
+        }
       }
     } catch (e, stackTrace) {
       await AppLogger().error('DownloadTask', 'Failed to add download task: $taskId', e, stackTrace);
@@ -500,6 +568,7 @@ class PlatformDownloadManager {
   // 开始下载
   Future<void> _startDownload(UnifiedDownloadTask task) async {
     task.status = DownloadStatus.downloading;
+    _activeDownloads++;
     _updateTask(task);
 
     if (_isMobilePlatform()) {
@@ -594,16 +663,25 @@ class PlatformDownloadManager {
 
       if (task.dioToken?.isCancelled == true) {
         task.status = DownloadStatus.paused;
+        _activeDownloads--;
       } else {
         task.status = DownloadStatus.completed;
-        _showNotification(task.fileName);
+        _activeDownloads--;
+        _showNotificationIfEnabled(task.fileName);
       }
       _updateTask(task);
+
+      // 处理下载队列
+      await _processDownloadQueue();
     } catch (e) {
       if (task.dioToken?.isCancelled != true) {
         task.status = DownloadStatus.failed;
         task.error = e.toString();
+        _activeDownloads--;
         _updateTask(task);
+
+        // 处理下载队列
+        await _processDownloadQueue();
       }
     }
   }
@@ -611,16 +689,26 @@ class PlatformDownloadManager {
   // 暂停任务
   Future<void> pauseTask(String taskId) async {
     final task = _tasks[taskId];
-    if (task == null || task.status != DownloadStatus.downloading) return;
+    if (task == null) return;
 
-    if (_isMobilePlatform() && task.flutterDownloaderId != null) {
-      await FlutterDownloader.pause(taskId: task.flutterDownloaderId!);
-    } else if (task.dioToken != null) {
-      task.dioToken!.cancel('用户暂停下载');
+    if (task.status == DownloadStatus.downloading) {
+      if (_isMobilePlatform() && task.flutterDownloaderId != null) {
+        await FlutterDownloader.pause(taskId: task.flutterDownloaderId!);
+      } else if (task.dioToken != null) {
+        task.dioToken!.cancel('用户暂停下载');
+      }
+      _activeDownloads--;
+      task.status = DownloadStatus.paused;
+      _updateTask(task);
+
+      // 处理下载队列
+      await _processDownloadQueue();
+    } else if (task.status == DownloadStatus.waiting) {
+      // 从队列中移除
+      _downloadQueue.remove(taskId);
+      task.status = DownloadStatus.paused;
+      _updateTask(task);
     }
-
-    task.status = DownloadStatus.paused;
-    _updateTask(task);
   }
 
   // 恢复任务
@@ -628,14 +716,7 @@ class PlatformDownloadManager {
     final task = _tasks[taskId];
     if (task == null || task.status != DownloadStatus.paused) return;
 
-    if (_isMobilePlatform() && task.flutterDownloaderId != null) {
-      final newTaskId = await FlutterDownloader.resume(taskId: task.flutterDownloaderId!);
-      if (newTaskId != null) {
-        task.flutterDownloaderId = newTaskId;
-      }
-    } else {
-      await _startDesktopDownload(task);
-    }
+    await _queueDownload(taskId);
   }
 
   // 删除任务

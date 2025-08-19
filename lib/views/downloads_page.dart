@@ -5,7 +5,17 @@ import '../utils/download_adapter.dart';
 import 'log_viewer_page.dart';
 import 'local_video_player.dart';
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
+import 'settings/download_settings_page.dart';
+
+// 下载任务筛选状态枚举
+enum DownloadFilter {
+  all,        // 全部
+  downloading, // 下载中
+  completed,   // 已完成
+  failed,      // 失败
+  paused,      // 已暂停
+  waiting,     // 等待中
+}
 
 class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key});
@@ -17,9 +27,47 @@ class DownloadsPage extends StatefulWidget {
 class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveClientMixin {
   bool _isSelectMode = false;
   final Set<String> _selectedTasks = {};
+  DownloadFilter _currentFilter = DownloadFilter.all;
 
   @override
   bool get wantKeepAlive => true;
+
+  /// 根据筛选条件过滤任务列表
+  List<DownloadTask> _filterTasks(Map<String, DownloadTask> tasks) {
+    final taskList = tasks.values.toList();
+
+    switch (_currentFilter) {
+      case DownloadFilter.all:
+        return taskList;
+      case DownloadFilter.downloading:
+        return taskList.where((task) {
+          final status = task.status;
+          return status == '下载中' || status == 'downloading';
+        }).toList();
+      case DownloadFilter.completed:
+        return taskList.where((task) {
+          final status = task.status;
+          return status == '已完成' || status == 'completed';
+        }).toList();
+      case DownloadFilter.failed:
+        return taskList.where((task) {
+          final status = task.status;
+          return status == '错误' || status == 'failed' || status == '失败';
+        }).toList();
+      case DownloadFilter.paused:
+        return taskList.where((task) {
+          final status = task.status;
+          return status == '已暂停' || status == 'paused';
+        }).toList();
+      case DownloadFilter.waiting:
+        return taskList.where((task) {
+          final status = task.status;
+          return status == '等待中' || status == 'waiting';
+        }).toList();
+    }
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +127,12 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
             icon: const Icon(Icons.settings_outlined),
             tooltip: '下载设置',
             color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-            onPressed: () => _showSettingsDialog(context),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const DownloadSettingsPage()),
+              );
+            },
           ),
           ValueListenableBuilder<Map<String, DownloadTask>>(
             valueListenable: DownloadManager().tasks,
@@ -116,11 +169,21 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                 ? _buildBatchOperationBar(tasks)
                 : _buildStatisticsBar(tasks),
               Expanded(
-                child: ListView.builder(
-                  itemCount: tasks.length,
-                  itemBuilder: (context, index) {
-                    final task = tasks.values.elementAt(index);
-                    return _buildTaskItem(task);
+                child: Builder(
+                  builder: (context) {
+                    final filteredTasks = _filterTasks(tasks);
+
+                    if (filteredTasks.isEmpty) {
+                      return _buildEmptyState();
+                    }
+
+                    return ListView.builder(
+                      itemCount: filteredTasks.length,
+                      itemBuilder: (context, index) {
+                        final task = filteredTasks[index];
+                        return _buildTaskItem(task);
+                      },
+                    );
                   },
                 ),
               ),
@@ -137,6 +200,8 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     int downloadingTasks = tasks.values.where((task) => task.status == '下载中').length;
     int completedTasks = tasks.values.where((task) => task.status == '已完成').length;
     int failedTasks = tasks.values.where((task) => task.status == '错误').length;
+    int pausedTasks = tasks.values.where((task) => task.status == '已暂停').length;
+    int waitingTasks = tasks.values.where((task) => task.status == '等待中').length;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -156,55 +221,125 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
           width: 1,
         ),
       ),
-      child: Row(
-        children: [
-          _buildStatItem('总计', totalTasks, Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 12),
-          _buildStatItem('下载中', downloadingTasks, Colors.blue),
-          const SizedBox(width: 12),
-          _buildStatItem('已完成', completedTasks, Colors.green),
-          const SizedBox(width: 12),
-          _buildStatItem('失败', failedTasks, Colors.red),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // 如果屏幕宽度足够（每个项目至少60px），使用平均分布
+          // 否则使用滚动布局
+          const double minItemWidth = 60.0;
+          const int itemCount = 6;
+          final bool useExpandedLayout = constraints.maxWidth >= (minItemWidth * itemCount);
+
+          if (useExpandedLayout) {
+            return Row(
+              children: [
+                Expanded(
+                  child: _buildStatItem('总计', totalTasks, Theme.of(context).colorScheme.primary, DownloadFilter.all),
+                ),
+                Expanded(
+                  child: _buildStatItem('下载中', downloadingTasks, Colors.blue, DownloadFilter.downloading),
+                ),
+                Expanded(
+                  child: _buildStatItem('等待中', waitingTasks, Colors.amber, DownloadFilter.waiting),
+                ),
+                Expanded(
+                  child: _buildStatItem('已暂停', pausedTasks, Colors.orange, DownloadFilter.paused),
+                ),
+                Expanded(
+                  child: _buildStatItem('已完成', completedTasks, Colors.green, DownloadFilter.completed),
+                ),
+                Expanded(
+                  child: _buildStatItem('失败', failedTasks, Colors.red, DownloadFilter.failed),
+                ),
+              ],
+            );
+          } else {
+            return SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  _buildStatItem('总计', totalTasks, Theme.of(context).colorScheme.primary, DownloadFilter.all),
+                  _buildStatItem('下载中', downloadingTasks, Colors.blue, DownloadFilter.downloading),
+                  _buildStatItem('等待中', waitingTasks, Colors.amber, DownloadFilter.waiting),
+                  _buildStatItem('已暂停', pausedTasks, Colors.orange, DownloadFilter.paused),
+                  _buildStatItem('已完成', completedTasks, Colors.green, DownloadFilter.completed),
+                  _buildStatItem('失败', failedTasks, Colors.red, DownloadFilter.failed),
+                ],
+              ),
+            );
+          }
+        },
       ),
     );
   }
 
-  Widget _buildStatItem(String label, int count, Color color) {
-    return Expanded(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            count.toString(),
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
+  Widget _buildStatItem(String label, int count, Color color, DownloadFilter filter) {
+    final isSelected = _currentFilter == filter;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () {
+          setState(() {
+            _currentFilter = filter;
+            // 退出多选模式
+            _isSelectMode = false;
+            _selectedTasks.clear();
+          });
+        },
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 60),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          margin: const EdgeInsets.symmetric(horizontal: 2),
+          decoration: BoxDecoration(
+            color: isSelected
+                ? color.withValues(alpha: 0.1)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: isSelected
+                ? Border.all(color: color.withValues(alpha: 0.3), width: 1)
+                : null,
           ),
-          const SizedBox(height: 1),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
-            ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                count.toString(),
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: isSelected ? color : color,
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                  color: isSelected
+                      ? color
+                      : Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildBatchOperationBar(Map<String, DownloadTask> tasks) {
-    final selectedTasks = tasks.entries
-        .where((entry) => _selectedTasks.contains(entry.key))
-        .map((e) => e.value)
+    final filteredTasks = _filterTasks(tasks);
+    final selectedTasks = filteredTasks
+        .where((task) => _selectedTasks.contains(task.path))
         .toList();
 
     final hasDownloading = selectedTasks.any((task) => task.status == '下载中');
     final hasPaused = selectedTasks.any((task) => task.status == '已暂停');
-    final allSelected = _selectedTasks.length == tasks.length;
+    final allSelected = _selectedTasks.length == filteredTasks.length;
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -363,19 +498,64 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
   }
 
   void _toggleSelectAll(Map<String, DownloadTask> tasks) {
+    final filteredTasks = _filterTasks(tasks);
     setState(() {
-      if (_selectedTasks.length == tasks.length) {
+      if (_selectedTasks.length == filteredTasks.length) {
         // 如果已全选，则取消全选
         _selectedTasks.clear();
       } else {
         // 否则全选
         _selectedTasks.clear();
-        _selectedTasks.addAll(tasks.keys);
+        _selectedTasks.addAll(filteredTasks.map((task) => task.path));
       }
     });
   }
 
   Widget _buildEmptyState() {
+    String message;
+    String subtitle;
+    IconData icon;
+    Color iconColor;
+
+    switch (_currentFilter) {
+      case DownloadFilter.all:
+        message = '暂无下载任务';
+        subtitle = '开始下载文件，它们会出现在这里';
+        icon = Icons.download_outlined;
+        iconColor = Theme.of(context).colorScheme.primary;
+        break;
+      case DownloadFilter.downloading:
+        message = '暂无正在下载的任务';
+        subtitle = '当前没有正在进行的下载任务';
+        icon = Icons.downloading_outlined;
+        iconColor = Colors.blue;
+        break;
+      case DownloadFilter.completed:
+        message = '暂无已完成的任务';
+        subtitle = '完成的下载任务会显示在这里';
+        icon = Icons.download_done_outlined;
+        iconColor = Colors.green;
+        break;
+      case DownloadFilter.failed:
+        message = '暂无失败的任务';
+        subtitle = '下载失败的任务会显示在这里';
+        icon = Icons.error_outline;
+        iconColor = Colors.red;
+        break;
+      case DownloadFilter.paused:
+        message = '暂无已暂停的任务';
+        subtitle = '暂停的下载任务会显示在这里';
+        icon = Icons.pause_circle_outline;
+        iconColor = Colors.orange;
+        break;
+      case DownloadFilter.waiting:
+        message = '暂无等待中的任务';
+        subtitle = '等待下载的任务会显示在这里';
+        icon = Icons.schedule_outlined;
+        iconColor = Colors.amber;
+        break;
+    }
+
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -386,18 +566,18 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
               width: 120,
               height: 120,
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                color: iconColor.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(60),
               ),
               child: Icon(
-                Icons.download_outlined,
+                icon,
                 size: 60,
-                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
+                color: iconColor.withValues(alpha: 0.7),
               ),
             ),
             const SizedBox(height: 24),
             Text(
-              '暂无下载任务',
+              message,
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
@@ -406,13 +586,29 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
             ),
             const SizedBox(height: 8),
             Text(
-              '开始下载文件，它们会出现在这里',
+              subtitle,
               style: TextStyle(
                 fontSize: 14,
                 color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.6),
               ),
               textAlign: TextAlign.center,
             ),
+            if (_currentFilter != DownloadFilter.all) ...[
+              const SizedBox(height: 24),
+              TextButton.icon(
+                onPressed: () {
+                  setState(() {
+                    _currentFilter = DownloadFilter.all;
+                  });
+                },
+                icon: const Icon(Icons.clear_all),
+                label: const Text('查看全部任务'),
+                style: TextButton.styleFrom(
+                  foregroundColor: iconColor,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                ),
+              ),
+            ],
             const SizedBox(height: 32),
             Container(
               decoration: BoxDecoration(
@@ -435,7 +631,12 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
                 color: Colors.transparent,
                 child: InkWell(
                   borderRadius: BorderRadius.circular(16),
-                  onTap: () => _showSettingsDialog(context),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (context) => const DownloadSettingsPage()),
+                    );
+                  },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     child: Row(
@@ -1228,190 +1429,9 @@ class _DownloadsPageState extends State<DownloadsPage> with AutomaticKeepAliveCl
     );
   }
 
-  Future<void> _showSettingsDialog(BuildContext context) async {
-    final currentPath = await DownloadManager.getCustomDownloadPath();
-    final downloadMethod = DownloadAdapter().getCurrentDownloadMethod();
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('下载设置'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 显示当前下载方法
-            const Text('当前下载方法：'),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                  width: 1,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    DownloadAdapter().isMobilePlatform
-                        ? Icons.smartphone
-                        : Icons.computer,
-                    color: Theme.of(context).colorScheme.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      downloadMethod,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text('当前下载位置：'),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.grey[200],
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      currentPath,
-                      style: const TextStyle(fontSize: 14),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.copy, size: 18),
-                    onPressed: () {
-                      Clipboard.setData(ClipboardData(text: currentPath));
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('已复制路径到剪贴板')),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.search),
-              label: const Text('扫描文件夹并导入视频'),
-              onPressed: () async {
-                Navigator.pop(context);
-                await _scanAndImportVideos(context);
-              },
-              style: OutlinedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 40),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('关闭'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await DownloadManager.resetToDefaultDownloadPath();
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('已重置为默认下载位置')),
-              );
-            },
-            child: const Text('重置为默认'),
-          ),
-          TextButton(
-            onPressed: () async {
-              String? selectedDirectory = await FilePicker.platform.getDirectoryPath();
-              if (selectedDirectory != null) {
-                final success = await DownloadManager.setCustomDownloadPath(selectedDirectory);
-                Navigator.pop(context);
 
-                if (success) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('下载位置已更新')),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('设置下载位置失败')),
-                  );
-                }
-              }
-            },
-            child: const Text('选择文件夹'),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Future<void> _scanAndImportVideos(BuildContext context) async {
-    // 显示加载提示
-    const loadingDialog = AlertDialog(
-      content: Row(
-        children: [
-          CircularProgressIndicator(),
-          SizedBox(width: 16),
-          Text('正在扫描文件夹...'),
-        ],
-      ),
-    );
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => loadingDialog,
-    );
-
-    try {
-      // 执行扫描
-      final importedCount = await DownloadManager().scanDownloadFolder();
-
-      // 关闭加载对话框
-      Navigator.pop(context);
-
-      // 显示结果
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('扫描完成'),
-          content: Text(
-            importedCount > 0
-                ? '已导入 $importedCount 个视频文件到下载记录'
-                : '没有找到新的视频文件',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('确定'),
-            ),
-          ],
-        ),
-      );
-    } catch (e) {
-      // 出错时关闭加载对话框
-      Navigator.pop(context);
-
-      // 显示错误
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('扫描失败: ${e.toString()}')),
-      );
-    }
-  }
 
   // 检查是否为视频文件
   bool _isVideoFile(String fileName) {

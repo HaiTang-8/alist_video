@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'download_settings_manager.dart';
 
 class DownloadTask {
   final String path;
@@ -85,6 +86,11 @@ class DownloadManager {
   final Map<String, DownloadTask> _tasks = {};
   final _downloadTaskController = ValueNotifier<Map<String, DownloadTask>>({});
   final _dio = Dio();
+  final DownloadSettingsManager _settingsManager = DownloadSettingsManager();
+
+  // 下载队列管理
+  final List<String> _downloadQueue = [];
+  int _activeDownloads = 0;
 
   // 加载保存的任务
   Future<void> _loadTasks() async {
@@ -224,8 +230,14 @@ class DownloadManager {
       _downloadTaskController.value = Map.from(_tasks);
 
       if (task.status != '已暂停') {
-        // 开始下载
-        _startDownload(task);
+        // 检查是否自动开始下载
+        final autoStart = await _settingsManager.getAutoStartDownload();
+        if (autoStart) {
+          await _queueDownload(taskKey);
+        } else {
+          task.status = '等待中';
+          _updateTask(task);
+        }
       }
     } catch (e) {
       final taskKey = '$path/$fileName';
@@ -245,6 +257,7 @@ class DownloadManager {
   Future<void> _startDownload(DownloadTask task) async {
     task.status = '下载中';
     task.cancelToken = CancelToken();
+    _activeDownloads++;
     _updateTask(task);
 
     try {
@@ -302,15 +315,26 @@ class DownloadManager {
       } else {
         task.status = '已完成';
         // 发送通知
-        _showNotification(task.fileName);
+        final enableNotifications = await _settingsManager.getEnableNotifications();
+        if (enableNotifications) {
+          _showNotification(task.fileName);
+        }
       }
+      _activeDownloads--;
       _updateTask(task);
+
+      // 处理下载队列
+      await _processDownloadQueue();
     } catch (e) {
       if (!task.cancelToken!.isCancelled) {
         print("Download error: $e");
         task.status = '错误';
         task.error = e.toString();
+        _activeDownloads--;
         _updateTask(task);
+
+        // 处理下载队列
+        await _processDownloadQueue();
       }
     }
   }
@@ -321,19 +345,65 @@ class DownloadManager {
     _saveTasks(); // 保存更新
   }
 
+  /// 将任务加入下载队列
+  Future<void> _queueDownload(String taskKey) async {
+    final task = _tasks[taskKey];
+    if (task == null) return;
+
+    // 检查当前活跃下载数量
+    final maxConcurrent = await _settingsManager.getMaxConcurrentDownloads();
+
+    if (_activeDownloads < maxConcurrent) {
+      // 可以立即开始下载
+      await _startDownload(task);
+    } else {
+      // 加入等待队列
+      if (!_downloadQueue.contains(taskKey)) {
+        _downloadQueue.add(taskKey);
+        task.status = '等待中';
+        _updateTask(task);
+      }
+    }
+  }
+
+  /// 处理下载队列，启动下一个等待的任务
+  Future<void> _processDownloadQueue() async {
+    final maxConcurrent = await _settingsManager.getMaxConcurrentDownloads();
+
+    while (_activeDownloads < maxConcurrent && _downloadQueue.isNotEmpty) {
+      final taskKey = _downloadQueue.removeAt(0);
+      final task = _tasks[taskKey];
+
+      if (task != null && task.status == '等待中') {
+        await _startDownload(task);
+      }
+    }
+  }
+
   Future<void> pauseTask(String path) async {
     final task = _tasks[path];
-    if (task != null && task.status == '下载中') {
-      task.cancelToken?.cancel('用户暂停下载');
-      task.status = '已暂停';
-      _updateTask(task);
+    if (task != null) {
+      if (task.status == '下载中') {
+        task.cancelToken?.cancel('用户暂停下载');
+        task.status = '已暂停';
+        _activeDownloads--;
+        _updateTask(task);
+
+        // 处理下载队列
+        await _processDownloadQueue();
+      } else if (task.status == '等待中') {
+        // 从队列中移除
+        _downloadQueue.remove(path);
+        task.status = '已暂停';
+        _updateTask(task);
+      }
     }
   }
 
   Future<void> resumeTask(String path) async {
     final task = _tasks[path];
     if (task != null && task.status == '已暂停') {
-      _startDownload(task);
+      await _queueDownload(path);
     }
   }
 
