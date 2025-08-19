@@ -675,16 +675,26 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
   }
 
   Future<void> _scanAndImportVideos() async {
-    // 显示加载提示
+    // 显示进度对话框
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const AlertDialog(
-        content: Row(
+      builder: (context) => AlertDialog(
+        title: const Text('扫描文件夹'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(),
-            SizedBox(width: 16),
-            Text('正在扫描文件夹...'),
+            const CircularProgressIndicator(),
+            const SizedBox(height: 16),
+            const Text('正在递归扫描所有子目录...'),
+            const SizedBox(height: 8),
+            Text(
+              '这可能需要一些时间，请耐心等待',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              ),
+            ),
           ],
         ),
       ),
@@ -697,16 +707,50 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
       // 关闭加载对话框
       if (mounted) Navigator.pop(context);
 
-      // 显示结果
+      // 显示详细结果
       if (mounted) {
         showDialog(
           context: context,
           builder: (context) => AlertDialog(
-            title: const Text('扫描完成'),
-            content: Text(
-              importedCount > 0
-                  ? '已导入 $importedCount 个视频文件到下载记录'
-                  : '没有找到新的视频文件',
+            title: Row(
+              children: [
+                Icon(
+                  importedCount > 0 ? Icons.check_circle : Icons.info,
+                  color: importedCount > 0 ? Colors.green : Colors.blue,
+                ),
+                const SizedBox(width: 8),
+                const Text('扫描完成'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  importedCount > 0
+                      ? '成功导入 $importedCount 个视频文件到下载记录'
+                      : '没有找到新的视频文件',
+                  style: const TextStyle(fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '扫描范围：下载目录及其所有子目录',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                  ),
+                ),
+                if (importedCount > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    '导入的文件将保持原有的目录结构',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                    ),
+                  ),
+                ],
+              ],
             ),
             actions: [
               TextButton(
@@ -723,7 +767,40 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
 
       // 显示错误
       if (mounted) {
-        _showErrorSnackBar('扫描失败: ${e.toString()}');
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Row(
+              children: [
+                const Icon(Icons.error, color: Colors.red),
+                const SizedBox(width: 8),
+                const Text('扫描失败'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('扫描过程中发生错误：'),
+                const SizedBox(height: 8),
+                Text(
+                  e.toString(),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.error,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('确定'),
+              ),
+            ],
+          ),
+        );
       }
     }
   }

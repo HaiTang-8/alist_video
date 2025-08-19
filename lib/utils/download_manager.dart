@@ -618,11 +618,11 @@ class DownloadManager {
       
       print("Found ${recordedFilePaths.length} existing records");
       
-      // 读取目录下的所有文件
+      // 递归读取目录下的所有文件
       final List<FileSystemEntity> files = [];
       try {
-        files.addAll(await directory.list().toList());
-        print("Found ${files.length} files/directories in download folder");
+        files.addAll(await directory.list(recursive: true).toList());
+        print("Found ${files.length} files/directories in download folder (recursive scan)");
       } catch (e) {
         print("Error listing directory contents: $e");
         return 0;
@@ -668,18 +668,31 @@ class DownloadManager {
               print("Found video file: $fileName");
               final fileSize = await fileEntity.length();
               
-              // 尝试确定文件的原始路径
+              // 计算相对于下载目录的路径，保持目录结构
               String taskPath;
-              
+
+              // 计算相对路径
+              String relativePath = filePath.substring(downloadPath.length);
+              if (relativePath.startsWith(Platform.pathSeparator)) {
+                relativePath = relativePath.substring(1);
+              }
+
               // 1. 尝试根据文件名匹配已有的下载任务路径模式
               if (existingFilePatterns.containsKey(fileName)) {
                 // 如果找到了匹配的文件名，使用其第一个父路径
                 taskPath = "${existingFilePatterns[fileName]!.first}/$fileName";
                 print("Matched existing path pattern: $taskPath");
               } else {
-                // 2. 如果没有匹配的模式，使用通用格式
-                taskPath = "/imported/$fileName";
-                print("Using generic import path: $taskPath");
+                // 2. 保持目录结构，使用相对路径
+                if (relativePath.contains(Platform.pathSeparator)) {
+                  // 文件在子目录中，保持目录结构
+                  taskPath = "/imported/$relativePath";
+                  print("Using directory structure path: $taskPath");
+                } else {
+                  // 文件在根目录，使用简单格式
+                  taskPath = "/imported/$fileName";
+                  print("Using root level import path: $taskPath");
+                }
               }
               
               // 创建一个已完成的下载任务
