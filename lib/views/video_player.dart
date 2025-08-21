@@ -53,6 +53,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   int playIndex = 0;
   late int currentPlayingIndex = 0;
 
+  // 添加 ValueNotifier 来管理当前播放索引的状态更新
+  final ValueNotifier<int> _currentPlayingIndexNotifier = ValueNotifier<int>(0);
+
   // 添加 ItemScrollController 用于精确的索引滚动
   final ItemScrollController _itemScrollController = ItemScrollController();
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
@@ -200,6 +203,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     setState(() {
       currentPlayingIndex = playList
           .indexWhere((item) => item.extras!['name'] == currentPlayingName);
+      _currentPlayingIndexNotifier.value = currentPlayingIndex;
     });
   }
 
@@ -455,6 +459,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
           setState(() {
             currentPlayingIndex = event.index;
+            _currentPlayingIndexNotifier.value = event.index;
             _isLoading = true;
             _hasSeekInitialPosition = false;
           });
@@ -619,6 +624,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
         // 初始加载时，手动设置当前播放索引
         currentPlayingIndex = playIndex;
+        _currentPlayingIndexNotifier.value = playIndex;
 
         // 监听播放列表索引变化前，防止初始化时触发不必要的检查
         player.stream.playlist.first.then((event) {
@@ -631,6 +637,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         if (mounted && !_isInitialLoading) {
           setState(() {
             currentPlayingIndex = playIndex;
+            _currentPlayingIndexNotifier.value = playIndex;
           });
         }
 
@@ -887,6 +894,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         _availableSubtitles.clear();
         playList.clear();
         currentPlayingIndex = 0;
+        _currentPlayingIndexNotifier.value = 0;
         playIndex = 0;
         _hasSeekInitialPosition = false;
         _isInitialLoading = true;
@@ -1259,6 +1267,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     _rateNotifier.dispose();
     _showSpeedIndicator.dispose();
     _indicatorSpeedValue.dispose();
+    _currentPlayingIndexNotifier.dispose();
     _speedIndicatorTimer?.cancel();
     _hideSpeedIndicatorOverlay();
 
@@ -1438,6 +1447,41 @@ class VideoPlayerState extends State<VideoPlayer> {
                     volumeGesture: true,
                     brightnessGesture: true,
                     visibleOnMount: false,
+                    topButtonBar: [
+                      // 在顶部显示视频名称，占满整行并有底色，动态更新
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 12),
+                          decoration: const BoxDecoration(
+                            color: Colors.black54,
+                          ),
+                          child: ValueListenableBuilder<int>(
+                            valueListenable: _currentPlayingIndexNotifier,
+                            builder: (context, index, child) {
+                              String videoName = '视频播放';
+                              if (playList.isNotEmpty &&
+                                  index >= 0 &&
+                                  index < playList.length) {
+                                videoName = playList[index].extras!['name'] as String;
+                              }
+
+                              return Text(
+                                videoName,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                textAlign: TextAlign.left,
+                              );
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
                     primaryButtonBar: [
                       // 添加在顶部显示的倍速提示
                       ValueListenableBuilder<bool>(
@@ -1680,6 +1724,42 @@ class VideoPlayerState extends State<VideoPlayer> {
           fullscreen: MaterialDesktopVideoControlsThemeData(
               displaySeekBar: true,
               visibleOnMount: false,
+              topButtonBar: [
+                // 在桌面端全屏模式顶部显示视频名称，占满整行并有底色，动态更新
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 8),
+                    decoration: const BoxDecoration(
+                      color: Colors.black54,
+                    ),
+                    child: ValueListenableBuilder<int>(
+                      valueListenable: _currentPlayingIndexNotifier,
+                      builder: (context, index, child) {
+                        String videoName = '视频播放';
+                        if (playList.isNotEmpty &&
+                            index >= 0 &&
+                            index < playList.length) {
+                          videoName = playList[index].extras!['name'] as String;
+                        }
+
+                        _logDebug(videoName);
+                        return Text(
+                          videoName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.left,
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
               primaryButtonBar: [],
               keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
               seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
