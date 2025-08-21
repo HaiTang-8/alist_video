@@ -132,4 +132,8 @@ class AppConstants {
   // 本地播放优先设置
   static const String preferLocalPlaybackKey = 'prefer_local_playback'; // 是否优先使用本地文件播放
   static const bool defaultPreferLocalPlayback = true; // 默认优先使用本地文件
+
+  // SQL日志设置
+  static const String enableSqlLoggingKey = 'enable_sql_logging'; // 是否启用SQL日志打印
+  static const bool defaultEnableSqlLogging = false; // 默认不启用SQL日志
 }

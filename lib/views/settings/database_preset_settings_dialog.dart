@@ -58,6 +58,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
   
   bool _isLoading = false;
   bool _obscurePassword = true;
+  bool _enableSqlLogging = AppConstants.defaultEnableSqlLogging;
 
   @override
   void initState() {
@@ -81,7 +82,8 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       final database = prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName;
       final username = prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser;
       final password = prefs.getString(AppConstants.dbPasswordKey) ?? AppConstants.defaultDbPassword;
-      
+      final enableSqlLogging = prefs.getBool(AppConstants.enableSqlLoggingKey) ?? AppConstants.defaultEnableSqlLogging;
+
       setState(() {
         _presets = presets;
         _selectedPreset = currentPreset;
@@ -90,8 +92,9 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
         _databaseController.text = database;
         _usernameController.text = username;
         _passwordController.text = password;
+        _enableSqlLogging = enableSqlLogging;
         _isLoadingPresets = false;
-        
+
         // 根据模式设置初始标签页
         _tabController.index = isCustom ? 1 : 0;
       });
@@ -366,6 +369,34 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
             ),
           );
         }
+      }
+    }
+  }
+
+  /// 保存SQL日志设置
+  Future<void> _saveSqlLoggingSetting() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(AppConstants.enableSqlLoggingKey, _enableSqlLogging);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_enableSqlLogging ? 'SQL日志已启用' : 'SQL日志已禁用'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('保存设置失败: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+          ),
+        );
       }
     }
   }
@@ -829,8 +860,25 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                                     ],
                                   ),
                                 ),
-                                // 删除按钮
-                                if (!preset.isDefault)
+                                // 操作按钮
+                                if (!preset.isDefault) ...[
+                                  // 编辑按钮
+                                  IconButton(
+                                    onPressed: () => _editPreset(preset),
+                                    icon: Icon(
+                                      Icons.edit_outlined,
+                                      color: Theme.of(context).colorScheme.primary,
+                                      size: 20,
+                                    ),
+                                    style: IconButton.styleFrom(
+                                      backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  // 删除按钮
                                   IconButton(
                                     onPressed: () => _deletePreset(preset),
                                     icon: Icon(
@@ -845,6 +893,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                                       ),
                                     ),
                                   ),
+                                ],
                               ],
                             ),
                           ),
@@ -1030,10 +1079,269 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                 ],
               ),
             ),
+            const SizedBox(height: 20),
+            // SQL日志设置
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.bug_report_outlined,
+                        color: Theme.of(context).colorScheme.primary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        '调试设置',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('启用SQL日志'),
+                    subtitle: const Text('在控制台打印数据库SQL查询语句'),
+                    value: _enableSqlLogging,
+                    onChanged: (bool value) {
+                      setState(() {
+                        _enableSqlLogging = value;
+                      });
+                      _saveSqlLoggingSetting();
+                    },
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
+  }
+
+  /// 编辑预设
+  Future<void> _editPreset(DatabaseConfigPreset preset) async {
+    final nameController = TextEditingController(text: preset.name);
+    final hostController = TextEditingController(text: preset.host);
+    final portController = TextEditingController(text: preset.port.toString());
+    final databaseController = TextEditingController(text: preset.database);
+    final usernameController = TextEditingController(text: preset.username);
+    final passwordController = TextEditingController(text: preset.password);
+    final descController = TextEditingController(text: preset.description ?? '');
+    bool obscurePassword = true;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  Icons.edit_outlined,
+                  color: Theme.of(context).colorScheme.onPrimaryContainer,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                '编辑预设',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('修改数据库配置预设信息'),
+                  const SizedBox(height: 20),
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: '预设名称',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.label_outline),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: hostController,
+                    decoration: const InputDecoration(
+                      labelText: '主机地址',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.dns_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: portController,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(
+                      labelText: '端口',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.settings_ethernet_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: databaseController,
+                    decoration: const InputDecoration(
+                      labelText: '数据库名称',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.storage_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: usernameController,
+                    decoration: const InputDecoration(
+                      labelText: '用户名',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.person_rounded),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: passwordController,
+                    obscureText: obscurePassword,
+                    decoration: InputDecoration(
+                      labelText: '密码',
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.lock_rounded),
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            obscurePassword = !obscurePassword;
+                          });
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: descController,
+                    decoration: const InputDecoration(
+                      labelText: '描述（可选）',
+                      border: OutlineInputBorder(),
+                      prefixIcon: Icon(Icons.description_outlined),
+                    ),
+                    maxLines: 2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              style: TextButton.styleFrom(
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('取消'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Theme.of(context).primaryColor,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true && nameController.text.trim().isNotEmpty) {
+      try {
+        final port = int.tryParse(portController.text.trim());
+        if (port == null || port <= 0 || port > 65535) {
+          throw Exception('请输入有效的端口号');
+        }
+
+        // 检查名称是否与其他预设重复（排除自己）
+        final allPresets = await _configManager.getAllPresets();
+        final nameExists = allPresets.any((p) => p.id != preset.id && p.name == nameController.text.trim());
+        if (nameExists) {
+          throw Exception('已存在同名的配置预设');
+        }
+
+        // 创建更新后的预设，保持原有的ID和创建时间
+        final updatedPreset = DatabaseConfigPreset(
+          id: preset.id,
+          name: nameController.text.trim(),
+          host: hostController.text.trim(),
+          port: port,
+          database: databaseController.text.trim(),
+          username: usernameController.text.trim(),
+          password: passwordController.text.trim(),
+          createdAt: preset.createdAt,
+          isDefault: preset.isDefault,
+          description: descController.text.trim().isEmpty ? null : descController.text.trim(),
+        );
+
+        final success = await _configManager.savePreset(updatedPreset);
+        if (success) {
+          await _loadData(); // 重新加载数据
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('预设更新成功'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('更新预设失败: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+
+    // 清理控制器
+    nameController.dispose();
+    hostController.dispose();
+    portController.dispose();
+    databaseController.dispose();
+    usernameController.dispose();
+    passwordController.dispose();
+    descController.dispose();
   }
 
   /// 删除预设

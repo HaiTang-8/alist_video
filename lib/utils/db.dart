@@ -1,7 +1,9 @@
 import 'dart:typed_data';
 
+import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/historical_record.dart';
 import 'package:postgres/postgres.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DatabaseHelper {
   static DatabaseHelper? _instance;
@@ -21,6 +23,16 @@ class DatabaseHelper {
   }
 
   DatabaseHelper._();
+
+  /// 检查是否启用SQL日志
+  Future<bool> _isSqlLoggingEnabled() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(AppConstants.enableSqlLoggingKey) ?? AppConstants.defaultEnableSqlLogging;
+    } catch (e) {
+      return AppConstants.defaultEnableSqlLogging;
+    }
+  }
 
   // 初始化数据库连接
   Future<void> init({
@@ -97,8 +109,12 @@ class DatabaseHelper {
     try {
       await _ensureConnection();
 
-      print('Executing SQL: $sql');
-      print('Parameters: $parameters');
+      // 根据设置决定是否打印SQL日志
+      final enableLogging = await _isSqlLoggingEnabled();
+      if (enableLogging) {
+        print('Executing SQL: $sql');
+        print('Parameters: $parameters');
+      }
 
       final results = await _connection!.execute(
         Sql.named(sql),
@@ -108,6 +124,7 @@ class DatabaseHelper {
 
       return results.map((row) => row.toColumnMap()).toList();
     } catch (e) {
+      // 错误信息始终打印，不受设置控制
       print('Query execution failed: $e');
       print('SQL: $sql');
       print('Parameters: $parameters');

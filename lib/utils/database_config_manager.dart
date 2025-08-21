@@ -34,17 +34,22 @@ class DatabaseConfigManager {
   Future<bool> savePreset(DatabaseConfigPreset preset) async {
     try {
       final presets = await getAllPresets();
-      
-      // 检查是否已存在同名配置
-      final existingIndex = presets.indexWhere((p) => p.name == preset.name);
-      if (existingIndex != -1) {
+
+      // 首先根据ID检查是否已存在（用于更新）
+      final existingIndexById = presets.indexWhere((p) => p.id == preset.id);
+      if (existingIndexById != -1) {
         // 更新现有配置
-        presets[existingIndex] = preset;
+        presets[existingIndexById] = preset;
       } else {
+        // 检查是否已存在同名配置（用于新增时的重名检查）
+        final existingIndexByName = presets.indexWhere((p) => p.name == preset.name);
+        if (existingIndexByName != -1) {
+          throw Exception('已存在同名的配置预设');
+        }
         // 添加新配置
         presets.add(preset);
       }
-      
+
       await _savePresets(presets);
       return true;
     } catch (e) {
