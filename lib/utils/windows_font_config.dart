@@ -89,43 +89,7 @@ class WindowsFontConfig {
     return [];
   }
 
-  /// 为特定组件创建优化的字体配置
-  static class ComponentStyles {
-    /// AppBar标题样式
-    static TextStyle get appBarTitle => createOptimizedTextStyle(
-      fontSize: 16,
-      fontWeight: FontWeight.w500,
-      color: const Color(0xFF2C68D5),
-    );
 
-    /// 视频标题样式（普通模式）
-    static TextStyle get videoTitle => createOptimizedTextStyle(
-      fontSize: 16,
-      fontWeight: FontWeight.w500,
-      color: Colors.black,
-    );
-
-    /// 视频标题样式（全屏模式）
-    static TextStyle get fullscreenVideoTitle => createOptimizedTextStyle(
-      fontSize: 16,
-      fontWeight: FontWeight.w500,
-      color: Colors.white,
-    );
-
-    /// 列表项标题样式
-    static TextStyle get listItemTitle => createOptimizedTextStyle(
-      fontSize: 14,
-      fontWeight: FontWeight.w400,
-      color: Colors.black87,
-    );
-
-    /// 按钮文字样式
-    static TextStyle get buttonText => createOptimizedTextStyle(
-      fontSize: 14,
-      fontWeight: FontWeight.w500,
-      color: Colors.white,
-    );
-  }
 
   /// 获取主题配置
   static ThemeData getOptimizedTheme() {
@@ -174,4 +138,42 @@ class WindowsFontConfig {
       ),
     );
   }
+}
+
+/// 为特定组件创建优化的字体配置
+class ComponentStyles {
+  /// AppBar标题样式
+  static TextStyle get appBarTitle => WindowsFontConfig.createOptimizedTextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    color: const Color(0xFF2C68D5),
+  );
+
+  /// 视频标题样式（普通模式）
+  static TextStyle get videoTitle => WindowsFontConfig.createOptimizedTextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    color: Colors.black,
+  );
+
+  /// 视频标题样式（全屏模式）
+  static TextStyle get fullscreenVideoTitle => WindowsFontConfig.createOptimizedTextStyle(
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    color: Colors.white,
+  );
+
+  /// 列表项标题样式
+  static TextStyle get listItemTitle => WindowsFontConfig.createOptimizedTextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w400,
+    color: Colors.black87,
+  );
+
+  /// 按钮文字样式
+  static TextStyle get buttonText => WindowsFontConfig.createOptimizedTextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w500,
+    color: Colors.white,
+  );
 }
