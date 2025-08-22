@@ -17,6 +17,7 @@ import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/config_server.dart';
 import 'package:alist_player/utils/download_adapter.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:alist_player/utils/font_helper.dart';
 import 'package:timeago/timeago.dart' as timeago;
 
 void main() async {
@@ -103,54 +104,16 @@ class MyApp extends StatelessWidget {
         title: 'AList Player',
         theme: ThemeData(
           useMaterial3: true,
-          fontFamily: Platform.isWindows ? "微软雅黑" : null,
-          textTheme: const TextTheme(
-            titleLarge: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.15,
-            ),
-            titleMedium: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 0.15,
-            ),
-            bodyLarge: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w400,
-              letterSpacing: 0.5,
-            ),
-            bodyMedium: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w400,
-              letterSpacing: 0.25,
-            ),
-            bodySmall: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w400,
-              letterSpacing: 0.4,
-            ),
-          ),
+          fontFamily: FontHelper.getPlatformFontFamily(),
+          fontFamilyFallback: FontHelper.getPlatformFontFallback(),
+          textTheme: FontHelper.getThemeTextTheme(),
           primaryTextTheme: const TextTheme().apply(
-            fontFamily: Platform.isWindows ? "微软雅黑" : null,
+            fontFamily: FontHelper.getPlatformFontFamily(),
           ),
           primarySwatch: Colors.blue,
           primaryColor: const Color(0xFF2C68D5),
           brightness: Brightness.light,
-          appBarTheme: const AppBarTheme(
-            backgroundColor: Colors.white,
-            foregroundColor: Color(0xFF2C68D5),
-            elevation: 0,
-            centerTitle: false,
-            titleTextStyle: TextStyle(
-              color: Color(0xFF2C68D5),
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
-            iconTheme: IconThemeData(
-              color: Color(0xFF2C68D5),
-            ),
-          ),
+          appBarTheme: FontHelper.getAppBarTheme(),
           cardTheme: CardTheme(
             elevation: 2,
             shape: RoundedRectangleBorder(

@@ -3,6 +3,7 @@ import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
+import 'package:alist_player/utils/font_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // Add this for compute
@@ -12,7 +13,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:async';
-import 'dart:io'; // Add this import for File class
+import 'dart:io'; // Add this import for File class and Platform
 import 'package:image/image.dart' as img; // Add this import for image processing
 import 'package:path_provider/path_provider.dart'; // Added for path_provider
 
@@ -1339,10 +1340,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         ),
         title: Text(
           currentVideoName,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-          ),
+          style: FontHelper.createAppBarTitleStyle(),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1468,11 +1466,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
                               return Text(
                                 videoName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                                style: FontHelper.createFullscreenVideoTitleStyle(),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.left,
