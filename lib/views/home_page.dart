@@ -250,15 +250,23 @@ class _HomePageState extends State<HomePage>
     });
   }
 
-  void _gotoVideo(FileItem file) {
+  void _gotoVideo(FileItem file) async {
     print("path: ${currentPath.join('/')}");
     print("name: ${file.name}");
     print("file: ${file}");
-    Navigator.of(context).push(MaterialPageRoute(
+
+    // 等待视频播放器页面返回，然后刷新列表
+    await Navigator.of(context).push(MaterialPageRoute(
         builder: (context) => VideoPlayer(
               path: currentPath.join('/'),
               name: file.name,
             )));
+
+    // 从视频播放器返回后，刷新当前列表以更新播放历史记录等信息
+    if (mounted) {
+      print("从视频播放器返回，正在刷新列表...");
+      await _getList(refresh: true);
+    }
   }
   
 
@@ -538,7 +546,7 @@ class _HomePageState extends State<HomePage>
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: () {
+        onTap: () async {
           Navigator.pop(context);
           if (file.type == 1) {
             // 构建完整路径
@@ -563,12 +571,19 @@ class _HomePageState extends State<HomePage>
             print("Video path: ${videoPath.join('/')}");
             print("Video name: ${file.name}");
 
-            Navigator.of(context).push(MaterialPageRoute(
+            // 等待视频播放器页面返回，然后刷新列表
+            await Navigator.of(context).push(MaterialPageRoute(
               builder: (context) => VideoPlayer(
                 path: videoPath.join('/'),
                 name: file.name,
               ),
             ));
+
+            // 从视频播放器返回后，刷新当前列表以更新播放历史记录等信息
+            if (mounted) {
+              print("从搜索结果的视频播放器返回，正在刷新列表...");
+              await _getList(refresh: true);
+            }
           }
         },
         child: Container(
