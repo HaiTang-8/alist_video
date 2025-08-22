@@ -23,10 +23,12 @@ class DatabasePresetSettingsDialog extends StatefulWidget {
         context: context,
         barrierDismissible: false,
         builder: (context) => Dialog(
+          shape: const RoundedRectangleBorder(),
+          insetPadding: EdgeInsets.zero,
           child: ConstrainedBox(
             constraints: const BoxConstraints(
-              maxWidth: 800,
-              maxHeight: 700,
+              maxWidth: 700,
+              maxHeight: 650,
             ),
             child: const DatabasePresetSettingsDialog(),
           ),
@@ -216,102 +218,59 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: const RoundedRectangleBorder(),
+        contentPadding: const EdgeInsets.all(20),
         title: Row(
           children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                Icons.bookmark_add_outlined,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-                size: 20,
-              ),
+            Icon(
+              Icons.bookmark_add_outlined,
+              color: Theme.of(context).primaryColor,
+              size: 20,
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
             const Text(
               '保存为预设',
-              style: TextStyle(fontWeight: FontWeight.w600),
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
             ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('为当前配置创建一个预设，方便以后快速使用'),
-            const SizedBox(height: 20),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '预设名称',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
+        content: SizedBox(
+          width: 300,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: InputDecoration(
+                  labelText: '预设名称',
+                  hintText: '输入预设名称',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  isDense: true,
                 ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: nameController,
-                  decoration: InputDecoration(
-                    hintText: '请输入预设名称',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
+                autofocus: true,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: descController,
+                decoration: InputDecoration(
+                  labelText: '描述（可选）',
+                  hintText: '输入预设描述',
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  isDense: true,
                 ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '描述（可选）',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: descController,
-                  decoration: InputDecoration(
-                    hintText: '请输入预设描述',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    filled: true,
-                    fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 12,
-                    ),
-                  ),
-                  maxLines: 2,
-                ),
-              ],
-            ),
-          ],
+                maxLines: 2,
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             style: TextButton.styleFrom(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
             ),
             child: const Text('取消'),
@@ -321,8 +280,9 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
             style: ElevatedButton.styleFrom(
               backgroundColor: Theme.of(context).primaryColor,
               foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
             ),
             child: const Text('保存'),
@@ -414,52 +374,44 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Theme.of(context).colorScheme.onSurface,
-        title: Text(
+        backgroundColor: Theme.of(context).primaryColor,
+        foregroundColor: Colors.white,
+        toolbarHeight: 56,
+        title: const Text(
           '数据库设置',
           style: TextStyle(
-            fontSize: 20,
+            fontSize: 18,
             fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.onSurface,
+            color: Colors.white,
           ),
         ),
         leading: IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.close, size: 20),
-          ),
+          icon: const Icon(Icons.close, color: Colors.white, size: 22),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           if (_isLoading)
-            Padding(
-              padding: const EdgeInsets.all(16.0),
+            const Padding(
+              padding: EdgeInsets.all(16.0),
               child: SizedBox(
-                width: 20,
-                height: 20,
+                width: 18,
+                height: 18,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  color: Theme.of(context).primaryColor,
+                  color: Colors.white,
                 ),
               ),
             )
           else
             Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: ElevatedButton(
+              padding: const EdgeInsets.only(right: 12),
+              child: TextButton(
                 onPressed: _saveConfig,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).primaryColor,
+                style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                 ),
                 child: const Text('保存', style: TextStyle(fontWeight: FontWeight.w600)),
@@ -469,25 +421,26 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       ),
       body: Column(
         children: [
-          // 自定义标签栏
+          // 紧凑的标签栏
           Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            margin: const EdgeInsets.all(12),
             decoration: BoxDecoration(
               color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: TabBar(
               controller: _tabController,
               indicator: BoxDecoration(
                 color: Theme.of(context).primaryColor,
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
               ),
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
               labelColor: Colors.white,
               unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+              padding: const EdgeInsets.all(4),
               tabs: const [
                 Tab(text: '预设配置'),
                 Tab(text: '自定义配置'),
@@ -511,58 +464,28 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
 
   /// 构建桌面端布局
   Widget _buildDesktopLayout(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
+    return Card(
+      elevation: 8,
+      shape: const RoundedRectangleBorder(),
+      margin: EdgeInsets.zero,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 标题栏
+          // 紧凑的标题栏
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Theme.of(context).primaryColor,
-                  Theme.of(context).primaryColor.withValues(alpha: 0.8),
-                ],
-              ),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
+              color: Theme.of(context).primaryColor,
             ),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.storage_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
+                const Icon(Icons.storage_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
                     '数据库设置',
                     style: TextStyle(
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.w600,
                       color: Colors.white,
                     ),
@@ -570,43 +493,37 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                 ),
                 IconButton(
                   onPressed: () => Navigator.pop(context),
-                  icon: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.close, color: Colors.white, size: 18),
-                  ),
+                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
               ],
             ),
           ),
-          // 标签栏
+          // 紧凑的标签栏
           Container(
-            padding: const EdgeInsets.all(16),
-            child: Container(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
+            margin: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: TabBar(
+              controller: _tabController,
+              indicator: BoxDecoration(
+                color: Theme.of(context).primaryColor,
+                borderRadius: BorderRadius.circular(6),
               ),
-              child: TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(
-                  color: Theme.of(context).primaryColor,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                labelColor: Colors.white,
-                unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-                tabs: const [
-                  Tab(text: '预设配置'),
-                  Tab(text: '自定义配置'),
-                ],
-              ),
+              indicatorSize: TabBarIndicatorSize.tab,
+              dividerColor: Colors.transparent,
+              labelColor: Colors.white,
+              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+              padding: const EdgeInsets.all(4),
+              tabs: const [
+                Tab(text: '预设配置'),
+                Tab(text: '自定义配置'),
+              ],
             ),
           ),
           // 内容区域
@@ -619,15 +536,11 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               ],
             ),
           ),
-          // 底部按钮
+          // 紧凑的底部按钮
           Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16),
-              ),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -635,44 +548,37 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    minimumSize: const Size(64, 36),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                  child: Text(
-                    '取消',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
+                  child: const Text('取消'),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 ElevatedButton(
                   onPressed: _isLoading ? null : _saveConfig,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    minimumSize: const Size(64, 36),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(6),
                     ),
                   ),
                   child: _isLoading
                       ? const SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 14,
+                          height: 14,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
                             color: Colors.white,
                           ),
                         )
-                      : const Text(
-                          '保存',
-                          style: TextStyle(fontWeight: FontWeight.w600),
-                        ),
+                      : const Text('保存', style: TextStyle(fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -685,376 +591,339 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
   /// 构建预设配置标签页
   Widget _buildPresetTab(BuildContext context, bool isMobile) {
     if (_isLoadingPresets) {
-      return Center(
+      return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            CircularProgressIndicator(
-              color: Theme.of(context).primaryColor,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              '加载配置中...',
-              style: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-                fontSize: 14,
-              ),
-            ),
+            CircularProgressIndicator(),
+            SizedBox(height: 12),
+            Text('加载配置中...', style: TextStyle(fontSize: 14)),
           ],
         ),
       );
     }
 
     return Padding(
-      padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isMobile) ...[
-            Row(
-              children: [
-                Icon(
-                  Icons.bookmark_rounded,
-                  color: Theme.of(context).primaryColor,
-                  size: 20,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '选择预设配置',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurface,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-          ],
-          Expanded(
-            child: _presets.isEmpty
-                ? _buildEmptyState(context)
-                : ListView.builder(
-                    itemCount: _presets.length,
-                    itemBuilder: (context, index) {
-                      final preset = _presets[index];
-                      final isSelected = _selectedPreset?.id == preset.id;
+      padding: EdgeInsets.all(isMobile ? 12.0 : 16.0),
+      child: _presets.isEmpty
+          ? _buildEmptyState(context)
+          : ListView.separated(
+              itemCount: _presets.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final preset = _presets[index];
+                final isSelected = _selectedPreset?.id == preset.id;
 
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(16),
-                          border: isSelected
-                              ? Border.all(
-                                  color: Theme.of(context).primaryColor,
-                                  width: 2,
-                                )
-                              : null,
-                        ),
-                        child: InkWell(
-                          onTap: () {
-                            setState(() {
-                              _selectedPreset = preset;
-                            });
-                          },
-                          borderRadius: BorderRadius.circular(16),
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
+                return Card(
+                  elevation: 0,
+                  margin: EdgeInsets.zero,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    side: BorderSide(
+                      color: isSelected
+                          ? Theme.of(context).primaryColor
+                          : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                      width: isSelected ? 2 : 1,
+                    ),
+                  ),
+                  color: isSelected
+                      ? Theme.of(context).primaryColor.withValues(alpha: 0.05)
+                      : Theme.of(context).colorScheme.surface,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedPreset = preset;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Row(
+                        children: [
+                          // 选择指示器
+                          Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected
+                                    ? Theme.of(context).primaryColor
+                                    : Theme.of(context).colorScheme.outline,
+                                width: 2,
+                              ),
+                              color: isSelected
+                                  ? Theme.of(context).primaryColor
+                                  : Colors.transparent,
+                            ),
+                            child: isSelected
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 10,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          // 配置信息
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                // 选择指示器
-                                Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? Theme.of(context).primaryColor
-                                          : Theme.of(context).colorScheme.outline,
-                                      width: 2,
-                                    ),
-                                    color: isSelected
-                                        ? Theme.of(context).primaryColor
-                                        : Colors.transparent,
-                                  ),
-                                  child: isSelected
-                                      ? const Icon(
-                                          Icons.check,
-                                          size: 12,
-                                          color: Colors.white,
-                                        )
-                                      : null,
-                                ),
-                                const SizedBox(width: 16),
-                                // 配置信息
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              preset.name,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 16,
-                                                color: Theme.of(context).colorScheme.onSurface,
-                                              ),
-                                            ),
-                                          ),
-                                          if (preset.isDefault)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.amber.withValues(alpha: 0.2),
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.star,
-                                                    size: 12,
-                                                    color: Colors.amber,
-                                                  ),
-                                                  SizedBox(width: 4),
-                                                  Text(
-                                                    '默认',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.w500,
-                                                      color: Colors.amber,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        preset.connectionString,
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        preset.name,
                                         style: TextStyle(
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 15,
+                                          color: Theme.of(context).colorScheme.onSurface,
                                         ),
                                       ),
-                                      if (preset.description != null && preset.description!.isNotEmpty) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          preset.description!,
-                                          style: TextStyle(
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                            fontSize: 12,
-                                          ),
+                                    ),
+                                    if (preset.isDefault)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 2,
                                         ),
-                                      ],
-                                    ],
-                                  ),
+                                        decoration: BoxDecoration(
+                                          color: Colors.amber.withValues(alpha: 0.2),
+                                          borderRadius: BorderRadius.circular(6),
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(
+                                              Icons.star,
+                                              size: 10,
+                                              color: Colors.amber,
+                                            ),
+                                            SizedBox(width: 2),
+                                            Text(
+                                              '默认',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w500,
+                                                color: Colors.amber,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
                                 ),
-                                // 操作按钮
-                                if (!preset.isDefault) ...[
-                                  // 编辑按钮
-                                  IconButton(
-                                    onPressed: () => _editPreset(preset),
-                                    icon: Icon(
-                                      Icons.edit_outlined,
-                                      color: Theme.of(context).colorScheme.primary,
-                                      size: 20,
-                                    ),
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  preset.connectionString,
+                                  style: TextStyle(
+                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    fontSize: 13,
                                   ),
-                                  const SizedBox(width: 8),
-                                  // 删除按钮
-                                  IconButton(
-                                    onPressed: () => _deletePreset(preset),
-                                    icon: Icon(
-                                      Icons.delete_outline,
-                                      color: Theme.of(context).colorScheme.error,
-                                      size: 20,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (preset.description != null && preset.description!.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    preset.description!,
+                                    style: TextStyle(
+                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      fontSize: 11,
                                     ),
-                                    style: IconButton.styleFrom(
-                                      backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ],
                             ),
                           ),
-                        ),
-                      );
-                    },
+                          // 操作按钮
+                          if (!preset.isDefault) ...[
+                            IconButton(
+                              onPressed: () => _editPreset(preset),
+                              icon: Icon(
+                                Icons.edit_outlined,
+                                color: Theme.of(context).colorScheme.primary,
+                                size: 18,
+                              ),
+                              style: IconButton.styleFrom(
+                                backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                                minimumSize: const Size(32, 32),
+                                padding: EdgeInsets.zero,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              onPressed: () => _deletePreset(preset),
+                              icon: Icon(
+                                Icons.delete_outline,
+                                color: Theme.of(context).colorScheme.error,
+                                size: 18,
+                              ),
+                              style: IconButton.styleFrom(
+                                backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                                minimumSize: const Size(32, 32),
+                                padding: EdgeInsets.zero,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
                   ),
-          ),
-        ],
-      ),
+                );
+              },
+            ),
     );
   }
 
   /// 构建自定义配置标签页
   Widget _buildCustomTab(BuildContext context, bool isMobile) {
     return Padding(
-      padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
+      padding: EdgeInsets.all(isMobile ? 12.0 : 16.0),
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!isMobile) ...[
-              Row(
-                children: [
-                  Icon(
-                    Icons.tune_rounded,
-                    color: Theme.of(context).primaryColor,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      '自定义数据库配置',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+            // 紧凑的标题行
+            Row(
+              children: [
+                Icon(
+                  Icons.tune_rounded,
+                  color: Theme.of(context).primaryColor,
+                  size: 18,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    '数据库连接配置',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  ElevatedButton.icon(
-                    onPressed: _saveAsPreset,
-                    icon: const Icon(Icons.bookmark_add_outlined, size: 18),
-                    label: const Text('保存为预设'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                      foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                ),
+                TextButton.icon(
+                  onPressed: _saveAsPreset,
+                  icon: const Icon(Icons.bookmark_add_outlined, size: 16),
+                  label: const Text('保存为预设'),
+                  style: TextButton.styleFrom(
+                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                    foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    minimumSize: const Size(0, 32),
+                    textStyle: const TextStyle(fontSize: 13),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
                     ),
                   ),
-                ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // 紧凑的配置表单
+            Card(
+              elevation: 0,
+              margin: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                ),
               ),
-              const SizedBox(height: 24),
-            ] else ...[
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(
-                    Icons.tune_rounded,
-                    color: Theme.of(context).primaryColor,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      '配置数据库连接信息',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    // 主机地址和端口一行
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _buildCompactTextField(
+                            controller: _hostController,
+                            label: '主机地址',
+                            icon: Icons.dns_rounded,
+                            hint: 'localhost',
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: _buildCompactTextField(
+                            controller: _portController,
+                            label: '端口',
+                            icon: Icons.settings_ethernet_rounded,
+                            hint: '5432',
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // 数据库名和用户名一行
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildCompactTextField(
+                            controller: _databaseController,
+                            label: '数据库名',
+                            icon: Icons.storage_rounded,
+                            hint: 'alist_video',
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildCompactTextField(
+                            controller: _usernameController,
+                            label: '用户名',
+                            icon: Icons.person_rounded,
+                            hint: 'postgres',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // 密码单独一行
+                    _buildCompactTextField(
+                      controller: _passwordController,
+                      label: '密码',
+                      icon: Icons.lock_rounded,
+                      hint: '请输入数据库密码',
+                      obscureText: _obscurePassword,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                          size: 18,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                       ),
                     ),
-                  ),
-                  TextButton.icon(
-                    onPressed: _saveAsPreset,
-                    icon: const Icon(Icons.bookmark_add_outlined, size: 16),
-                    label: const Text('保存'),
-                    style: TextButton.styleFrom(
-                      backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                      foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-            ],
-            // 配置表单
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                children: [
-                  _buildTextField(
-                    controller: _hostController,
-                    label: '主机地址',
-                    icon: Icons.dns_rounded,
-                    hint: '例如: localhost 或 192.168.1.100',
-                    isMobile: isMobile,
-                  ),
-                  const SizedBox(height: 20),
-                  _buildTextField(
-                    controller: _portController,
-                    label: '端口',
-                    icon: Icons.settings_ethernet_rounded,
-                    hint: '例如: 5432',
-                    keyboardType: TextInputType.number,
-                    isMobile: isMobile,
-                  ),
-                  const SizedBox(height: 20),
-                  _buildTextField(
-                    controller: _databaseController,
-                    label: '数据库名称',
-                    icon: Icons.storage_rounded,
-                    hint: '例如: alist_video',
-                    isMobile: isMobile,
-                  ),
-                  const SizedBox(height: 20),
-                  _buildTextField(
-                    controller: _usernameController,
-                    label: '用户名',
-                    icon: Icons.person_rounded,
-                    hint: '例如: postgres',
-                    isMobile: isMobile,
-                  ),
-                  const SizedBox(height: 20),
-                  _buildTextField(
-                    controller: _passwordController,
-                    label: '密码',
-                    icon: Icons.lock_rounded,
-                    hint: '请输入数据库密码',
-                    obscureText: _obscurePassword,
-                    isMobile: isMobile,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          _obscurePassword = !_obscurePassword;
-                        });
-                      },
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 20),
-            // 连接提示
+            const SizedBox(height: 12),
+            // 紧凑的提示信息
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 border: Border.all(
                   color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
                 ),
@@ -1064,63 +933,63 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                   Icon(
                     Icons.info_outline,
                     color: Theme.of(context).colorScheme.primary,
-                    size: 20,
+                    size: 16,
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       '保存时将自动测试数据库连接',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimaryContainer,
-                        fontSize: 14,
+                        fontSize: 12,
                       ),
                     ),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 20),
-            // SQL日志设置
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            const SizedBox(height: 12),
+            // 紧凑的SQL日志设置
+            Card(
+              elevation: 0,
+              margin: EdgeInsets.zero,
+              shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
+                side: BorderSide(
+                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.bug_report_outlined,
-                        color: Theme.of(context).colorScheme.primary,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        '调试设置',
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.bug_report_outlined,
+                      color: Theme.of(context).colorScheme.primary,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        'SQL日志',
                         style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('启用SQL日志'),
-                    subtitle: const Text('在控制台打印数据库SQL查询语句'),
-                    value: _enableSqlLogging,
-                    onChanged: (bool value) {
-                      setState(() {
-                        _enableSqlLogging = value;
-                      });
-                      _saveSqlLoggingSetting();
-                    },
-                  ),
-                ],
+                    ),
+                    Switch(
+                      value: _enableSqlLogging,
+                      onChanged: (bool value) {
+                        setState(() {
+                          _enableSqlLogging = value;
+                        });
+                        _saveSqlLoggingSetting();
+                      },
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1144,112 +1013,113 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape: const RoundedRectangleBorder(),
+          contentPadding: const EdgeInsets.all(20),
           title: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(
-                  Icons.edit_outlined,
-                  color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  size: 20,
-                ),
+              Icon(
+                Icons.edit_outlined,
+                color: Theme.of(context).primaryColor,
+                size: 20,
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               const Text(
                 '编辑预设',
-                style: TextStyle(fontWeight: FontWeight.w600),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ],
           ),
           content: SizedBox(
-            width: 400,
+            width: 450,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('修改数据库配置预设信息'),
-                  const SizedBox(height: 20),
-                  TextField(
+                  // 预设名称
+                  _buildCompactTextField(
                     controller: nameController,
-                    decoration: const InputDecoration(
-                      labelText: '预设名称',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.label_outline),
-                    ),
+                    label: '预设名称',
+                    icon: Icons.label_outline,
+                    hint: '输入预设名称',
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: hostController,
-                    decoration: const InputDecoration(
-                      labelText: '主机地址',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.dns_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: portController,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: '端口',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.settings_ethernet_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: databaseController,
-                    decoration: const InputDecoration(
-                      labelText: '数据库名称',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.storage_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: usernameController,
-                    decoration: const InputDecoration(
-                      labelText: '用户名',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.person_rounded),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextField(
-                    controller: passwordController,
-                    obscureText: obscurePassword,
-                    decoration: InputDecoration(
-                      labelText: '密码',
-                      border: const OutlineInputBorder(),
-                      prefixIcon: const Icon(Icons.lock_rounded),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                  const SizedBox(height: 12),
+                  // 主机地址和端口一行
+                  Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: _buildCompactTextField(
+                          controller: hostController,
+                          label: '主机地址',
+                          icon: Icons.dns_rounded,
+                          hint: 'localhost',
                         ),
-                        onPressed: () {
-                          setState(() {
-                            obscurePassword = !obscurePassword;
-                          });
-                        },
                       ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        flex: 2,
+                        child: _buildCompactTextField(
+                          controller: portController,
+                          label: '端口',
+                          icon: Icons.settings_ethernet_rounded,
+                          hint: '5432',
+                          keyboardType: TextInputType.number,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // 数据库名和用户名一行
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildCompactTextField(
+                          controller: databaseController,
+                          label: '数据库名',
+                          icon: Icons.storage_rounded,
+                          hint: 'alist_video',
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _buildCompactTextField(
+                          controller: usernameController,
+                          label: '用户名',
+                          icon: Icons.person_rounded,
+                          hint: 'postgres',
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  // 密码单独一行
+                  _buildCompactTextField(
+                    controller: passwordController,
+                    label: '密码',
+                    icon: Icons.lock_rounded,
+                    hint: '请输入数据库密码',
+                    obscureText: obscurePassword,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+                        size: 18,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          obscurePassword = !obscurePassword;
+                        });
+                      },
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  TextField(
+                  const SizedBox(height: 12),
+                  // 描述
+                  _buildCompactTextField(
                     controller: descController,
-                    decoration: const InputDecoration(
-                      labelText: '描述（可选）',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.description_outlined),
-                    ),
+                    label: '描述（可选）',
+                    icon: Icons.description_outlined,
+                    hint: '输入预设描述',
                     maxLines: 2,
                   ),
                 ],
@@ -1261,7 +1131,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               onPressed: () => Navigator.pop(context, false),
               style: TextButton.styleFrom(
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(6),
                 ),
               ),
               child: const Text('取消'),
@@ -1271,8 +1141,9 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).primaryColor,
                 foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(6),
                 ),
               ),
               child: const Text('保存'),
@@ -1359,9 +1230,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
+        shape: const RoundedRectangleBorder(),
         title: Row(
           children: [
             Container(
@@ -1430,7 +1299,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
             onPressed: () => Navigator.pop(context, false),
             style: TextButton.styleFrom(
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
             ),
             child: const Text('取消'),
@@ -1441,7 +1310,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               backgroundColor: Theme.of(context).colorScheme.error,
               foregroundColor: Theme.of(context).colorScheme.onError,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(6),
               ),
             ),
             child: const Text('删除'),
@@ -1515,8 +1384,8 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     );
   }
 
-  /// 构建文本输入框
-  Widget _buildTextField({
+  /// 构建紧凑的文本输入框
+  Widget _buildCompactTextField({
     required TextEditingController controller,
     required String label,
     required IconData icon,
@@ -1524,7 +1393,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     bool obscureText = false,
     TextInputType? keyboardType,
     Widget? suffixIcon,
-    required bool isMobile,
+    int? maxLines,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1532,70 +1401,66 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
         Text(
           label,
           style: TextStyle(
-            fontSize: 14,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
             color: Theme.of(context).colorScheme.onSurface,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 4),
         TextFormField(
           controller: controller,
           obscureText: obscureText,
           keyboardType: keyboardType,
-          style: TextStyle(
-            fontSize: isMobile ? 16 : 14,
+          maxLines: maxLines ?? 1,
+          style: const TextStyle(
+            fontSize: 14,
             fontWeight: FontWeight.w500,
           ),
           decoration: InputDecoration(
             hintText: hint,
-            prefixIcon: Container(
-              margin: const EdgeInsets.all(12),
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Icon(
-                icon,
-                size: 20,
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
-              ),
+            prefixIcon: Icon(
+              icon,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
             suffixIcon: suffixIcon,
             border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline,
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
               ),
             ),
             focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
                 color: Theme.of(context).primaryColor,
-                width: 2,
+                width: 1.5,
               ),
             ),
             filled: true,
             fillColor: Theme.of(context).colorScheme.surface,
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: isMobile ? 16 : 14,
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 10,
             ),
             hintStyle: TextStyle(
               color: Theme.of(context).colorScheme.onSurfaceVariant,
-              fontSize: isMobile ? 14 : 13,
+              fontSize: 12,
             ),
+            isDense: true,
           ),
         ),
       ],
     );
   }
+
+
 
   @override
   void dispose() {
