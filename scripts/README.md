@@ -1,6 +1,6 @@
 # 编译打包脚本说明
 
-本目录包含了用于编译和打包 AlistPlayer 应用的脚本，支持 macOS、Windows 和其他平台。
+本目录包含了用于编译和打包 AlistPlayer 应用的脚本，支持 macOS、Windows、Android、iOS 和其他平台。
 
 ## 脚本列表
 
@@ -60,7 +60,73 @@ scripts\build_windows.bat debug clean
 - `dist\windows\AlistPlayer\` - Windows 应用程序目录
 - `dist\windows\AlistPlayer_版本号_Windows.zip` - ZIP 压缩包
 
-### 3. `build_all.sh` - 跨平台构建脚本
+### 3. `build_android.sh` - Android 专用构建脚本
+
+专门用于构建 Android 应用，支持生成 APK 和 AAB 文件。
+
+**用法:**
+```bash
+./scripts/build_android.sh [选项]
+```
+
+**选项:**
+- `--release` - 构建发布版本 (默认)
+- `--debug` - 构建调试版本
+- `--clean` - 清理构建缓存
+- `--apk` - 构建APK文件 (默认)
+- `--aab` - 构建AAB文件 (用于Google Play)
+- `-h, --help` - 显示帮助信息
+
+**示例:**
+```bash
+# 构建发布版本APK
+./scripts/build_android.sh
+
+# 构建AAB文件用于Google Play
+./scripts/build_android.sh --aab
+
+# 构建调试版本并清理缓存
+./scripts/build_android.sh --debug --clean
+```
+
+**输出:**
+- `dist/android/AlistPlayer_版本号_android.apk` - APK 安装包
+- `dist/android/AlistPlayer_版本号_android.aab` - AAB 包 (Google Play)
+
+### 4. `build_ios.sh` - iOS 专用构建脚本
+
+专门用于在 macOS 上构建 iOS 应用，支持真机和模拟器版本。
+
+**用法:**
+```bash
+./scripts/build_ios.sh [选项]
+```
+
+**选项:**
+- `--release` - 构建发布版本 (默认)
+- `--debug` - 构建调试版本
+- `--clean` - 清理构建缓存
+- `--simulator` - 构建模拟器版本
+- `--device` - 构建真机版本 (默认)
+- `-h, --help` - 显示帮助信息
+
+**示例:**
+```bash
+# 构建发布版本 (真机)
+./scripts/build_ios.sh
+
+# 构建模拟器版本
+./scripts/build_ios.sh --simulator
+
+# 构建调试版本并清理缓存
+./scripts/build_ios.sh --debug --clean
+```
+
+**输出:**
+- `dist/ios/AlistPlayer_版本号_iOS.app` - iOS 应用程序
+- `dist/ios/AlistPlayer_版本号_iOS.ipa` - IPA 安装包 (仅真机版本)
+
+### 5. `build_all.sh` - 跨平台构建脚本
 
 支持一次性构建多个平台的应用，适用于 CI/CD 或批量构建。
 
@@ -86,7 +152,7 @@ scripts\build_windows.bat debug clean
 
 **示例:**
 ```bash
-# 构建所有平台 (默认: macos,windows,linux)
+# 构建所有平台 (默认: macos,windows,linux,android,ios)
 ./scripts/build_all.sh
 
 # 只构建 macOS 和 Windows
@@ -95,8 +161,11 @@ scripts\build_windows.bat debug clean
 # 构建调试版本并清理缓存
 ./scripts/build_all.sh --debug --clean
 
-# 构建 Android 和 Web 版本
-./scripts/build_all.sh --platforms android,web
+# 构建 Android 和 iOS 版本
+./scripts/build_all.sh --platforms android,ios
+
+# 构建所有移动平台
+./scripts/build_all.sh --platforms android,ios
 ```
 
 ## 前置要求
@@ -141,7 +210,11 @@ dist/
 │   ├── AlistPlayer/
 │   └── AlistPlayer_1.0.0_Linux.tar.gz
 ├── android/
-│   └── AlistPlayer_1.0.0_Android.apk
+│   ├── AlistPlayer_1.0.0_android.apk
+│   └── AlistPlayer_1.0.0_android.aab
+├── ios/
+│   ├── AlistPlayer_1.0.0_iOS.app
+│   └── AlistPlayer_1.0.0_iOS.ipa
 └── web/
     ├── index.html
     ├── main.dart.js
@@ -173,7 +246,7 @@ dist/
    ```
    解决方案: 给脚本添加执行权限
    ```bash
-   chmod +x scripts/build_macos.sh scripts/build_all.sh
+   chmod +x scripts/build_macos.sh scripts/build_android.sh scripts/build_ios.sh scripts/build_all.sh
    ```
 
 4. **DMG 创建失败 (macOS)**

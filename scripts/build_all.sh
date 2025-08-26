@@ -17,7 +17,7 @@ BUILD_MODE="release"
 CLEAN_BUILD=false
 APP_NAME="AlistPlayer"
 VERSION=$(grep "version:" pubspec.yaml | cut -d' ' -f2)
-PLATFORMS="macos,windows,linux"
+PLATFORMS="macos,windows,linux,android,ios"
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -44,7 +44,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --release              构建发布版本 (默认)"
             echo "  --debug                构建调试版本"
             echo "  --clean                清理构建缓存"
-            echo "  --platforms PLATFORMS  指定构建平台，用逗号分隔 (默认: macos,windows,linux)"
+            echo "  --platforms PLATFORMS  指定构建平台，用逗号分隔 (默认: macos,windows,linux,android,ios)"
             echo "                         可选平台: macos, windows, linux, android, ios, web"
             echo "  -h, --help             显示帮助信息"
             echo ""
@@ -112,41 +112,11 @@ build_platform() {
     case $platform in
         "macos")
             if [[ "$OSTYPE" == "darwin"* ]]; then
-                flutter build macos --$BUILD_MODE
-                
-                # 创建输出目录
-                OUTPUT_DIR="dist/macos"
-                mkdir -p "$OUTPUT_DIR"
-                
-                # 复制应用
-                APP_PATH="build/macos/Build/Products/Release/${APP_NAME}.app"
-                if [ "$BUILD_MODE" = "debug" ]; then
-                    APP_PATH="build/macos/Build/Products/Debug/${APP_NAME}.app"
-                fi
-                
-                if [ -d "$APP_PATH" ]; then
-                    cp -R "$APP_PATH" "$OUTPUT_DIR/"
-                    
-                    # 创建DMG
-                    DMG_NAME="${APP_NAME}_${VERSION}_macOS.dmg"
-                    DMG_PATH="$OUTPUT_DIR/$DMG_NAME"
-                    
-                    if [ -f "$DMG_PATH" ]; then
-                        rm "$DMG_PATH"
-                    fi
-                    
-                    TEMP_DMG="$OUTPUT_DIR/temp.dmg"
-                    hdiutil create -size 200m -fs HFS+ -volname "$APP_NAME" "$TEMP_DMG"
-                    MOUNT_DIR=$(hdiutil attach "$TEMP_DMG" | grep Volumes | awk '{print $3}')
-                    cp -R "$OUTPUT_DIR/${APP_NAME}.app" "$MOUNT_DIR/"
-                    ln -s /Applications "$MOUNT_DIR/Applications"
-                    hdiutil detach "$MOUNT_DIR"
-                    hdiutil convert "$TEMP_DMG" -format UDZO -o "$DMG_PATH"
-                    rm "$TEMP_DMG"
-                    
-                    echo -e "${GREEN}macOS 构建完成: $DMG_PATH${NC}"
+                if [ -f "scripts/build_macos.sh" ]; then
+                    ./scripts/build_macos.sh --$BUILD_MODE
+                    echo -e "${GREEN}macOS 构建完成${NC}"
                 else
-                    echo -e "${RED}macOS 构建失败${NC}"
+                    echo -e "${RED}找不到 macOS 构建脚本${NC}"
                 fi
             else
                 echo -e "${YELLOW}跳过 macOS 构建 (需要在 macOS 上运行)${NC}"
@@ -154,32 +124,16 @@ build_platform() {
             ;;
             
         "windows")
-            flutter build windows --$BUILD_MODE
-            
-            OUTPUT_DIR="dist/windows"
-            mkdir -p "$OUTPUT_DIR"
-            
-            APP_PATH="build/windows/x64/runner/Release"
-            if [ "$BUILD_MODE" = "debug" ]; then
-                APP_PATH="build/windows/x64/runner/Debug"
-            fi
-            
-            if [ -d "$APP_PATH" ]; then
-                APP_OUTPUT_DIR="$OUTPUT_DIR/$APP_NAME"
-                rm -rf "$APP_OUTPUT_DIR"
-                cp -R "$APP_PATH" "$APP_OUTPUT_DIR"
-                
-                # 创建ZIP文件
-                ZIP_NAME="${APP_NAME}_${VERSION}_Windows.zip"
-                ZIP_PATH="$OUTPUT_DIR/$ZIP_NAME"
-                
-                cd "$OUTPUT_DIR"
-                zip -r "$ZIP_NAME" "$APP_NAME"
-                cd - > /dev/null
-                
-                echo -e "${GREEN}Windows 构建完成: $ZIP_PATH${NC}"
+            if [ -f "scripts/build_windows.bat" ]; then
+                # 在Windows上运行bat文件，在其他系统上跳过
+                if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+                    scripts/build_windows.bat $BUILD_MODE
+                    echo -e "${GREEN}Windows 构建完成${NC}"
+                else
+                    echo -e "${YELLOW}跳过 Windows 构建 (需要在 Windows 上运行)${NC}"
+                fi
             else
-                echo -e "${RED}Windows 构建失败${NC}"
+                echo -e "${RED}找不到 Windows 构建脚本${NC}"
             fi
             ;;
             
@@ -214,29 +168,22 @@ build_platform() {
             ;;
             
         "android")
-            flutter build apk --$BUILD_MODE
-            
-            OUTPUT_DIR="dist/android"
-            mkdir -p "$OUTPUT_DIR"
-            
-            APK_PATH="build/app/outputs/flutter-apk/app-release.apk"
-            if [ "$BUILD_MODE" = "debug" ]; then
-                APK_PATH="build/app/outputs/flutter-apk/app-debug.apk"
-            fi
-            
-            if [ -f "$APK_PATH" ]; then
-                APK_NAME="${APP_NAME}_${VERSION}_Android.apk"
-                cp "$APK_PATH" "$OUTPUT_DIR/$APK_NAME"
-                echo -e "${GREEN}Android 构建完成: $OUTPUT_DIR/$APK_NAME${NC}"
+            if [ -f "scripts/build_android.sh" ]; then
+                ./scripts/build_android.sh --$BUILD_MODE
+                echo -e "${GREEN}Android 构建完成${NC}"
             else
-                echo -e "${RED}Android 构建失败${NC}"
+                echo -e "${RED}找不到 Android 构建脚本${NC}"
             fi
             ;;
             
         "ios")
             if [[ "$OSTYPE" == "darwin"* ]]; then
-                flutter build ios --$BUILD_MODE --no-codesign
-                echo -e "${GREEN}iOS 构建完成 (需要在 Xcode 中进行代码签名和打包)${NC}"
+                if [ -f "scripts/build_ios.sh" ]; then
+                    ./scripts/build_ios.sh --$BUILD_MODE
+                    echo -e "${GREEN}iOS 构建完成${NC}"
+                else
+                    echo -e "${RED}找不到 iOS 构建脚本${NC}"
+                fi
             else
                 echo -e "${YELLOW}跳过 iOS 构建 (需要在 macOS 上运行)${NC}"
             fi
@@ -285,7 +232,7 @@ echo -e "${BLUE}========================================${NC}"
 # 显示输出目录内容
 if [ -d "dist" ]; then
     echo -e "${GREEN}输出文件:${NC}"
-    find dist -type f -name "*.dmg" -o -name "*.zip" -o -name "*.tar.gz" -o -name "*.apk" | while read file; do
+    find dist -type f -name "*.dmg" -o -name "*.zip" -o -name "*.tar.gz" -o -name "*.apk" -o -name "*.aab" -o -name "*.ipa" | while read file; do
         size=$(du -h "$file" | cut -f1)
         echo -e "${GREEN}  $file (${size})${NC}"
     done
