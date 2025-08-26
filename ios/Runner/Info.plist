@@ -56,5 +56,10 @@
 		<string>background-fetch</string>
 		<string>background-processing</string>
 	</array>
+	<!-- Flutter Downloader 配置 -->
+	<key>FDMaximumConcurrentTasks</key>
+	<integer>3</integer>
+	<key>FDAllFilesDownloadedMessage</key>
+	<string>所有文件已下载完成</string>
 </dict>
 </plist>
