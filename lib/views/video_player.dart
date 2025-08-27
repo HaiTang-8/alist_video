@@ -1430,9 +1430,9 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
-                      buildAudioTrackButton(),
-                      buildSubtitleButton(),
-                      buildScreenshotButton(), // Added screenshot button
+                      // buildAudioTrackButton(),
+                      // buildSubtitleButton(),
+                      // buildScreenshotButton(), // Added screenshot button
                       buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
@@ -1557,10 +1557,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
-                      // buildAudioTrackButton(),
-                      // buildSubtitleButton(),
-                      // buildScreenshotButton(), // Added screenshot button
-                      // buildKeyboardShortcutsButton(),
+                      buildAudioTrackButton(),
+                      buildSubtitleButton(),
+                      buildScreenshotButton(), // Added screenshot button
+                      buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
@@ -2077,68 +2077,106 @@ class VideoPlayerState extends State<VideoPlayer> {
             ),
           ],
         ),
-        child: ListTile(
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 6,
-          ),
-          // 修改前导图标，添加序号显示
-          leading: Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              color: isPlaying ? Colors.blue.withOpacity(0.1) : Colors.grey.withOpacity(0.05),
-              shape: BoxShape.circle,
-              border: isPlaying
-                  ? Border.all(color: Colors.blue, width: 1)
-                  : Border.all(color: Colors.grey.withOpacity(0.3), width: 1),
+        child: InkWell(
+          onTap: () async {
+            // 先保存当前视频进度，再切换视频 - 立即更新UI
+            await _saveCurrentProgress(updateUIImmediately: true);
+            if (mounted) {
+              // 如果在初始加载中，只执行视频切换
+              if (_isInitialLoading) {
+                _logDebug('初始加载中，跳过手动点击的本地文件检查');
+                player.jump(index);
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  scrollToCurrentItem();
+                });
+                return;
+              }
+
+              // 获取要切换到的视频信息
+              final videoName = playList[index].extras!['name'] as String;
+
+              _logDebug('手动点击列表项: 索引=$index, 视频=$videoName');
+
+              // 直接切换到选中的视频
+              player.jump(index);
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                scrollToCurrentItem();
+              });
+            }
+          },
+          hoverColor: Colors.blue.withValues(alpha: 0.05),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 6,
             ),
-            child: Stack(
-              alignment: Alignment.center,
+            child: Row(
               children: [
-                // 显示序号 (从1开始)
-                Text(
-                  '${index + 1}',
-                  style: TextStyle(
-                    color: isPlaying ? Colors.blue : Colors.grey[700],
-                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                    fontSize: 12,
+                // 前导图标，添加序号显示
+                Container(
+                  width: 32,
+                  height: 32,
+                  decoration: BoxDecoration(
+                    color: isPlaying ? Colors.blue.withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.05),
+                    shape: BoxShape.circle,
+                    border: isPlaying
+                        ? Border.all(color: Colors.blue, width: 1)
+                        : Border.all(color: Colors.grey.withValues(alpha: 0.3), width: 1),
                   ),
-                ),
-                // 播放中的指示
-                if (isPlaying)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: const BoxDecoration(
-                        color: Colors.blue,
-                        shape: BoxShape.circle,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // 显示序号 (从1开始)
+                      Text(
+                        '${index + 1}',
+                        style: TextStyle(
+                          color: isPlaying ? Colors.blue : Colors.grey[700],
+                          fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                          fontSize: 12,
+                        ),
                       ),
-                    ),
+                      // 播放中的指示
+                      if (isPlaying)
+                        Positioned(
+                          right: 0,
+                          bottom: 0,
+                          child: Container(
+                            width: 10,
+                            height: 10,
+                            decoration: const BoxDecoration(
+                              color: Colors.blue,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
-              ],
-            ),
-          ),
-          title: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  videoName,
-                  style: TextStyle(
-                    fontSize: AppConstants.defaultFontSize,
-                    color: isPlaying ? Colors.blue : Colors.black87,
-                    fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-            ],
-          ),
-          subtitle: Padding(
+                const SizedBox(width: 16),
+                // 主要内容区域
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 标题行
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              videoName,
+                              style: TextStyle(
+                                fontSize: AppConstants.defaultFontSize,
+                                color: isPlaying ? Colors.blue : Colors.black87,
+                                fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      // 副标题
+                      Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Wrap(
               spacing: 4, // horizontal spacing between items
@@ -2151,9 +2189,9 @@ class VideoPlayerState extends State<VideoPlayer> {
                     margin: const EdgeInsets.only(right: 2),
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
+                      color: Colors.green.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(3),
-                      border: Border.all(color: Colors.green.withOpacity(0.5)),
+                      border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
                     ),
                     child: const Text(
                       '已缓存',
@@ -2212,33 +2250,12 @@ class VideoPlayerState extends State<VideoPlayer> {
               ],
             ),
           ),
-          onTap: () async {
-            // 先保存当前视频进度，再切换视频 - 立即更新UI
-            await _saveCurrentProgress(updateUIImmediately: true);
-            if (mounted) {
-              // 如果在初始加载中，只执行视频切换
-              if (_isInitialLoading) {
-                _logDebug('初始加载中，跳过手动点击的本地文件检查');
-                player.jump(index);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  scrollToCurrentItem();
-                });
-                return;
-              }
-
-              // 获取要切换到的视频信息
-              final videoName = playList[index].extras!['name'] as String;
-
-              _logDebug('手动点击列表项: 索引=$index, 视频=$videoName');
-
-              // 直接切换到选中的视频
-              player.jump(index);
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                scrollToCurrentItem();
-              });
-            }
-          },
-          hoverColor: Colors.blue.withValues(alpha: 0.05),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
