@@ -1024,22 +1024,40 @@ class _HomePageState extends State<HomePage>
                 },
                 child: Row(
                   children: [
-                    Text(
-                      '文件名称',
-                      style: TextStyle(
-                        color: Colors.grey[800],
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              '文件名称',
+                              style: TextStyle(
+                                color: Colors.grey[800],
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            if (_sortColumnIndex == 0)
+                              Icon(
+                                _isAscending
+                                    ? Icons.arrow_upward
+                                    : Icons.arrow_downward,
+                                size: 16,
+                                color: Colors.grey[600],
+                              ),
+                          ],
+                        ),
+                        if (isSmallScreen)
+                          Text(
+                            '包含大小和修改时间',
+                            style: TextStyle(
+                              color: Colors.grey[500],
+                              fontSize: 11,
+                              height: 1.2,
+                            ),
+                          ),
+                      ],
                     ),
-                    if (_sortColumnIndex == 0)
-                      Icon(
-                        _isAscending
-                            ? Icons.arrow_upward
-                            : Icons.arrow_downward,
-                        size: 16,
-                        color: Colors.grey[600],
-                      ),
                   ],
                 ),
               ),
@@ -1270,8 +1288,35 @@ class _HomePageState extends State<HomePage>
                                   maxLines: 2,
                                   overflow: TextOverflow.ellipsis,
                                 ),
+                                // 在移动端显示文件大小和修改时间
+                                if (isSmallScreen) ...[
+                                  const SizedBox(height: 4),
+                                  Row(
+                                    children: [
+                                      if (file.type == 2) ...[
+                                        Text(
+                                          _formatSize(file.size),
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey[600],
+                                            height: 1.2,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                      ],
+                                      Text(
+                                        _formatDate(file.modified),
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey[600],
+                                          height: 1.2,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                                 // 如果有播放历史记录，显示播放进度
-                                if (file.type == 2 && file.historyRecord != null) ...[  
+                                if (file.type == 2 && file.historyRecord != null) ...[
                                   const SizedBox(height: 4),
                                   // 使用RichText来设置不同部分的文本颜色
                                   RichText(
