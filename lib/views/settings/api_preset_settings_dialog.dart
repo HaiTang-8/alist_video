@@ -9,13 +9,13 @@ import 'package:alist_player/utils/woo_http.dart';
 class ApiPresetSettingsDialog extends StatefulWidget {
   const ApiPresetSettingsDialog({super.key});
 
-  static Future<void> show(BuildContext context) async {
+  static Future<bool?> show(BuildContext context) async {
     // 检查是否为移动端
     final isMobile = MediaQuery.of(context).size.width < 600;
 
     if (isMobile) {
       // 移动端使用全屏页面
-      await Navigator.of(context).push(
+      return await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (context) => const ApiPresetSettingsDialog(),
           fullscreenDialog: true,
@@ -23,7 +23,7 @@ class ApiPresetSettingsDialog extends StatefulWidget {
       );
     } else {
       // 桌面端使用对话框
-      await showDialog(
+      return await showDialog<bool>(
         context: context,
         barrierDismissible: false,
         builder: (context) => Dialog(
@@ -47,16 +47,19 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ApiConfigManager _configManager = ApiConfigManager();
-  
+
   // 预设模式相关
   List<ApiConfigPreset> _presets = [];
   ApiConfigPreset? _selectedPreset;
   bool _isLoadingPresets = true;
-  
+
   // 自定义模式相关
   late TextEditingController _baseUrlController;
   late TextEditingController _baseDownloadUrlController;
   bool _isSaving = false;
+
+  // 配置更改标志
+  bool _hasConfigChanged = false;
 
   @override
   void initState() {
@@ -145,8 +148,9 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
         await WooHttpUtil().updateBaseUrl();
       }
 
+      _hasConfigChanged = true;
       if (mounted) {
-        Navigator.pop(context);
+        Navigator.pop(context, true);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('API配置已保存并生效'),
@@ -174,62 +178,26 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
 
   /// 保存当前自定义配置为预设
   Future<void> _saveAsPreset() async {
-    final nameController = TextEditingController();
-    final descController = TextEditingController();
-    
-    final result = await showDialog<bool>(
+    final result = await showDialog<Map<String, String>?>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('保存为预设'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nameController,
-              decoration: const InputDecoration(
-                labelText: '预设名称',
-                hintText: '请输入预设名称',
-              ),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: descController,
-              decoration: const InputDecoration(
-                labelText: '描述（可选）',
-                hintText: '请输入预设描述',
-              ),
-              maxLines: 2,
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (nameController.text.trim().isNotEmpty) {
-                Navigator.pop(context, true);
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
+      builder: (context) => _SavePresetDialog(
+        baseUrl: _baseUrlController.text.trim(),
+        baseDownloadUrl: _baseDownloadUrlController.text.trim(),
       ),
     );
 
-    if (result == true && nameController.text.trim().isNotEmpty) {
+    if (result != null) {
       try {
         final preset = ApiConfigPreset.createDefault(
-          name: nameController.text.trim(),
-          baseUrl: _baseUrlController.text.trim(),
-          baseDownloadUrl: _baseDownloadUrlController.text.trim(),
-          description: descController.text.trim().isEmpty ? null : descController.text.trim(),
+          name: result['name']!,
+          baseUrl: result['baseUrl']!,
+          baseDownloadUrl: result['baseDownloadUrl']!,
+          description: result['description']?.isEmpty == true ? null : result['description'],
         );
-        
+
         final success = await _configManager.savePreset(preset);
         if (success) {
+          _hasConfigChanged = true;
           await _loadData(); // 重新加载数据
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -277,6 +245,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
       try {
         final success = await _configManager.deletePreset(preset.id);
         if (success) {
+          _hasConfigChanged = true;
           await _loadData(); // 重新加载数据
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
@@ -829,7 +798,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
             ),
             child: const Icon(Icons.close, size: 20),
           ),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => Navigator.pop(context, _hasConfigChanged),
         ),
         actions: [
           Container(
@@ -967,7 +936,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: IconButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(context, _hasConfigChanged),
                     icon: const Icon(Icons.close, color: Colors.white),
                     tooltip: '关闭',
                   ),
@@ -1034,7 +1003,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: TextButton(
-                    onPressed: () => Navigator.pop(context),
+                    onPressed: () => Navigator.pop(context, _hasConfigChanged),
                     style: TextButton.styleFrom(
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -1138,14 +1107,44 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
 
   /// 编辑预设
   Future<void> _editPreset(ApiConfigPreset preset) async {
-    // 这里可以实现编辑预设的逻辑
-    // 暂时显示一个提示
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('编辑预设 "${preset.name}" 功能待实现'),
-        backgroundColor: Colors.orange,
-      ),
+    final result = await showDialog<Map<String, String>?>(
+      context: context,
+      builder: (context) => _EditPresetDialog(preset: preset),
     );
+
+    if (result != null) {
+      try {
+        final updatedPreset = preset.copyWith(
+          name: result['name']!,
+          baseUrl: result['baseUrl']!,
+          baseDownloadUrl: result['baseDownloadUrl']!,
+          description: result['description']?.isEmpty == true ? null : result['description'],
+        );
+
+        final success = await _configManager.savePreset(updatedPreset);
+        if (success) {
+          _hasConfigChanged = true;
+          await _loadData(); // 重新加载数据
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('预设更新成功'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('更新预设失败: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
   }
 
   /// 设置为默认预设
@@ -1153,6 +1152,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
     try {
       final success = await _configManager.setCurrentPreset(preset.id);
       if (success) {
+        _hasConfigChanged = true;
         await _loadData(); // 重新加载数据
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1173,5 +1173,214 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
         );
       }
     }
+  }
+}
+
+/// 编辑预设对话框
+class _EditPresetDialog extends StatefulWidget {
+  final ApiConfigPreset preset;
+
+  const _EditPresetDialog({required this.preset});
+
+  @override
+  State<_EditPresetDialog> createState() => _EditPresetDialogState();
+}
+
+class _EditPresetDialogState extends State<_EditPresetDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _baseUrlController;
+  late TextEditingController _baseDownloadUrlController;
+  late TextEditingController _descController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.preset.name);
+    _baseUrlController = TextEditingController(text: widget.preset.baseUrl);
+    _baseDownloadUrlController = TextEditingController(text: widget.preset.baseDownloadUrl);
+    _descController = TextEditingController(text: widget.preset.description ?? '');
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _baseUrlController.dispose();
+    _baseDownloadUrlController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (_nameController.text.trim().isEmpty ||
+        _baseUrlController.text.trim().isEmpty ||
+        _baseDownloadUrlController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请填写完整的配置信息'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pop({
+      'name': _nameController.text.trim(),
+      'baseUrl': _baseUrlController.text.trim(),
+      'baseDownloadUrl': _baseDownloadUrlController.text.trim(),
+      'description': _descController.text.trim(),
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('编辑API配置预设'),
+      content: SizedBox(
+        width: 400,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: '配置名称',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _baseUrlController,
+                decoration: const InputDecoration(
+                  labelText: '基础URL',
+                  hintText: '例如: https://alist.example.com',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _baseDownloadUrlController,
+                decoration: const InputDecoration(
+                  labelText: '下载URL',
+                  hintText: '例如: https://alist.example.com/d',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _descController,
+                decoration: const InputDecoration(
+                  labelText: '描述（可选）',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        ElevatedButton(
+          onPressed: _save,
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 保存预设对话框
+class _SavePresetDialog extends StatefulWidget {
+  final String baseUrl;
+  final String baseDownloadUrl;
+
+  const _SavePresetDialog({
+    required this.baseUrl,
+    required this.baseDownloadUrl,
+  });
+
+  @override
+  State<_SavePresetDialog> createState() => _SavePresetDialogState();
+}
+
+class _SavePresetDialogState extends State<_SavePresetDialog> {
+  late TextEditingController _nameController;
+  late TextEditingController _descController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+    _descController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _descController.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('请输入预设名称'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    Navigator.of(context).pop({
+      'name': _nameController.text.trim(),
+      'baseUrl': widget.baseUrl,
+      'baseDownloadUrl': widget.baseDownloadUrl,
+      'description': _descController.text.trim(),
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('保存为预设'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _nameController,
+            decoration: const InputDecoration(
+              labelText: '预设名称',
+              hintText: '请输入预设名称',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _descController,
+            decoration: const InputDecoration(
+              labelText: '描述（可选）',
+              hintText: '请输入预设描述',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 2,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('取消'),
+        ),
+        ElevatedButton(
+          onPressed: _save,
+          child: const Text('保存'),
+        ),
+      ],
+    );
   }
 }

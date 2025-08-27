@@ -535,7 +535,13 @@ class _LoginPageState extends State<LoginPage> {
                             ),
                             const SizedBox(width: 16),
                             TextButton.icon(
-                              onPressed: () => ApiPresetSettingsDialog.show(context),
+                              onPressed: () async {
+                                final hasChanged = await ApiPresetSettingsDialog.show(context);
+                                if (hasChanged == true) {
+                                  // 如果配置有更改，重新初始化API配置
+                                  await _initializeApiConfig();
+                                }
+                              },
                               icon: const Icon(Icons.api_rounded),
                               label: const Text('API 设置'),
                             ),
