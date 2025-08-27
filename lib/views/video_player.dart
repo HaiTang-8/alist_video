@@ -1557,10 +1557,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
                       buildSpeedButton(),
-                      buildAudioTrackButton(),
-                      buildSubtitleButton(),
-                      buildScreenshotButton(), // Added screenshot button
-                      buildKeyboardShortcutsButton(),
+                      // buildAudioTrackButton(),
+                      // buildSubtitleButton(),
+                      // buildScreenshotButton(), // Added screenshot button
+                      // buildKeyboardShortcutsButton(),
                       const MaterialFullscreenButton(
                         iconSize: 22,
                       ),
