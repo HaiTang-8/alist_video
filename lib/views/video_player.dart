@@ -1516,37 +1516,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                     volumeGesture: true,
                     brightnessGesture: true,
                     visibleOnMount: false,
-                    topButtonBar: [
-                      // 在顶部显示视频名称，占满整行并有底色，动态更新
-                      Expanded(
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              vertical: 12),
-                          decoration: const BoxDecoration(
-                            color: Colors.black54,
-                          ),
-                          child: ValueListenableBuilder<int>(
-                            valueListenable: _currentPlayingIndexNotifier,
-                            builder: (context, index, child) {
-                              String videoName = '视频播放';
-                              if (playList.isNotEmpty &&
-                                  index >= 0 &&
-                                  index < playList.length) {
-                                videoName = playList[index].extras!['name'] as String;
-                              }
-
-                              return Text(
-                                videoName,
-                                style: FontHelper.createFullscreenVideoTitleStyle(),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                textAlign: TextAlign.left,
-                              );
-                            },
-                          ),
-                        ),
-                      ),
-                    ],
+                    topButtonBar: [],
                     primaryButtonBar: [
                       // 添加在顶部显示的倍速提示
                       ValueListenableBuilder<bool>(
@@ -1789,42 +1759,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           fullscreen: MaterialDesktopVideoControlsThemeData(
               displaySeekBar: true,
               visibleOnMount: false,
-              topButtonBar: [
-                // 在桌面端全屏模式顶部显示视频名称，占满整行并有底色，动态更新
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        vertical: 8),
-                    decoration: const BoxDecoration(
-                      color: Colors.black54,
-                    ),
-                    child: ValueListenableBuilder<int>(
-                      valueListenable: _currentPlayingIndexNotifier,
-                      builder: (context, index, child) {
-                        String videoName = '视频播放';
-                        if (playList.isNotEmpty &&
-                            index >= 0 &&
-                            index < playList.length) {
-                          videoName = playList[index].extras!['name'] as String;
-                        }
-
-                        _logDebug(videoName);
-                        return Text(
-                          videoName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          textAlign: TextAlign.left,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ],
+              topButtonBar: [],
               primaryButtonBar: [],
               keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
               seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
@@ -3921,6 +3856,12 @@ class VideoPlayerState extends State<VideoPlayer> {
                   ? player.state.playlist.medias[player.state.playlist.index]
                   : null;
               final currentUrl = currentMedia?.uri ?? 'unknown';
+              
+              // 获取当前视频名称
+              String videoName = '视频播放';
+              if (playList.isNotEmpty && currentPlayingIndex >= 0 && currentPlayingIndex < playList.length) {
+                videoName = playList[currentPlayingIndex].extras!['name'] as String;
+              }
 
               // 使用FutureBuilder获取更多视频信息
               return FutureBuilder<Map<String, String>>(
@@ -3957,6 +3898,11 @@ class VideoPlayerState extends State<VideoPlayer> {
                           ),
                         ),
                         const SizedBox(height: 8),
+                        Text(
+                          '视频名称: ${_truncateString(videoName, 35)}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
+                        ),
+                        const SizedBox(height: 4),
                         Text(
                           '分辨率: ${width}x$height',
                           style: const TextStyle(color: Colors.white, fontSize: 12),
@@ -4002,9 +3948,62 @@ class VideoPlayerState extends State<VideoPlayer> {
                           style: const TextStyle(color: Colors.white, fontSize: 12),
                         ),
                         const SizedBox(height: 4),
-                        Text(
-                          '当前URL: ${_truncateString(currentUrl, 40)}',
-                          style: const TextStyle(color: Colors.white, fontSize: 10),
+                        // 当前URL（可点击复制）
+                        GestureDetector(
+                          onTap: () {
+                            Clipboard.setData(ClipboardData(text: currentUrl));
+                            if (mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('已复制URL到剪切板'),
+                                  duration: Duration(seconds: 2),
+                                  backgroundColor: Colors.green,
+                                ),
+                              );
+                            }
+                          },
+                          child: Container(
+                            width: 300, // 添加固定宽度
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.3),
+                                width: 1,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min, // 改为MainAxisSize.min
+                              children: [
+                                const Icon(
+                                  Icons.link,
+                                  color: Colors.white,
+                                  size: 12,
+                                ),
+                                const SizedBox(width: 4),
+                                Flexible( // 改为Flexible
+                                  child: Text(
+                                    '当前URL: ${_truncateString(currentUrl, 50)}',
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      decoration: TextDecoration.underline,
+                                      decorationColor: Colors.white,
+                                    ),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                const Icon(
+                                  Icons.copy,
+                                  color: Colors.white,
+                                  size: 12,
+                                ),
+                              ],
+                            ),
+                          ),
                         ),
                       ],
                     ),
