@@ -118,6 +118,11 @@ class VideoPlayerState extends State<VideoPlayer> {
   double _customPlaybackSpeed = AppConstants.defaultCustomPlaybackSpeed;
   bool _isCustomSpeedEnabled = false;
 
+  // 添加音轨和字幕记录相关变量
+  String? _recordedAudioTrackId;
+  String? _recordedSubtitleTrackId;
+  String? _recordedSubtitlePath; // 记录外部字幕文件路径
+
   // 添加倍速提示控制器
   final ValueNotifier<bool> _showSpeedIndicator = ValueNotifier<bool>(false);
   final ValueNotifier<double> _indicatorSpeedValue = ValueNotifier<double>(1.0);
@@ -172,6 +177,72 @@ class VideoPlayerState extends State<VideoPlayer> {
       _preferLocalPlayback = prefs.getBool(AppConstants.preferLocalPlaybackKey) ??
           AppConstants.defaultPreferLocalPlayback;
     });
+    
+    // 加载当前文件夹的音轨和字幕记录
+    await _loadFolderTrackSettings();
+  }
+
+  // 加载文件夹的音轨和字幕记录
+  Future<void> _loadFolderTrackSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final folderKey = 'folder_tracks_${widget.path}';
+      
+      final audioTrackId = prefs.getString('${folderKey}_audio');
+      final subtitleTrackId = prefs.getString('${folderKey}_subtitle');
+      final subtitlePath = prefs.getString('${folderKey}_subtitle_path');
+      
+      _recordedAudioTrackId = audioTrackId;
+      _recordedSubtitleTrackId = subtitleTrackId;
+      _recordedSubtitlePath = subtitlePath;
+      
+      _logDebug('加载文件夹音轨字幕记录: 音轨=$audioTrackId, 字幕=$subtitleTrackId, 外部字幕=$subtitlePath');
+    } catch (e) {
+      _logDebug('加载文件夹音轨字幕记录失败: $e');
+    }
+  }
+
+  // 保存文件夹的音轨和字幕记录
+  Future<void> _saveFolderTrackSettings({
+    String? audioTrackId,
+    String? subtitleTrackId,
+    String? subtitlePath,
+  }) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final folderKey = 'folder_tracks_${widget.path}';
+      
+      if (audioTrackId != null) {
+        if (audioTrackId.isEmpty) {
+          await prefs.remove('${folderKey}_audio');
+        } else {
+          await prefs.setString('${folderKey}_audio', audioTrackId);
+        }
+        _recordedAudioTrackId = audioTrackId.isEmpty ? null : audioTrackId;
+      }
+      
+      if (subtitleTrackId != null) {
+        if (subtitleTrackId.isEmpty) {
+          await prefs.remove('${folderKey}_subtitle');
+        } else {
+          await prefs.setString('${folderKey}_subtitle', subtitleTrackId);
+        }
+        _recordedSubtitleTrackId = subtitleTrackId.isEmpty ? null : subtitleTrackId;
+      }
+      
+      if (subtitlePath != null) {
+        if (subtitlePath.isEmpty) {
+          await prefs.remove('${folderKey}_subtitle_path');
+        } else {
+          await prefs.setString('${folderKey}_subtitle_path', subtitlePath);
+        }
+        _recordedSubtitlePath = subtitlePath.isEmpty ? null : subtitlePath;
+      }
+      
+      _logDebug('保存文件夹音轨字幕记录: 音轨=$audioTrackId, 字幕=$subtitleTrackId, 外部字幕=$subtitlePath');
+    } catch (e) {
+      _logDebug('保存文件夹音轨字幕记录失败: $e');
+    }
   }
 
   // 添加排序相关状态
@@ -1926,13 +1997,20 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 自动应用智能匹配的字幕
   Future<void> _autoApplySmartMatchedSubtitle() async {
-    if (_availableSubtitles.isEmpty) return;
+    if (_availableSubtitles.isEmpty) {
+      // 没有外部字幕，尝试应用记录的音轨和字幕
+      await _applyRecordedTracks();
+      return;
+    }
 
     final currentVideoName = playList.isNotEmpty && currentPlayingIndex < playList.length
         ? playList[currentPlayingIndex].extras!['name'] as String
         : '';
 
-    if (currentVideoName.isEmpty) return;
+    if (currentVideoName.isEmpty) {
+      await _applyRecordedTracks();
+      return;
+    }
 
     final matchedSubtitle = _smartMatchSubtitle(currentVideoName);
     if (matchedSubtitle != null) {
@@ -1963,6 +2041,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
         _logDebug('智能匹配字幕加载成功: ${matchedSubtitle.name}');
 
+        // 在智能匹配成功后，尝试应用记录的音轨
+        await _applyRecordedAudioTrack();
+
         if (wasPlaying) {
           await player.play();
         }
@@ -1980,10 +2061,127 @@ class VideoPlayerState extends State<VideoPlayer> {
       } catch (e) {
         _logDebug('自动加载智能匹配字幕失败: $e');
         _smartMatchedSubtitle = null;
+        // 智能匹配失败，尝试应用记录的音轨和字幕
+        await _applyRecordedTracks();
       }
     } else {
       _smartMatchedSubtitle = null;
-      _logDebug('未找到匹配的字幕，不自动加载');
+      _logDebug('未找到匹配的字幕，尝试应用记录的设置');
+      // 智能匹配失败，尝试应用记录的音轨和字幕
+      await _applyRecordedTracks();
+    }
+  }
+
+  // 应用记录的音轨和字幕
+  Future<void> _applyRecordedTracks() async {
+    try {
+      // 应用记录的音轨
+      await _applyRecordedAudioTrack();
+      
+      // 应用记录的字幕
+      await _applyRecordedSubtitle();
+    } catch (e) {
+      _logDebug('应用记录的音轨和字幕失败: $e');
+    }
+  }
+
+  // 应用记录的音轨
+  Future<void> _applyRecordedAudioTrack() async {
+    if (_recordedAudioTrackId == null || _recordedAudioTrackId!.isEmpty) {
+      return;
+    }
+
+    try {
+      final tracks = player.state.tracks;
+      final audioTrack = tracks.audio.firstWhere(
+        (track) => track.id == _recordedAudioTrackId,
+        orElse: () => AudioTrack.no(),
+      );
+
+      if (audioTrack.id != 'no') {
+        await player.setAudioTrack(audioTrack);
+        setState(() {
+          _currentAudio = audioTrack;
+        });
+        _logDebug('已应用记录的音轨: ${audioTrack.title ?? audioTrack.id}');
+      } else {
+        _logDebug('记录的音轨未找到: $_recordedAudioTrackId');
+      }
+    } catch (e) {
+      _logDebug('应用记录的音轨失败: $e');
+    }
+  }
+
+  // 应用记录的字幕
+  Future<void> _applyRecordedSubtitle() async {
+    // 如果已经有智能匹配的字幕，不覆盖
+    if (_smartMatchedSubtitle != null) {
+      return;
+    }
+
+    if (_recordedSubtitleTrackId == null && _recordedSubtitlePath == null) {
+      return;
+    }
+
+    try {
+      final wasPlaying = player.state.playing;
+      
+      // 如果记录的是外部字幕文件
+      if (_recordedSubtitlePath != null && _recordedSubtitlePath!.isNotEmpty) {
+        final matchedSubtitle = _availableSubtitles.firstWhere(
+          (subtitle) => subtitle.path == _recordedSubtitlePath,
+          orElse: () => SubtitleInfo(name: '', path: '', rawUrl: ''),
+        );
+
+        if (matchedSubtitle.name.isNotEmpty) {
+          await player.pause();
+          await player.setSubtitleTrack(SubtitleTrack.no());
+          await player.setSubtitleTrack(
+            SubtitleTrack.uri(
+              matchedSubtitle.rawUrl,
+              title: matchedSubtitle.name,
+            ),
+          );
+          setState(() {
+            _currentSubtitle = SubtitleTrack.uri(
+              matchedSubtitle.rawUrl,
+              title: matchedSubtitle.name,
+            );
+          });
+          _logDebug('已应用记录的外部字幕: ${matchedSubtitle.name}');
+          
+          if (wasPlaying) {
+            await player.play();
+          }
+          return;
+        }
+      }
+
+      // 如果记录的是内嵌字幕
+      if (_recordedSubtitleTrackId != null && _recordedSubtitleTrackId!.isNotEmpty) {
+        final tracks = player.state.tracks;
+        final subtitleTrack = tracks.subtitle.firstWhere(
+          (track) => track.id == _recordedSubtitleTrackId,
+          orElse: () => SubtitleTrack.no(),
+        );
+
+        if (subtitleTrack.id != 'no') {
+          await player.pause();
+          await player.setSubtitleTrack(subtitleTrack);
+          setState(() {
+            _currentSubtitle = subtitleTrack;
+          });
+          _logDebug('已应用记录的内嵌字幕: ${subtitleTrack.title ?? subtitleTrack.id}');
+          
+          if (wasPlaying) {
+            await player.play();
+          }
+        } else {
+          _logDebug('记录的字幕轨未找到: $_recordedSubtitleTrackId');
+        }
+      }
+    } catch (e) {
+      _logDebug('应用记录的字幕失败: $e');
     }
   }
 
@@ -2791,6 +2989,12 @@ class VideoPlayerState extends State<VideoPlayer> {
                                             title: matchedSubtitle.name,
                                           );
                                         });
+                                        
+                                        // 保存智能匹配的字幕记录
+                                        await _saveFolderTrackSettings(
+                                          subtitleTrackId: '',
+                                          subtitlePath: matchedSubtitle.path,
+                                        );
 
                                         if (wasPlaying) {
                                           await player.play();
@@ -2998,6 +3202,12 @@ class VideoPlayerState extends State<VideoPlayer> {
               );
             });
             print('外部字幕加载成功: ${subtitle.name}');
+            
+            // 保存字幕记录（外部字幕）
+            await _saveFolderTrackSettings(
+              subtitleTrackId: '',
+              subtitlePath: subtitle.path,
+            );
 
             if (wasPlaying) {
               await player.play();
@@ -3096,6 +3306,12 @@ class VideoPlayerState extends State<VideoPlayer> {
                 _currentSubtitle = track;
               });
               print('已关闭字幕');
+              
+              // 保存字幕记录（关闭字幕）
+              await _saveFolderTrackSettings(
+                subtitleTrackId: '',
+                subtitlePath: '',
+              );
             } else {
               // 内嵌字幕直接设置
               print('正在加载内嵌字幕: $label (ID: ${track.id})');
@@ -3104,6 +3320,12 @@ class VideoPlayerState extends State<VideoPlayer> {
                 _currentSubtitle = track;
               });
               print('内嵌字幕加载成功: $label (ID: ${track.id})');
+              
+              // 保存字幕记录（内嵌字幕）
+              await _saveFolderTrackSettings(
+                subtitleTrackId: track.id,
+                subtitlePath: '',
+              );
             }
 
             if (wasPlaying) {
@@ -3291,6 +3513,9 @@ class VideoPlayerState extends State<VideoPlayer> {
               _currentAudio = track;
             });
             _logDebug('音轨切换成功: $label (ID: ${track.id})');
+
+            // 保存音轨记录
+            await _saveFolderTrackSettings(audioTrackId: track.id);
 
             if (wasPlaying) {
               await player.play();
