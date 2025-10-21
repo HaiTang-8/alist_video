@@ -30,6 +30,114 @@ class _DiskUsageItem {
   final String? detail;
 }
 
+class _UsageTipsCard extends StatelessWidget {
+  const _UsageTipsCard({
+    required this.headlineColor,
+    required this.subtleColor,
+  });
+
+  final Color headlineColor;
+  final Color subtleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final gradientColors = [
+      theme.colorScheme.primary.withOpacity(0.9),
+      theme.colorScheme.primary.withOpacity(0.65),
+    ];
+
+    const tips = [
+      '下载目录可以在下载设置中修改',
+      '日志可在「个人中心 > 清除日志文件」中清理',
+      '视频截图自动生成，可在历史记录查看',
+      '临时缓存由系统管理，可能随时被回收',
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: gradientColors,
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: theme.colorScheme.primary.withOpacity(0.18),
+            blurRadius: 16,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.18),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.lightbulb_outline,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  '使用提示',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    color: headlineColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...tips.map(
+            (tip) => Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    width: 6,
+                    height: 6,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.9),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      tip,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.4,
+                        color: subtleColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DiskUsagePageState extends State<DiskUsagePage> {
   bool _isLoading = false;
   int _totalSize = 0;
@@ -168,7 +276,6 @@ class _DiskUsagePageState extends State<DiskUsagePage> {
   }
 
   Widget _buildContent(BuildContext context) {
-    final theme = Theme.of(context);
     final headlineColor = Colors.white;
     final subtleColor = Colors.white.withOpacity(0.75);
 
@@ -177,6 +284,11 @@ class _DiskUsagePageState extends State<DiskUsagePage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _UsageTipsCard(
+            headlineColor: headlineColor,
+            subtleColor: subtleColor,
+          ),
+          const SizedBox(height: 16),
           _DiskUsageCard(
             isLoading: _isLoading,
             totalUsageLabel: _formatBytes(_totalSize),
@@ -187,33 +299,6 @@ class _DiskUsagePageState extends State<DiskUsagePage> {
             subtleColor: subtleColor,
             totalSize: _totalSize,
             onRetry: _loadDiskUsage,
-          ),
-          const SizedBox(height: 16),
-          Card(
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-            elevation: 0,
-            color: theme.colorScheme.primaryContainer.withOpacity(0.4),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '使用提示',
-                    style: TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  SizedBox(height: 8),
-                  Text(
-                    '• 下载目录可以在下载设置中修改\n'
-                    '• 日志可在「个人中心 > 清除日志文件」中清理\n'
-                    '• 截图在播放过程中自动生成，可在历史记录中查看\n'
-                    '• 临时缓存由系统管理，可能随时被回收',
-                    style: TextStyle(fontSize: 13, height: 1.4),
-                  ),
-                ],
-              ),
-            ),
           ),
         ],
       ),
