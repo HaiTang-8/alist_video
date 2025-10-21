@@ -67,6 +67,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加排序相关状态
   bool _isAscending = true;
+  bool _isReorderingPlaylist = false; // 避免排序时触发切换逻辑
 
   // 添加一个状态变量
   bool _isExiting = false;
@@ -247,36 +248,48 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加排序相关状态
   void _sortPlaylist() async {
-    // 记住当前播放的视频名称和位置
-    final currentPlayingName =
-        playList[currentPlayingIndex].extras!['name'] as String;
-
-    // 创建一个排序后的新列表，但不直接修改原列表
-    final sortedList = List<Media>.from(playList);
-    sortedList.sort((a, b) {
-      String nameA = a.extras!['name'] as String;
-      String nameB = b.extras!['name'] as String;
-      return _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
-    });
-
-    // 使用 move API 重新排列播放列表
-    for (int i = 0; i < sortedList.length; i++) {
-      final currentIndex = playList.indexWhere(
-          (item) => item.extras!['name'] == sortedList[i].extras!['name']);
-      if (currentIndex != i) {
-        await player.move(currentIndex, i);
-        // 同步更新本地列表
-        final item = playList.removeAt(currentIndex);
-        playList.insert(i, item);
-      }
+    if (playList.isEmpty) {
+      return;
     }
 
-    // 更新当前播放索引
-    setState(() {
-      currentPlayingIndex = playList
-          .indexWhere((item) => item.extras!['name'] == currentPlayingName);
-      _currentPlayingIndexNotifier.value = currentPlayingIndex;
-    });
+    _isReorderingPlaylist = true;
+    try {
+      // 记住当前播放的视频名称和位置
+      final currentPlayingName =
+          playList[currentPlayingIndex].extras!['name'] as String;
+
+      // 创建一个排序后的新列表，但不直接修改原列表
+      final sortedList = List<Media>.from(playList);
+      sortedList.sort((a, b) {
+        final nameA = a.extras!['name'] as String;
+        final nameB = b.extras!['name'] as String;
+        return _isAscending ? nameA.compareTo(nameB) : nameB.compareTo(nameA);
+      });
+
+      // 使用 move API 重新排列播放列表
+      for (int i = 0; i < sortedList.length; i++) {
+        final currentIndex = playList.indexWhere(
+            (item) => item.extras!['name'] == sortedList[i].extras!['name']);
+        if (currentIndex != i) {
+          await player.move(currentIndex, i);
+          // 同步更新本地列表
+          final item = playList.removeAt(currentIndex);
+          playList.insert(i, item);
+        }
+      }
+
+      // 更新当前播放索引
+      setState(() {
+        currentPlayingIndex = playList
+            .indexWhere((item) => item.extras!['name'] == currentPlayingName);
+        _currentPlayingIndexNotifier.value = currentPlayingIndex;
+      });
+    } finally {
+      // 等待事件循环的下一帧再取消标记，避免排序触发的回调误判为视频切换
+      Future.delayed(Duration.zero, () {
+        _isReorderingPlaylist = false;
+      });
+    }
   }
 
   // 获取当前登录用户名
@@ -517,9 +530,19 @@ class VideoPlayerState extends State<VideoPlayer> {
             : "未知";
         _logDebug('播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading');
 
+        if (_isReorderingPlaylist) {
+          _logDebug('检测到排序导致的播放列表变化，忽略进一步处理');
+          return;
+        }
+
         // 如果是初始加载，跳过检查
         if (_isInitialLoading) {
           _logDebug('初始加载中，跳过本地文件检查');
+          return;
+        }
+
+        if (event.index == currentPlayingIndex) {
+          _logDebug('播放列表索引未发生变化，跳过进度保存');
           return;
         }
 
