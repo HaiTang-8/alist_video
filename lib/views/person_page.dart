@@ -1,13 +1,15 @@
-import 'package:alist_player/main.dart';
-import 'package:alist_player/utils/woo_http.dart';
-import 'package:alist_player/views/settings/database_api_settings.dart';
-import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
-import 'package:alist_player/views/settings/playback_settings_page.dart';
-import 'package:alist_player/views/settings/shared_preferences_viewer.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:alist_player/views/storage_page.dart';
+
+import 'package:alist_player/main.dart';
+import 'package:alist_player/utils/woo_http.dart';
+import 'package:alist_player/views/disk_usage_page.dart';
+import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
+import 'package:alist_player/views/settings/database_api_settings.dart';
+import 'package:alist_player/views/settings/playback_settings_page.dart';
+import 'package:alist_player/views/settings/shared_preferences_viewer.dart';
 import 'package:alist_player/views/settings/remote_config_page.dart';
+import 'package:alist_player/views/storage_page.dart';
 
 class PersonPage extends StatefulWidget {
   const PersonPage({super.key});
@@ -16,7 +18,8 @@ class PersonPage extends StatefulWidget {
   State<StatefulWidget> createState() => _PersonPageState();
 }
 
-class _PersonPageState extends State<PersonPage> with AutomaticKeepAliveClientMixin {
+class _PersonPageState extends State<PersonPage>
+    with AutomaticKeepAliveClientMixin {
   String _username = '';
 
   @override
@@ -206,6 +209,18 @@ class _PersonPageState extends State<PersonPage> with AutomaticKeepAliveClientMi
             child: Column(
               children: [
                 _buildSectionTitle('设置'),
+                _buildMenuItem(
+                  icon: Icons.pie_chart_outline,
+                  title: '磁盘使用统计',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const DiskUsagePage(),
+                      ),
+                    );
+                  },
+                ),
                 _buildMenuItem(
                   icon: Icons.video_settings,
                   title: '播放设置',
