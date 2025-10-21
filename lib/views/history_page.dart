@@ -40,6 +40,7 @@ class _HistoryPageState extends State<HistoryPage>
   bool _isLoading = true;
   String? _currentUsername;
   bool _isTimelineMode = true;
+  bool _isCompactMode = true;
   String? _selectedDirectory;
   bool _isSelectMode = false;
   final Set<String> _selectedItems = <String>{};
@@ -132,13 +133,32 @@ class _HistoryPageState extends State<HistoryPage>
 
       if (_currentUsername != null) {
         // 获取总记录数
-        _totalRecords = await DatabaseHelper.instance.getUserHistoricalRecordsCount(
+        _totalRecords =
+            await DatabaseHelper.instance.getUserHistoricalRecordsCount(
           _currentUsername!.hashCode,
         );
 
-        if (_isTimelineMode) {
+        if (_isCompactMode) {
+          // 精简模式：按父级路径分组，展示每个目录的最新记录
+          final records =
+              await DatabaseHelper.instance.getUserHistoricalRecords(
+            _currentUsername!.hashCode,
+            limit: _totalRecords == 0 ? 1 : _totalRecords,
+            offset: 0,
+          );
+
+          if (!mounted) return;
+
+          final List<HistoricalRecord> historyRecords =
+              records.map((r) => HistoricalRecord.fromMap(r)).toList();
+
+          _allRecords.addAll(historyRecords);
+          _hasMoreData = false;
+          _groupByCompact(_allRecords);
+        } else if (_isTimelineMode) {
           // 时间线模式：使用分页加载
-          final records = await DatabaseHelper.instance.getRecentHistoricalRecords(
+          final records =
+              await DatabaseHelper.instance.getRecentHistoricalRecords(
             userId: _currentUsername!.hashCode,
             limit: _pageSize,
             offset: 0,
@@ -154,9 +174,10 @@ class _HistoryPageState extends State<HistoryPage>
           _groupByTimeline(_allRecords);
         } else {
           // 目录模式：加载所有数据以构建完整的目录列表
-          final records = await DatabaseHelper.instance.getUserHistoricalRecords(
+          final records =
+              await DatabaseHelper.instance.getUserHistoricalRecords(
             _currentUsername!.hashCode,
-            limit: _totalRecords, // 加载所有记录
+            limit: _totalRecords == 0 ? 1 : _totalRecords, // 加载所有记录
             offset: 0,
           );
 
@@ -174,6 +195,11 @@ class _HistoryPageState extends State<HistoryPage>
           _isLoading = false;
         });
         _controller.forward(from: 0);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _preloadScreenshots();
+          }
+        });
       }
     } catch (e) {
       print('Error loading history: $e');
@@ -184,7 +210,13 @@ class _HistoryPageState extends State<HistoryPage>
 
   Future<void> _loadMoreHistory() async {
     // 只在时间线模式下支持瀑布流加载
-    if (!_isTimelineMode || _isLoadingMore || !_hasMoreData || _currentUsername == null) return;
+    if (_isCompactMode ||
+        !_isTimelineMode ||
+        _isLoadingMore ||
+        !_hasMoreData ||
+        _currentUsername == null) {
+      return;
+    }
 
     try {
       setState(() => _isLoadingMore = true);
@@ -231,7 +263,8 @@ class _HistoryPageState extends State<HistoryPage>
       }
 
       // 获取搜索结果总数
-      _searchTotalRecords = await DatabaseHelper.instance.getSearchHistoricalRecordsCount(
+      _searchTotalRecords =
+          await DatabaseHelper.instance.getSearchHistoricalRecordsCount(
         userId: _currentUsername!.hashCode,
         searchQuery: _searchQuery,
       );
@@ -269,7 +302,10 @@ class _HistoryPageState extends State<HistoryPage>
 
   // 加载更多搜索结果
   Future<void> _loadMoreSearchResults() async {
-    if (_isLoadingMore || !_hasMoreData || _currentUsername == null || _searchQuery.isEmpty) return;
+    if (_isLoadingMore ||
+        !_hasMoreData ||
+        _currentUsername == null ||
+        _searchQuery.isEmpty) return;
 
     try {
       setState(() => _isLoadingMore = true);
@@ -389,6 +425,31 @@ class _HistoryPageState extends State<HistoryPage>
     _groupedRecords = sortedMap;
   }
 
+  void _groupByCompact(List<HistoricalRecord> records) {
+    final Map<String, List<HistoricalRecord>> grouped = {};
+
+    for (final record in records) {
+      final dirPath = path.dirname(record.videoPath);
+      grouped.putIfAbsent(dirPath, () => []);
+      grouped[dirPath]!.add(record);
+    }
+
+    grouped.forEach((key, list) {
+      list.sort((a, b) => b.changeTime.compareTo(a.changeTime));
+    });
+
+    final sortedKeys = grouped.keys.toList()
+      ..sort((a, b) {
+        final aTime = grouped[a]!.first.changeTime;
+        final bTime = grouped[b]!.first.changeTime;
+        return bTime.compareTo(aTime);
+      });
+
+    _groupedRecords = {
+      for (final key in sortedKeys) key: grouped[key]!,
+    };
+  }
+
   String _getGroupTitle(String key) {
     if (_isTimelineMode) {
       final now = DateTime.now();
@@ -412,6 +473,108 @@ class _HistoryPageState extends State<HistoryPage>
       return key;
     } else {
       return path.basename(key);
+    }
+  }
+
+  String _resolveGroupKey(HistoricalRecord record) {
+    if (_isCompactMode) {
+      return path.dirname(record.videoPath);
+    }
+
+    if (_searchQuery.isNotEmpty || _isTimelineMode) {
+      return _buildTimelineGroupKey(record);
+    }
+
+    if (_selectedDirectory != null) {
+      return _selectedDirectory!;
+    }
+
+    return path.dirname(record.videoPath);
+  }
+
+  String _buildTimelineGroupKey(HistoricalRecord record) {
+    final localTime = record.changeTime.toLocal();
+    final date = DateTime(
+      localTime.year,
+      localTime.month,
+      localTime.day,
+    );
+    return date.toString().substring(0, 10);
+  }
+
+  String _formatDirectoryName(String dirPath) {
+    final name = path.basename(dirPath);
+    if (name.isEmpty || name == '.' || name == '/') {
+      return '根目录';
+    }
+    return name;
+  }
+
+  Future<void> _handleRecordTap(HistoricalRecord record) async {
+    if (_isSelectMode) {
+      _toggleSelect(record.videoSha1);
+      return;
+    }
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext context) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      },
+    );
+
+    final (exists, errorMessage) = await _checkFileExists(record.videoPath);
+
+    if (!mounted) return;
+
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    }
+
+    if (!exists) {
+      final isFileMovedOrDeleted =
+          errorMessage?.contains(AppConstants.fileNotFoundError) ?? false;
+
+      if (isFileMovedOrDeleted) {
+        final groupKey = _resolveGroupKey(record);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('该视频文件已不存在或已被移动'),
+            action: SnackBarAction(
+              label: '删除记录',
+              onPressed: () {
+                _deleteRecord(record, groupKey);
+              },
+            ),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('访问文件失败: ${errorMessage ?? "未知错误"}'),
+          ),
+        );
+      }
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => VideoPlayer(
+          path: record.videoPath,
+          name: record.videoName,
+        ),
+      ),
+    );
+
+    if (mounted) {
+      _loadHistory();
     }
   }
 
@@ -531,7 +694,7 @@ class _HistoryPageState extends State<HistoryPage>
           _groupedRecords[_lastDeletedGroupKey]!.add(_lastDeletedRecord!);
         }
 
-        if (!_isTimelineMode) {
+        if (!_isTimelineMode || _isCompactMode) {
           _groupedRecords[_lastDeletedGroupKey]!
               .sort((a, b) => b.changeTime.compareTo(a.changeTime));
         }
@@ -615,12 +778,16 @@ class _HistoryPageState extends State<HistoryPage>
       final directory = await getApplicationDocumentsDirectory();
 
       // Sanitize path and name as done in the video player
-      final String sanitizedVideoPath = record.videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedVideoName = record.videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedVideoPath =
+          record.videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedVideoName =
+          record.videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
       // 首先尝试新的 JPEG 格式（压缩后的格式）
-      final String jpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.jpg';
-      final String jpegFilePath = '${directory.path}/alist_player/$jpegFileName';
+      final String jpegFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.jpg';
+      final String jpegFilePath =
+          '${directory.path}/alist_player/$jpegFileName';
       final jpegFile = File(jpegFilePath);
 
       if (await jpegFile.exists()) {
@@ -629,7 +796,8 @@ class _HistoryPageState extends State<HistoryPage>
       }
 
       // 如果 JPEG 格式不存在，尝试旧的 PNG 格式（向后兼容）
-      final String pngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png';
+      final String pngFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png';
       final String pngFilePath = '${directory.path}/alist_player/$pngFileName';
       final pngFile = File(pngFilePath);
 
@@ -676,19 +844,19 @@ class _HistoryPageState extends State<HistoryPage>
   // Preload screenshots in the background to avoid UI stutters
   Future<void> _preloadScreenshots() async {
     if (_groupedRecords.isEmpty) return;
-    
+
     // Flatten all records
     final allRecords = <HistoricalRecord>[];
     for (final records in _groupedRecords.values) {
       allRecords.addAll(records);
     }
-    
+
     // Preload screenshots for visible records first
     for (var i = 0; i < math.min(10, allRecords.length); i++) {
       if (!mounted) return;
       await _getScreenshotPath(allRecords[i]);
     }
-    
+
     // Then load the rest in the background
     for (var i = 10; i < allRecords.length; i++) {
       if (!mounted) return;
@@ -713,7 +881,9 @@ class _HistoryPageState extends State<HistoryPage>
                     icon: const Icon(Icons.arrow_back),
                     onPressed: _toggleSearchMode,
                   )
-                : (!_isTimelineMode && _selectedDirectory != null)
+                : (!_isTimelineMode &&
+                        !_isCompactMode &&
+                        _selectedDirectory != null)
                     ? IconButton(
                         icon: const Icon(Icons.arrow_back),
                         onPressed: () {
@@ -735,11 +905,13 @@ class _HistoryPageState extends State<HistoryPage>
               )
             : _isSelectMode
                 ? Text('已选择 ${_selectedItems.length} 项')
-                : Text(_isTimelineMode
-                    ? (_searchQuery.isNotEmpty ? '搜索结果' : '观看历史')
-                    : (_selectedDirectory != null
-                        ? path.basename(_selectedDirectory!)
-                        : '观看历史')),
+                : Text(_isCompactMode
+                    ? '精简历史'
+                    : _isTimelineMode
+                        ? (_searchQuery.isNotEmpty ? '搜索结果' : '观看历史')
+                        : (_selectedDirectory != null
+                            ? _formatDirectoryName(_selectedDirectory!)
+                            : '观看历史')),
         actions: [
           if (_isSelectMode)
             IconButton(
@@ -760,6 +932,23 @@ class _HistoryPageState extends State<HistoryPage>
               icon: const Icon(Icons.search),
               onPressed: _toggleSearchMode,
             ),
+            IconButton(
+              tooltip: _isCompactMode ? '退出精简模式' : '精简模式',
+              icon: Icon(
+                _isCompactMode ? Icons.view_agenda : Icons.grid_view_rounded,
+              ),
+              onPressed: _searchQuery.isNotEmpty
+                  ? null
+                  : () async {
+                      setState(() {
+                        _isCompactMode = !_isCompactMode;
+                        if (_isCompactMode) {
+                          _selectedDirectory = null;
+                        }
+                      });
+                      await _loadHistory();
+                    },
+            ),
             if (!isMobile) // 桌面端显示所有按钮
               IconButton(
                 icon: const Icon(Icons.select_all),
@@ -767,13 +956,15 @@ class _HistoryPageState extends State<HistoryPage>
               ),
             IconButton(
               icon: Icon(_isTimelineMode ? Icons.folder : Icons.access_time),
-              onPressed: _searchQuery.isNotEmpty ? null : () {
-                setState(() {
-                  _isTimelineMode = !_isTimelineMode;
-                  _selectedDirectory = null;
-                  _loadHistory();
-                });
-              },
+              onPressed: (_searchQuery.isNotEmpty || _isCompactMode)
+                  ? null
+                  : () async {
+                      setState(() {
+                        _isTimelineMode = !_isTimelineMode;
+                        _selectedDirectory = null;
+                      });
+                      await _loadHistory();
+                    },
             ),
             if (!isMobile) // 桌面端显示清空按钮
               IconButton(
@@ -841,6 +1032,7 @@ class _HistoryPageState extends State<HistoryPage>
                       }
                       break;
                     case 'refresh':
+                      _clearImageCache();
                       _loadHistory();
                       break;
                   }
@@ -882,7 +1074,10 @@ class _HistoryPageState extends State<HistoryPage>
             else
               IconButton(
                 icon: const Icon(Icons.refresh),
-                onPressed: _loadHistory,
+                onPressed: () async {
+                  _clearImageCache();
+                  await _loadHistory();
+                },
               ),
           ],
         ],
@@ -905,9 +1100,8 @@ class _HistoryPageState extends State<HistoryPage>
               ? const Center(child: CircularProgressIndicator())
               : _groupedRecords.isEmpty
                   ? Center(
-                      child: Text(_searchQuery.isNotEmpty
-                          ? '没有找到匹配的视频'
-                          : '暂无观看历史'))
+                      child: Text(
+                          _searchQuery.isNotEmpty ? '没有找到匹配的视频' : '暂无观看历史'))
                   : _buildContent(),
         ),
       ),
@@ -918,6 +1112,10 @@ class _HistoryPageState extends State<HistoryPage>
     // 在搜索模式下，始终显示时间线视图
     if (_searchQuery.isNotEmpty) {
       return _buildTimelineView();
+    }
+
+    if (_isCompactMode) {
+      return _buildCompactView();
     }
 
     if (!_isTimelineMode && _selectedDirectory == null) {
@@ -941,9 +1139,7 @@ class _HistoryPageState extends State<HistoryPage>
         final records = _groupedRecords[dirPath]!;
         final latestRecord = records.first;
 
-        // 从完整目录路径中提取目录名
-        // 例如：/movies/action -> action
-        final dirName = dirPath.split('/').last;
+        final dirName = _formatDirectoryName(dirPath);
 
         return SlideTransition(
           position: Tween<Offset>(
@@ -1001,7 +1197,8 @@ class _HistoryPageState extends State<HistoryPage>
                             ),
                             decoration: BoxDecoration(
                               color: Colors.blue.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(isMobile ? 8 : 12),
+                              borderRadius:
+                                  BorderRadius.circular(isMobile ? 8 : 12),
                             ),
                             child: Text(
                               '${records.length}个视频',
@@ -1076,6 +1273,326 @@ class _HistoryPageState extends State<HistoryPage>
         final dateRecords = timelineRecords[dateKey]!;
         return _buildDateGroup(dateKey, dateRecords);
       },
+    );
+  }
+
+  Widget _buildCompactView() {
+    final keys = _groupedRecords.keys.toList();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isMobile = MediaQuery.of(context).size.width < 600;
+        final horizontalPadding = isMobile ? 8.0 : 16.0;
+        final desiredSpacing = isMobile ? 12.0 : 16.0;
+        final availableWidth = (constraints.maxWidth - (horizontalPadding * 2))
+            .clamp(0.0, double.infinity);
+        final spacing = availableWidth > desiredSpacing
+            ? desiredSpacing
+            : math.max(4.0, availableWidth / 10);
+        final totalSpacing = spacing;
+        final calculatedWidth = availableWidth > 0
+            ? (availableWidth - totalSpacing) / 2
+            : constraints.maxWidth / 2;
+        final itemWidth = math.max(120.0, calculatedWidth);
+
+        return SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding)
+                .copyWith(top: horizontalPadding, bottom: horizontalPadding),
+            child: Wrap(
+              spacing: spacing,
+              runSpacing: spacing,
+              children: List.generate(keys.length, (index) {
+                final groupKey = keys[index];
+                final records = _groupedRecords[groupKey]!;
+                final record = records.first;
+                return SizedBox(
+                  width: itemWidth,
+                  child: _buildCompactCard(record, groupKey),
+                );
+              }),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCompactCard(
+    HistoricalRecord record,
+    String groupKey,
+  ) {
+    final isMobile = MediaQuery.of(context).size.width < 600;
+    final theme = Theme.of(context);
+    final isSelected = _selectedItems.contains(record.videoSha1);
+    final shadowColor = theme.brightness == Brightness.dark
+        ? Colors.black.withOpacity(0.3)
+        : Colors.black.withOpacity(0.08);
+    final titleFontSize = isMobile ? 13.0 : 15.0;
+    final titleLineHeight = 1.25;
+    final titleBoxHeight = titleFontSize * titleLineHeight * 2;
+    final subtitleFontSize = isMobile ? 11.0 : 12.0;
+    final subtitleLineHeight = 1.2;
+    final subtitleBoxHeight = subtitleFontSize * subtitleLineHeight;
+
+    return GestureDetector(
+      onSecondaryTapDown: (details) {
+        _showContextMenu(context, details.globalPosition, record);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 220),
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(isMobile ? 12 : 14),
+          border: Border.all(
+            color: isSelected ? theme.primaryColor : Colors.transparent,
+            width: isSelected ? 2 : 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor,
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(isMobile ? 12 : 14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(isMobile ? 12 : 14),
+            onTap: () => _handleRecordTap(record),
+            onLongPress: () {
+              if (!_isSelectMode) {
+                _toggleSelectMode();
+              }
+              _toggleSelect(record.videoSha1);
+            },
+            child: LayoutBuilder(
+              builder: (context, cardConstraints) {
+                final maxTextWidth = cardConstraints.maxWidth -
+                    (isMobile ? 20.0 : 28.0); // padding * 2
+
+                return Stack(
+                  children: [
+                    Padding(
+                      padding: EdgeInsets.all(isMobile ? 10 : 14),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildCompactThumbnail(record),
+                          SizedBox(height: isMobile ? 8 : 10),
+                          SizedBox(
+                            height: titleBoxHeight,
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: ConstrainedBox(
+                                constraints:
+                                    BoxConstraints(maxWidth: maxTextWidth),
+                                child: Text(
+                                  record.videoName,
+                                  style: TextStyle(
+                                    fontSize: titleFontSize,
+                                    fontWeight: FontWeight.w600,
+                                    height: titleLineHeight,
+                                  ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: isMobile ? 3 : 4),
+                          SizedBox(
+                            height: subtitleBoxHeight,
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: ConstrainedBox(
+                                constraints:
+                                    BoxConstraints(maxWidth: maxTextWidth),
+                                child: Text(
+                                  _formatDirectoryName(groupKey),
+                                  style: TextStyle(
+                                    fontSize: subtitleFontSize,
+                                    height: subtitleLineHeight,
+                                    color: Colors.grey[600],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: isMobile ? 6 : 8),
+                          Row(
+                            children: [
+                              Icon(
+                                Icons.access_time,
+                                size: isMobile ? 12 : 13,
+                                color: Colors.grey[500],
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  timeago.format(record.changeTime,
+                                      locale: 'zh_CN'),
+                                  style: TextStyle(
+                                    fontSize: isMobile ? 10 : 12,
+                                    color: Colors.grey[500],
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                          SizedBox(height: isMobile ? 6 : 8),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: record.totalVideoDuration > 0
+                                  ? (record.videoSeek /
+                                          record.totalVideoDuration)
+                                      .clamp(0.0, 1.0)
+                                  : 0.0,
+                              minHeight: 4,
+                              backgroundColor: Colors.grey[200],
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                theme.primaryColor.withOpacity(0.85),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (_isSelectMode)
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: Container(
+                          width: 24,
+                          height: 24,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isSelected
+                                ? theme.primaryColor
+                                : Colors.grey[300],
+                          ),
+                          child: isSelected
+                              ? const Icon(Icons.check,
+                                  size: 16, color: Colors.white)
+                              : null,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactThumbnail(HistoricalRecord record) {
+    final borderRadius = BorderRadius.circular(12);
+
+    return ClipRRect(
+      borderRadius: borderRadius,
+      child: AspectRatio(
+        aspectRatio: 16 / 9,
+        child: FutureBuilder<String?>(
+          future: _getScreenshotPath(record),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return _buildCompactPlaceholder();
+            }
+
+            final screenshotPath = snapshot.data;
+            if (screenshotPath == null) {
+              return _buildCompactPlaceholder();
+            }
+
+            return Stack(
+              fit: StackFit.expand,
+              children: [
+                FutureBuilder<int>(
+                  future: _getFileModificationTime(screenshotPath),
+                  builder: (context, timeSnapshot) {
+                    final cacheKey = timeSnapshot.hasData
+                        ? '${screenshotPath}_${timeSnapshot.data}'
+                        : screenshotPath;
+
+                    return Image.file(
+                      File(screenshotPath),
+                      fit: BoxFit.cover,
+                      key: ValueKey(cacheKey),
+                      errorBuilder: (context, error, stackTrace) {
+                        final recordCacheKey =
+                            '${record.videoPath}_${record.videoName}';
+                        _screenshotPathCache.remove(recordCacheKey);
+                        return _buildCompactPlaceholder();
+                      },
+                    );
+                  },
+                ),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.0),
+                          Colors.black.withOpacity(0.45),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.4),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow,
+                        color: Colors.white,
+                        size: 22,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactPlaceholder() {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFECECEC), Color(0xFFDFDFDF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: const Center(
+        child: Icon(
+          Icons.movie_filter,
+          color: Colors.grey,
+          size: 32,
+        ),
+      ),
     );
   }
 
@@ -1157,12 +1674,8 @@ class _HistoryPageState extends State<HistoryPage>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Container(
-                      padding: EdgeInsets.fromLTRB(
-                        0,
-                        isMobile ? 8 : 16,
-                        isMobile ? 8 : 16,
-                        isMobile ? 6 : 12
-                      ),
+                      padding: EdgeInsets.fromLTRB(0, isMobile ? 8 : 16,
+                          isMobile ? 8 : 16, isMobile ? 6 : 12),
                       child: Row(
                         children: [
                           Text(
@@ -1257,13 +1770,7 @@ class _HistoryPageState extends State<HistoryPage>
                 return true;
               },
               onDismissed: (direction) {
-                final groupKey = _selectedDirectory ??
-                    (_isTimelineMode
-                        ? record.changeTime
-                            .toLocal()
-                            .toString()
-                            .substring(0, 10)
-                        : path.dirname(record.videoPath));
+                final groupKey = _resolveGroupKey(record);
                 _deleteRecord(record, groupKey);
               },
               child: Card(
@@ -1281,81 +1788,7 @@ class _HistoryPageState extends State<HistoryPage>
                   ),
                 ),
                 child: InkWell(
-                  onTap: _isSelectMode
-                      ? () => _toggleSelect(record.videoSha1)
-                      : () async {
-                          // 显示加载指示器
-                          showDialog(
-                            context: context,
-                            barrierDismissible: false,
-                            builder: (BuildContext context) {
-                              return const Center(
-                                child: CircularProgressIndicator(),
-                              );
-                            },
-                          );
-
-                          // 检查文件是否存在
-                          final (exists, errorMessage) =
-                              await _checkFileExists(record.videoPath);
-
-                          // 关闭加载指示器
-                          if (mounted) {
-                            Navigator.pop(context);
-                          }
-
-                          if (!mounted) return;
-
-                          if (exists) {
-                            await Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => VideoPlayer(
-                                  path: record.videoPath,
-                                  name: record.videoName,
-                                ),
-                              ),
-                            );
-                            if (mounted) {
-                              _loadHistory();
-                            }
-                          } else {
-                            // 检查是否是文件被移动或删除的错误
-                            final isFileMovedOrDeleted = errorMessage?.contains(
-                                    AppConstants.fileNotFoundError) ??
-                                false;
-
-                            if (isFileMovedOrDeleted) {
-                              // 显示删除记录选项
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: const Text('该视频文件已不存在或已被移动'),
-                                  action: SnackBarAction(
-                                    label: '删除记录',
-                                    onPressed: () {
-                                      final groupKey = _selectedDirectory ??
-                                          (_isTimelineMode
-                                              ? record.changeTime
-                                                  .toLocal()
-                                                  .toString()
-                                                  .substring(0, 10)
-                                              : path.dirname(record.videoPath));
-                                      _deleteRecord(record, groupKey);
-                                    },
-                                  ),
-                                ),
-                              );
-                            } else {
-                              // 显示一般错误消息
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content:
-                                      Text('访问文件失败: ${errorMessage ?? "未知错误"}'),
-                                ),
-                              );
-                            }
-                          }
-                        },
+                  onTap: () => _handleRecordTap(record),
                   onLongPress: () {
                     if (!_isSelectMode) {
                       _toggleSelectMode();
@@ -1367,8 +1800,8 @@ class _HistoryPageState extends State<HistoryPage>
                       Padding(
                         padding: EdgeInsets.all(isMobile ? 8 : 12),
                         child: isMobile
-                          ? _buildMobileCardContent(record)
-                          : _buildDesktopCardContent(record),
+                            ? _buildMobileCardContent(record)
+                            : _buildDesktopCardContent(record),
                       ),
                       if (_isSelectMode)
                         Positioned(
@@ -1462,7 +1895,8 @@ class _HistoryPageState extends State<HistoryPage>
           children: [
             LinearProgressIndicator(
               value: record.totalVideoDuration > 0
-                  ? (record.videoSeek / record.totalVideoDuration).clamp(0.0, 1.0)
+                  ? (record.videoSeek / record.totalVideoDuration)
+                      .clamp(0.0, 1.0)
                   : 0.0,
               backgroundColor: Colors.grey[200],
               valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
@@ -1516,8 +1950,7 @@ class _HistoryPageState extends State<HistoryPage>
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Icon(Icons.access_time,
-                      size: 14, color: Colors.grey[600]),
+                  Icon(Icons.access_time, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
@@ -1535,7 +1968,8 @@ class _HistoryPageState extends State<HistoryPage>
               const SizedBox(height: 8),
               LinearProgressIndicator(
                 value: record.totalVideoDuration > 0
-                    ? (record.videoSeek / record.totalVideoDuration).clamp(0.0, 1.0)
+                    ? (record.videoSeek / record.totalVideoDuration)
+                        .clamp(0.0, 1.0)
                     : 0.0,
                 backgroundColor: Colors.grey[200],
                 valueColor: AlwaysStoppedAnimation<Color>(Colors.blue[400]!),
@@ -1573,7 +2007,7 @@ class _HistoryPageState extends State<HistoryPage>
         return ClipRRect(
           borderRadius: BorderRadius.circular(4),
           child: Container(
-            width: 80,  // 移动端使用更小的宽度
+            width: 80, // 移动端使用更小的宽度
             height: 45, // 移动端使用更小的高度
             decoration: BoxDecoration(
               color: Colors.black,
@@ -1596,7 +2030,8 @@ class _HistoryPageState extends State<HistoryPage>
                       key: ValueKey(cacheKey),
                       errorBuilder: (context, error, stackTrace) {
                         // 当图片加载失败时，清除对应的缓存
-                        final recordCacheKey = '${record.videoPath}_${record.videoName}';
+                        final recordCacheKey =
+                            '${record.videoPath}_${record.videoName}';
                         _screenshotPathCache.remove(recordCacheKey);
                         return _buildMobileScreenshotPlaceholder();
                       },
@@ -1627,7 +2062,8 @@ class _HistoryPageState extends State<HistoryPage>
                   right: 0,
                   child: LinearProgressIndicator(
                     value: record.totalVideoDuration > 0
-                        ? (record.videoSeek / record.totalVideoDuration).clamp(0.0, 1.0)
+                        ? (record.videoSeek / record.totalVideoDuration)
+                            .clamp(0.0, 1.0)
                         : 0.0,
                     backgroundColor: Colors.black45,
                     valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
@@ -1702,7 +2138,8 @@ class _HistoryPageState extends State<HistoryPage>
                       errorBuilder: (context, error, stackTrace) {
                         print('Error loading image: $error');
                         // 当图片加载失败时，清除对应的缓存
-                        final recordCacheKey = '${record.videoPath}_${record.videoName}';
+                        final recordCacheKey =
+                            '${record.videoPath}_${record.videoName}';
                         _screenshotPathCache.remove(recordCacheKey);
                         return _buildScreenshotPlaceholder();
                       },
