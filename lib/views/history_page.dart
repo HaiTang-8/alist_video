@@ -429,7 +429,7 @@ class _HistoryPageState extends State<HistoryPage>
     final Map<String, List<HistoricalRecord>> grouped = {};
 
     for (final record in records) {
-      final dirPath = path.dirname(record.videoPath);
+      final dirPath = path.dirname("${record.videoPath}/${record.videoName}");
       grouped.putIfAbsent(dirPath, () => []);
       grouped[dirPath]!.add(record);
     }
