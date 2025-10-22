@@ -26,15 +26,20 @@ class ApiPresetSettingsDialog extends StatefulWidget {
       return await showDialog<bool>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => Dialog(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 800,
-              maxHeight: 700,
+        builder: (context) {
+          final size = MediaQuery.of(context).size;
+          final width = (size.width * 0.85).clamp(720.0, 1100.0);
+          final height = (size.height * 0.85).clamp(520.0, 900.0);
+
+          return Dialog(
+            insetPadding: const EdgeInsets.all(24),
+            child: SizedBox(
+              width: width,
+              height: height,
+              child: const ApiPresetSettingsDialog(),
             ),
-            child: const ApiPresetSettingsDialog(),
-          ),
-        ),
+          );
+        },
       );
     }
   }
@@ -47,6 +52,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
   final ApiConfigManager _configManager = ApiConfigManager();
+  late final ScrollController _presetsScrollController;
 
   // 预设模式相关
   List<ApiConfigPreset> _presets = [];
@@ -65,6 +71,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _presetsScrollController = ScrollController();
     _baseUrlController = TextEditingController();
     _baseDownloadUrlController = TextEditingController();
     _loadData();
@@ -73,6 +80,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
   @override
   void dispose() {
     _tabController.dispose();
+    _presetsScrollController.dispose();
     _baseUrlController.dispose();
     _baseDownloadUrlController.dispose();
     super.dispose();
@@ -277,266 +285,336 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
       );
     }
 
+    final colorScheme = Theme.of(context).colorScheme;
     final isMobile = MediaQuery.of(context).size.width < 600;
 
-    return Padding(
-      padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!isMobile) ...[
-            Row(
-              children: [
-                Icon(
-                  Icons.bookmark_rounded,
-                  color: Theme.of(context).primaryColor,
-                  size: 20,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final padding = EdgeInsets.symmetric(
+          horizontal: isMobile ? 16 : 28,
+          vertical: isMobile ? 12 : 24,
+        );
+
+        return Scrollbar(
+          controller: _presetsScrollController,
+          thumbVisibility: !isMobile,
+          radius: const Radius.circular(12),
+          child: CustomScrollView(
+            controller: _presetsScrollController,
+            slivers: [
+              SliverPadding(
+                padding: padding,
+                sliver: SliverToBoxAdapter(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: colorScheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Icon(Icons.bookmark_rounded, color: colorScheme.primary),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          '选择预设配置',
+                          style: TextStyle(
+                            fontSize: isMobile ? 16 : 18,
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                      ),
+                      if (!isMobile && _selectedPreset != null)
+                        _buildTagChip('当前使用', colorScheme.primary, icon: Icons.radio_button_checked),
+                    ],
+                  ),
                 ),
-                const SizedBox(width: 8),
-                Text(
-                  '选择预设配置',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Theme.of(context).colorScheme.onSurface,
+              ),
+              if (_presets.isEmpty)
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    padding.horizontal / 2,
+                    0,
+                    padding.horizontal / 2,
+                    padding.bottom,
+                  ),
+                  sliver: SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Column(
+                      children: [
+                        Expanded(child: _buildEmptyState()),
+                        const SizedBox(height: 18),
+                        _buildPrimaryActionButton(
+                          label: '添加新预设',
+                          icon: Icons.add_rounded,
+                          onPressed: _showAddPresetDialog,
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else ...[
+                SliverPadding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: isMobile ? 16 : 28,
+                    vertical: 0,
+                  ),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final preset = _presets[index];
+                        final isSelected = _selectedPreset?.id == preset.id;
+                        return Padding(
+                          padding: EdgeInsets.only(top: index == 0 ? 0 : 14),
+                          child: _buildPresetCard(preset, isSelected, isMobile),
+                        );
+                      },
+                      childCount: _presets.length,
+                    ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    isMobile ? 16 : 28,
+                    18,
+                    isMobile ? 16 : 28,
+                    padding.bottom,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: _buildPrimaryActionButton(
+                      label: '添加新预设',
+                      icon: Icons.add_rounded,
+                      onPressed: _showAddPresetDialog,
+                    ),
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: 20),
-          ],
-          Expanded(
-            child: _presets.isEmpty
-                ? _buildEmptyState()
-                : ListView.builder(
-                    itemCount: _presets.length,
-                    itemBuilder: (context, index) {
-                      final preset = _presets[index];
-                      final isSelected = _selectedPreset?.id == preset.id;
-
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: isSelected
-                              ? Theme.of(context).primaryColor.withValues(alpha: 0.1)
-                              : Theme.of(context).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(
-                            color: isSelected
-                                ? Theme.of(context).primaryColor
-                                : Colors.transparent,
-                            width: 2,
-                          ),
-                        ),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(16),
-                          onTap: () {
-                            setState(() {
-                              _selectedPreset = preset;
-                            });
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Row(
-                              children: [
-                                // 选择指示器
-                                Container(
-                                  width: 20,
-                                  height: 20,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: isSelected
-                                          ? Theme.of(context).primaryColor
-                                          : Theme.of(context).colorScheme.outline,
-                                      width: 2,
-                                    ),
-                                    color: isSelected
-                                        ? Theme.of(context).primaryColor
-                                        : Colors.transparent,
-                                  ),
-                                  child: isSelected
-                                      ? const Icon(
-                                          Icons.check,
-                                          size: 12,
-                                          color: Colors.white,
-                                        )
-                                      : null,
-                                ),
-                                const SizedBox(width: 16),
-                                // 配置信息
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              preset.name,
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 16,
-                                                color: Theme.of(context).colorScheme.onSurface,
-                                              ),
-                                            ),
-                                          ),
-                                          if (preset.isDefault)
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
-                                              decoration: BoxDecoration(
-                                                color: Colors.amber.withValues(alpha: 0.2),
-                                                borderRadius: BorderRadius.circular(8),
-                                              ),
-                                              child: const Row(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Icon(
-                                                    Icons.star,
-                                                    size: 12,
-                                                    color: Colors.amber,
-                                                  ),
-                                                  SizedBox(width: 4),
-                                                  Text(
-                                                    '默认',
-                                                    style: TextStyle(
-                                                      fontSize: 10,
-                                                      fontWeight: FontWeight.w500,
-                                                      color: Colors.amber,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Text(
-                                        '基础URL: ${preset.baseUrl}',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '下载URL: ${preset.baseDownloadUrl}',
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                        ),
-                                      ),
-                                      if (preset.description?.isNotEmpty == true) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          preset.description!,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                                // 操作按钮
-                                PopupMenuButton<String>(
-                                  icon: Icon(
-                                    Icons.more_vert,
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                                  ),
-                                  onSelected: (value) {
-                                    switch (value) {
-                                      case 'edit':
-                                        _editPreset(preset);
-                                        break;
-                                      case 'delete':
-                                        _deletePreset(preset);
-                                        break;
-                                      case 'setDefault':
-                                        _setAsDefault(preset);
-                                        break;
-                                    }
-                                  },
-                                  itemBuilder: (context) => [
-                                    const PopupMenuItem(
-                                      value: 'edit',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.edit_rounded, size: 16),
-                                          SizedBox(width: 8),
-                                          Text('编辑'),
-                                        ],
-                                      ),
-                                    ),
-                                    if (!preset.isDefault)
-                                      const PopupMenuItem(
-                                        value: 'setDefault',
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.star_rounded, size: 16),
-                                            SizedBox(width: 8),
-                                            Text('设为默认'),
-                                          ],
-                                        ),
-                                      ),
-                                    const PopupMenuItem(
-                                      value: 'delete',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.delete_rounded, size: 16, color: Colors.red),
-                                          SizedBox(width: 8),
-                                          Text('删除', style: TextStyle(color: Colors.red)),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+            ],
           ),
-          // 添加新预设按钮
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [
-                    Theme.of(context).primaryColor,
-                    Theme.of(context).primaryColor.withValues(alpha: 0.8),
+        );
+      },
+    );
+  }
+
+  /// 构建自定义标签页
+  Widget _buildCustomTab() {
+    final colorScheme = Theme.of(context).colorScheme;
+    final isMobile = MediaQuery.of(context).size.width < 600;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 760;
+
+        return SingleChildScrollView(
+          padding: EdgeInsets.symmetric(
+            horizontal: isMobile ? 16 : 28,
+            vertical: isMobile ? 12 : 24,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.tune_rounded, color: colorScheme.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '自定义 API 配置',
+                          style: TextStyle(
+                            fontSize: isMobile ? 16 : 18,
+                            fontWeight: FontWeight.w700,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '自定义基础访问地址与下载地址，可灵活适配自建或第三方服务。',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (!isMobile)
+                    FilledButton.icon(
+                      onPressed: _saveAsPreset,
+                      icon: const Icon(Icons.save_rounded, size: 18),
+                      label: const Text('保存为预设'),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              Container(
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: colorScheme.outline.withValues(alpha: 0.15)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: ElevatedButton.icon(
-                onPressed: _showAddPresetDialog,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.transparent,
-                  shadowColor: Colors.transparent,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+                padding: EdgeInsets.all(isMobile ? 18 : 22),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '基础信息',
+                      style: TextStyle(
+                        fontSize: isMobile ? 15 : 16,
+                        fontWeight: FontWeight.w700,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (isWide)
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              controller: _baseUrlController,
+                              label: '基础 URL',
+                              icon: Icons.link_rounded,
+                              hint: '例如: https://alist.example.com',
+                              isMobile: false,
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            child: _buildTextField(
+                              controller: _baseDownloadUrlController,
+                              label: '下载 URL',
+                              icon: Icons.download_rounded,
+                              hint: '例如: https://alist.example.com/d',
+                              isMobile: false,
+                            ),
+                          ),
+                        ],
+                      )
+                    else ...[
+                      _buildTextField(
+                        controller: _baseUrlController,
+                        label: '基础 URL',
+                        icon: Icons.link_rounded,
+                        hint: '例如: https://alist.example.com',
+                        isMobile: isMobile,
+                      ),
+                      const SizedBox(height: 20),
+                      _buildTextField(
+                        controller: _baseDownloadUrlController,
+                        label: '下载 URL',
+                        icon: Icons.download_rounded,
+                        hint: '例如: https://alist.example.com/d',
+                        isMobile: isMobile,
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: colorScheme.surfaceVariant.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 28,
+                            height: 28,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: colorScheme.primary.withValues(alpha: 0.12),
+                            ),
+                            child: Icon(
+                              Icons.info_outline_rounded,
+                              size: 18,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              '基础 URL 与下载 URL 应指向同一服务的不同入口。多数情况下下载地址为基础地址加 "/d"。配置后可选择保存为预设，以便下次快速使用。',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: colorScheme.primary,
+                                height: 1.5,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                icon: const Icon(Icons.add_rounded, color: Colors.white),
-                label: const Text(
-                  '添加新预设',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
               ),
+              if (isMobile) ...[
+                const SizedBox(height: 24),
+                _buildPrimaryActionButton(
+                  label: '保存为预设',
+                  icon: Icons.save_rounded,
+                  onPressed: _saveAsPreset,
+                ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 构建文本输入框
+  Widget _buildTagChip(String label, Color color, {IconData? icon, Color? textColor}) {
+    final resolvedTextColor = textColor ??
+        (ThemeData.estimateBrightnessForColor(color) == Brightness.dark ? Colors.white : Colors.black87);
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 14, color: resolvedTextColor),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              color: resolvedTextColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
             ),
           ),
         ],
@@ -544,157 +622,298 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
     );
   }
 
-  /// 构建自定义标签页
-  Widget _buildCustomTab() {
-    final isMobile = MediaQuery.of(context).size.width < 600;
+  Widget _buildPresetMetaRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: colorScheme.primary.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: colorScheme.primary,
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 2),
+              SelectableText(
+                value,
+                style: TextStyle(
+                  color: colorScheme.onSurface,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 
-    return Padding(
-      padding: EdgeInsets.all(isMobile ? 16.0 : 24.0),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (!isMobile) ...[
+  Widget _buildPrimaryActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback? onPressed,
+    bool expand = true,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final button = FilledButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(
+        label,
+        style: const TextStyle(fontWeight: FontWeight.w600),
+      ),
+      style: FilledButton.styleFrom(
+        minimumSize: const Size.fromHeight(44),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
+      ),
+    );
+
+    if (!expand) {
+      return button;
+    }
+
+    return Row(
+      children: [
+        Expanded(child: button),
+      ],
+    );
+  }
+
+  Widget _buildPresetCard(ApiConfigPreset preset, bool isSelected, bool isMobile) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final cardRadius = BorderRadius.circular(12);
+    final baseColor = colorScheme.surface;
+    final selectedColor = colorScheme.primary.withValues(alpha: 0.08);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: isSelected ? selectedColor : baseColor,
+        borderRadius: cardRadius,
+        border: Border.all(
+          color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.3),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: InkWell(
+        borderRadius: cardRadius,
+        onTap: () {
+          setState(() {
+            _selectedPreset = preset;
+          });
+        },
+        child: Padding(
+          padding: EdgeInsets.all(isMobile ? 16 : 18),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.tune_rounded,
-                    color: Theme.of(context).primaryColor,
-                    size: 20,
+                  Container(
+                    width: 20,
+                    height: 20,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.6),
+                        width: 2,
+                      ),
+                      color: isSelected ? colorScheme.primary : Colors.transparent,
+                    ),
+                    child: isSelected
+                        ? Icon(
+                            Icons.check,
+                            size: 12,
+                            color: colorScheme.onPrimary,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                preset.name,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: isMobile ? 15 : 16,
+                                  color: colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: [
+                                if (isSelected)
+                                  _buildTagChip('当前使用', colorScheme.primary, icon: Icons.radio_button_checked),
+                                if (preset.isDefault)
+                                  _buildTagChip(
+                                    '默认',
+                                    colorScheme.secondary,
+                                    icon: Icons.star_rounded,
+                                    textColor: colorScheme.onSecondary,
+                                  ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        _buildPresetMetaRow(
+                          icon: Icons.link_rounded,
+                          label: '基础地址',
+                          value: preset.baseUrl,
+                        ),
+                        const SizedBox(height: 8),
+                        _buildPresetMetaRow(
+                          icon: Icons.download_rounded,
+                          label: '下载地址',
+                          value: preset.baseDownloadUrl,
+                        ),
+                        if (preset.description?.isNotEmpty == true) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: colorScheme.surfaceVariant.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Icon(
+                                  Icons.notes_rounded,
+                                  size: 16,
+                                  color: colorScheme.onSurfaceVariant,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    preset.description!,
+                                    style: TextStyle(
+                                      color: colorScheme.onSurfaceVariant,
+                                      fontSize: 13,
+                                      height: 1.4,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                   const SizedBox(width: 8),
-                  const Expanded(
-                    child: Text(
-                      '自定义API配置',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  PopupMenuButton<String>(
+                    tooltip: '更多操作',
+                    icon: Icon(
+                      Icons.more_vert_rounded,
+                      color: colorScheme.onSurfaceVariant,
                     ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [
-                          Theme.of(context).primaryColor,
-                          Theme.of(context).primaryColor.withValues(alpha: 0.8),
-                        ],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: TextButton.icon(
-                      onPressed: _saveAsPreset,
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'edit':
+                          _editPreset(preset);
+                          break;
+                        case 'delete':
+                          _deletePreset(preset);
+                          break;
+                        case 'setDefault':
+                          _setAsDefault(preset);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'edit',
+                        child: Row(
+                          children: [
+                            Icon(Icons.edit_rounded, size: 16),
+                            SizedBox(width: 8),
+                            Text('编辑'),
+                          ],
                         ),
                       ),
-                      icon: const Icon(Icons.save_rounded, size: 16),
-                      label: const Text(
-                        '保存为预设',
-                        style: TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
-            ],
-            Column(
-              children: [
-                _buildTextField(
-                  controller: _baseUrlController,
-                  label: '基础 URL',
-                  icon: Icons.link_rounded,
-                  hint: '例如: https://alist.example.com',
-                  isMobile: isMobile,
-                ),
-                const SizedBox(height: 20),
-                _buildTextField(
-                  controller: _baseDownloadUrlController,
-                  label: '下载 URL',
-                  icon: Icons.download_rounded,
-                  hint: '例如: https://alist.example.com/d',
-                  isMobile: isMobile,
-                ),
-                const SizedBox(height: 24),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).primaryColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: Theme.of(context).primaryColor.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.info_rounded,
-                        color: Theme.of(context).primaryColor,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Text(
-                          '基础URL是AList服务器的主地址，下载URL通常是基础URL加上"/d"路径。',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(context).primaryColor,
-                            fontWeight: FontWeight.w500,
+                      if (!preset.isDefault)
+                        const PopupMenuItem(
+                          value: 'setDefault',
+                          child: Row(
+                            children: [
+                              Icon(Icons.star_rounded, size: 16),
+                              SizedBox(width: 8),
+                              Text('设为默认'),
+                            ],
                           ),
+                        ),
+                      PopupMenuItem(
+                        value: 'delete',
+                        child: Row(
+                          children: const [
+                            Icon(Icons.delete_rounded, size: 16, color: Colors.redAccent),
+                            SizedBox(width: 8),
+                            Text(
+                              '删除',
+                              style: TextStyle(color: Colors.redAccent),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-                if (isMobile) ...[
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Theme.of(context).primaryColor,
-                            Theme.of(context).primaryColor.withValues(alpha: 0.8),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: ElevatedButton.icon(
-                        onPressed: _saveAsPreset,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        icon: const Icon(Icons.save_rounded, color: Colors.white),
-                        label: const Text(
-                          '保存为预设',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
                 ],
-              ],
-            ),
-          ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  /// 构建文本输入框
   Widget _buildTextField({
     required TextEditingController controller,
     required String label,
@@ -775,287 +994,297 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
 
   /// 构建移动端布局
   Widget _buildMobileLayout(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
-      backgroundColor: Theme.of(context).colorScheme.surface,
+      backgroundColor: colorScheme.surface,
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.transparent,
-        foregroundColor: Theme.of(context).colorScheme.onSurface,
-        title: Text(
-          'API 配置设置',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).colorScheme.onSurface,
+        scrolledUnderElevation: 0,
+        backgroundColor: colorScheme.surface,
+        surfaceTintColor: colorScheme.surface,
+        foregroundColor: colorScheme.onSurface,
+        titleSpacing: 0,
+        title: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                'API 配置设置',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: colorScheme.onSurface,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                '快速切换预设或定制专属 API',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
           ),
         ),
-        leading: IconButton(
-          icon: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(12),
+        leading: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: IconButton(
+            tooltip: '关闭',
+            onPressed: () => Navigator.pop(context, _hasConfigChanged),
+            icon: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.close_rounded, size: 20),
             ),
-            child: const Icon(Icons.close, size: 20),
           ),
-          onPressed: () => Navigator.pop(context, _hasConfigChanged),
         ),
         actions: [
-          Container(
-            margin: const EdgeInsets.only(right: 16),
-            child: IconButton(
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: FilledButton.icon(
               onPressed: _isSaving ? null : _applyConfiguration,
-              icon: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _isSaving
-                      ? Theme.of(context).colorScheme.surfaceContainerHighest
-                      : Theme.of(context).primaryColor,
+              icon: _isSaving
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Icon(Icons.check_circle_rounded),
+              label: Text(
+                _isSaving ? '保存中...' : '应用配置',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              style: FilledButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: _isSaving
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                      )
-                    : const Icon(Icons.check, size: 20, color: Colors.white),
               ),
-              tooltip: '保存',
             ),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // 标签页选择器
-          Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
-                color: Theme.of(context).primaryColor,
-                borderRadius: BorderRadius.circular(12),
+      body: SafeArea(
+        child: Container(
+          color: colorScheme.surface,
+          child: Column(
+            children: [
+              // 标签页选择器
+              Container(
+                margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicator: BoxDecoration(
+                    borderRadius: BorderRadius.circular(8),
+                    color: colorScheme.primary,
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelColor: colorScheme.onPrimary,
+                  unselectedLabelColor: colorScheme.onSurfaceVariant,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+                  tabs: const [
+                    Tab(
+                      icon: Icon(Icons.layers_rounded, size: 18),
+                      text: '预设配置',
+                    ),
+                    Tab(
+                      icon: Icon(Icons.tune_rounded, size: 18),
+                      text: '自定义配置',
+                    ),
+                  ],
+                ),
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: Colors.white,
-              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-              tabs: const [
-                Tab(text: '预设配置'),
-                Tab(text: '自定义配置'),
-              ],
-            ),
+              // 内容区域
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildPresetsTab(),
+                    _buildCustomTab(),
+                  ],
+                ),
+              ),
+            ],
           ),
-          // 内容区域
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPresetsTab(),
-                _buildCustomTab(),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 
   /// 构建桌面端布局
   Widget _buildDesktopLayout(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      height: double.infinity,
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.max,
-        children: [
-          // 标题栏
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Theme.of(context).primaryColor,
-                  Theme.of(context).primaryColor.withValues(alpha: 0.8),
-                ],
-              ),
-              borderRadius: const BorderRadius.only(
-                topLeft: Radius.circular(16),
-                topRight: Radius.circular(16),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(
-                    Icons.api_rounded,
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                const Expanded(
-                  child: Text(
-                    'API 配置设置',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: IconButton(
-                    onPressed: () => Navigator.pop(context, _hasConfigChanged),
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    tooltip: '关闭',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // 标签页选择器
-          Container(
-            padding: const EdgeInsets.all(24),
-            child: Container(
-              padding: const EdgeInsets.all(4),
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: double.infinity,
+        height: double.infinity,
+        color: colorScheme.surface,
+        child: Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: TabBar(
-                controller: _tabController,
-                indicator: BoxDecoration(
-                  color: Theme.of(context).primaryColor,
-                  borderRadius: BorderRadius.circular(12),
+                color: colorScheme.surface,
+                border: Border(
+                  bottom: BorderSide(color: colorScheme.outline.withValues(alpha: 0.08)),
                 ),
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                labelColor: Colors.white,
-                unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 14),
-                tabs: const [
-                  Tab(text: '预设配置'),
-                  Tab(text: '自定义配置'),
-                ],
               ),
-            ),
-          ),
-          // 内容区域
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPresetsTab(),
-                _buildCustomTab(),
-              ],
-            ),
-          ),
-          // 底部按钮
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: const BorderRadius.only(
-                bottomLeft: Radius.circular(16),
-                bottomRight: Radius.circular(16),
-              ),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: colorScheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: TextButton(
-                    onPressed: () => Navigator.pop(context, _hasConfigChanged),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                    child: Icon(
+                      Icons.api_rounded,
+                      color: colorScheme.primary,
+                      size: 20,
                     ),
-                    child: const Text('取消'),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Theme.of(context).primaryColor,
-                        Theme.of(context).primaryColor.withValues(alpha: 0.8),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'API 配置设置',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '集中管理预设并支持快捷切换，适配桌面端操作体验。',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
                       ],
                     ),
-                    borderRadius: BorderRadius.circular(12),
                   ),
-                  child: ElevatedButton(
-                    onPressed: _isSaving ? null : _applyConfiguration,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.transparent,
-                      shadowColor: Colors.transparent,
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context, _hasConfigChanged),
+                    tooltip: '关闭',
+                    icon: Icon(Icons.close_rounded, color: colorScheme.onSurfaceVariant),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(32, 16, 32, 8),
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: colorScheme.surface,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  indicator: BoxDecoration(
+                    borderRadius: BorderRadius.circular(6),
+                    color: colorScheme.primary,
+                  ),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  dividerColor: Colors.transparent,
+                  labelColor: colorScheme.onPrimary,
+                  unselectedLabelColor: colorScheme.onSurfaceVariant,
+                  labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+                  tabs: const [
+                    Tab(
+                      icon: Icon(Icons.layers_rounded, size: 18),
+                      text: '预设配置',
                     ),
-                    child: _isSaving
+                    Tab(
+                      icon: Icon(Icons.tune_rounded, size: 18),
+                      text: '自定义配置',
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPresetsTab(),
+                  _buildCustomTab(),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                border: Border(
+                  top: BorderSide(color: colorScheme.outline.withValues(alpha: 0.08)),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.pop(context, _hasConfigChanged),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                      side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.4)),
+                    ),
+                    child: const Text(
+                      '取消',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    onPressed: _isSaving ? null : _applyConfiguration,
+                    icon: _isSaving
                         ? const SizedBox(
-                            width: 16,
-                            height: 16,
+                            width: 18,
+                            height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               color: Colors.white,
                             ),
                           )
-                        : const Text(
-                            '应用配置',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
+                        : const Icon(Icons.check_circle_rounded),
+                    label: Text(
+                      _isSaving ? '保存中...' : '应用配置',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    style: FilledButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1192,6 +1421,29 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
   late TextEditingController _baseDownloadUrlController;
   late TextEditingController _descController;
 
+  InputDecoration _dialogInputDecoration(String label, {String? hint}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHighest,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1233,59 +1485,96 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return AlertDialog(
-      title: const Text('编辑API配置预设'),
-      content: SizedBox(
-        width: 400,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _nameController,
-                decoration: const InputDecoration(
-                  labelText: '配置名称',
-                  border: OutlineInputBorder(),
+      backgroundColor: colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      title: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.edit_rounded, color: colorScheme.primary, size: 18),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            '编辑 API 配置预设',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ],
+      ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 640),
+        child: SizedBox(
+          width: 560,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '基础信息',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _baseUrlController,
-                decoration: const InputDecoration(
-                  labelText: '基础URL',
-                  hintText: '例如: https://alist.example.com',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _nameController,
+                  decoration: _dialogInputDecoration('配置名称', hint: '例如: 生产环境'),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _baseDownloadUrlController,
-                decoration: const InputDecoration(
-                  labelText: '下载URL',
-                  hintText: '例如: https://alist.example.com/d',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _baseUrlController,
+                  decoration: _dialogInputDecoration(
+                    '基础 URL',
+                    hint: '例如: https://alist.example.com',
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _descController,
-                decoration: const InputDecoration(
-                  labelText: '描述（可选）',
-                  border: OutlineInputBorder(),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _baseDownloadUrlController,
+                  decoration: _dialogInputDecoration(
+                    '下载 URL',
+                    hint: '例如: https://alist.example.com/d',
+                  ),
                 ),
-                maxLines: 2,
-              ),
-            ],
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _descController,
+                  decoration: _dialogInputDecoration('描述（可选）'),
+                  maxLines: 3,
+                ),
+              ],
+            ),
           ),
         ),
       ),
       actions: [
-        TextButton(
+        OutlinedButton(
           onPressed: () => Navigator.of(context).pop(),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.4)),
+          ),
           child: const Text('取消'),
         ),
-        ElevatedButton(
+        FilledButton(
           onPressed: _save,
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
           child: const Text('保存'),
         ),
       ],
@@ -1310,6 +1599,29 @@ class _SavePresetDialog extends StatefulWidget {
 class _SavePresetDialogState extends State<_SavePresetDialog> {
   late TextEditingController _nameController;
   late TextEditingController _descController;
+
+  InputDecoration _dialogInputDecoration(String label, {String? hint}) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      filled: true,
+      fillColor: colorScheme.surfaceContainerHighest,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    );
+  }
 
   @override
   void initState() {
@@ -1346,38 +1658,77 @@ class _SavePresetDialogState extends State<_SavePresetDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
     return AlertDialog(
-      title: const Text('保存为预设'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
+      backgroundColor: colorScheme.surface,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 0),
+      contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      title: Row(
         children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: '预设名称',
-              hintText: '请输入预设名称',
-              border: OutlineInputBorder(),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: colorScheme.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(12),
             ),
+            child: Icon(Icons.save_rounded, color: colorScheme.primary, size: 18),
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _descController,
-            decoration: const InputDecoration(
-              labelText: '描述（可选）',
-              hintText: '请输入预设描述',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 2,
+          const SizedBox(width: 12),
+          const Text(
+            '保存为 API 预设',
+            style: TextStyle(fontWeight: FontWeight.w700),
           ),
         ],
       ),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '填写名称与可选描述，方便快速识别。',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _nameController,
+                decoration: _dialogInputDecoration('预设名称', hint: '例如: 内网服务器'),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _descController,
+                decoration: _dialogInputDecoration('描述（可选）', hint: '例如: 仅限办公网络访问'),
+                maxLines: 3,
+              ),
+            ],
+          ),
+        ),
+      ),
       actions: [
-        TextButton(
+        OutlinedButton(
           onPressed: () => Navigator.of(context).pop(),
+          style: OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.4)),
+          ),
           child: const Text('取消'),
         ),
-        ElevatedButton(
+        FilledButton(
           onPressed: _save,
+          style: FilledButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
           child: const Text('保存'),
         ),
       ],
