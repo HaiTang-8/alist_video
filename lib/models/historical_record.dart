@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 class HistoricalRecord {
   final String videoSha1;
+  // videoPath是记录到父级 不携带本身的videoName, 如果要获取全路径必须要拼接videoName
   final String videoPath;
   final int videoSeek;
   final int userId;
@@ -12,6 +13,7 @@ class HistoricalRecord {
 
   HistoricalRecord({
     required this.videoSha1,
+    // videoPath是记录到父级 不携带本身的videoName, 如果要获取全路径必须要拼接videoName
     required this.videoPath,
     required this.videoSeek,
     required this.userId,
