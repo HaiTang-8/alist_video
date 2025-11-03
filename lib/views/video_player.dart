@@ -129,6 +129,13 @@ class VideoPlayerState extends State<VideoPlayer> {
   final ValueNotifier<double> _indicatorSpeedValue = ValueNotifier<double>(1.0);
   Timer? _speedIndicatorTimer;
 
+  // 键盘长按状态管理
+  static const Duration _keyboardLongPressThreshold =
+      Duration(milliseconds: 500);
+  Timer? _keyboardLongPressTimer;
+  bool _isArrowRightPressed = false;
+  bool _isArrowRightLongPressActive = false;
+
   // 添加Overlay相关变量
   OverlayEntry? _speedIndicatorOverlay;
   OverlayEntry? _videoInfoOverlay;
@@ -486,8 +493,12 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     player.setPlaylistMode(PlaylistMode.none);
 
+    // 注册硬件键盘事件处理，统一管理长按与短按逻辑
+    HardwareKeyboard.instance.addHandler(_handleHardwareKeyEvent);
+
     // 监听播放速度变化
     player.stream.rate.listen((rate) {
+      _logDebug('播放器速率变更事件: ${rate.toStringAsFixed(2)}x');
       _rateNotifier.value = rate;
       setState(() {
         _currentSpeed = rate;
@@ -1364,10 +1375,11 @@ class VideoPlayerState extends State<VideoPlayer> {
     _indicatorSpeedValue.dispose();
     _currentPlayingIndexNotifier.dispose();
     _speedIndicatorTimer?.cancel();
+    _keyboardLongPressTimer?.cancel();
     _hideSpeedIndicatorOverlay();
 
-    // 清理键盘事件处理器
-    VideoShortcutActivator.dispose();
+    // 注销键盘事件处理器
+    HardwareKeyboard.instance.removeHandler(_handleHardwareKeyEvent);
 
     // 最后调用父类的 dispose
     super.dispose();
@@ -1706,7 +1718,9 @@ class VideoPlayerState extends State<VideoPlayer> {
         GestureDetector(
           key: _videoKey,
           onLongPressStart: (_) {
-            _previousSpeed = controller.player.state.rate;
+            _previousSpeed = _currentSpeed;
+            _logDebug('非全屏手势长按触发，缓存倍速: $_previousSpeed');
+            // 使用当前缓存的倍速，避免播放器状态延迟导致恢复失败
             controller.player.setRate(AppConstants.longPressPlaybackSpeed);
 
             // 显示全局倍速提示，指定为长按模式
@@ -1718,7 +1732,16 @@ class VideoPlayerState extends State<VideoPlayer> {
             _speedIndicatorTimer = null;
           },
           onLongPressEnd: (_) {
+            _logDebug('非全屏手势长按结束，准备恢复至倍速: $_previousSpeed');
             controller.player.setRate(_previousSpeed);
+            // 再次校准倍速，避免底层控件异步重置为1.0
+            Future.delayed(const Duration(milliseconds: 50), () {
+              if (!mounted) return;
+              if (player.state.rate != _previousSpeed) {
+                _logDebug('检测到长按恢复被覆盖，再次设置倍速为 $_previousSpeed');
+                player.setRate(_previousSpeed);
+              }
+            });
 
             // 立即更新倍速提示，显示恢复后的倍速值
             _showSpeedIndicatorOverlay(_previousSpeed);
@@ -1727,6 +1750,12 @@ class VideoPlayerState extends State<VideoPlayer> {
             _speedIndicatorTimer?.cancel();
             _speedIndicatorTimer = Timer(
                 const Duration(seconds: 2), () => _hideSpeedIndicatorOverlay());
+
+            // 同步内部倍速状态与UI显示，确保后续长按逻辑一致
+            setState(() {
+              _currentSpeed = _previousSpeed;
+            });
+            _rateNotifier.value = _previousSpeed;
           },
           child: Video(
             controller: controller,
@@ -2702,36 +2731,6 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   Map<ShortcutActivator, VoidCallback> _buildDesktopKeyboardShortcuts() {
     return {
-      VideoShortcutActivator(
-        key: LogicalKeyboardKey.arrowRight,
-        onPress: () {
-          print("_shortSeekDuration, $_shortSeekDuration");
-          final rate = player.state.position + _shortSeekDuration;
-          player.seek(rate);
-        },
-        onLongPress: () {
-          _previousSpeed = controller.player.state.rate;
-          player.setRate(AppConstants.longPressPlaybackSpeed);
-
-          // 显示倍速提示，并取消任何已有定时器
-          _showSpeedIndicatorOverlay(AppConstants.longPressPlaybackSpeed,
-              isLongPress: true);
-          _speedIndicatorTimer?.cancel();
-          _speedIndicatorTimer = null;
-        },
-        onRelease: () {
-          player.setRate(_previousSpeed);
-
-          // 立即更新倍速提示，显示恢复后的倍速值
-          _showSpeedIndicatorOverlay(_previousSpeed);
-
-          // 设置定时器，延迟2秒后隐藏提示
-          _speedIndicatorTimer?.cancel();
-          _speedIndicatorTimer = Timer(
-              const Duration(seconds: 2), () => _hideSpeedIndicatorOverlay());
-        },
-      ): () {},
-
       // 添加Tab键快捷键，显示视频流信息
       const SingleActivator(LogicalKeyboardKey.tab): () {
         _toggleVideoInfoOverlay();
@@ -3743,6 +3742,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     _hideSpeedIndicatorOverlay();
 
     // 更新显示值
+    _logDebug('显示倍速提示: ${speed.toStringAsFixed(2)}x, 长按模式: $isLongPress');
     _showSpeedIndicator.value = true;
     _indicatorSpeedValue.value = speed;
 
@@ -3830,9 +3830,91 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 隐藏全局倍速提示
   void _hideSpeedIndicatorOverlay() {
+    if (_speedIndicatorOverlay != null) {
+      _logDebug('隐藏倍速提示');
+    }
     _speedIndicatorOverlay?.remove();
     _speedIndicatorOverlay = null;
     _showSpeedIndicator.value = false;
+  }
+
+  // 统一处理键盘右箭头的长按与短按逻辑
+  bool _handleHardwareKeyEvent(KeyEvent event) {
+    if (!mounted || event.logicalKey != LogicalKeyboardKey.arrowRight) {
+      return false;
+    }
+
+    if (event is KeyDownEvent) {
+      if (_isArrowRightPressed) {
+        // 重复的 KeyDown 也需消费，否则 Flutter 会认为我们未处理，进一步冒泡
+        return true;
+      }
+
+      _isArrowRightPressed = true;
+      _keyboardLongPressTimer?.cancel();
+      _keyboardLongPressTimer = Timer(_keyboardLongPressThreshold, () {
+        if (!_isArrowRightPressed || !mounted) {
+          return;
+        }
+        _isArrowRightLongPressActive = true;
+        _previousSpeed = _currentSpeed;
+        _logDebug('键盘长按触发，缓存倍速: $_previousSpeed');
+        player.setRate(AppConstants.longPressPlaybackSpeed);
+        _showSpeedIndicatorOverlay(
+          AppConstants.longPressPlaybackSpeed,
+          isLongPress: true,
+        );
+        _speedIndicatorTimer?.cancel();
+        _speedIndicatorTimer = null;
+      });
+      return true;
+    }
+
+    if (event is KeyRepeatEvent) {
+      // 长按会持续触发 KeyRepeat，需要继续消费，避免误触发短按逻辑
+      return true;
+    }
+
+    if (event is KeyUpEvent) {
+      _keyboardLongPressTimer?.cancel();
+      _keyboardLongPressTimer = null;
+
+      final bool wasLongPress = _isArrowRightLongPressActive;
+      _isArrowRightPressed = false;
+      _isArrowRightLongPressActive = false;
+
+      if (wasLongPress) {
+        _logDebug('键盘长按松开，恢复倍速: $_previousSpeed');
+        player.setRate(_previousSpeed);
+        Future.delayed(const Duration(milliseconds: 50), () {
+          if (!mounted) return;
+          if (player.state.rate != _previousSpeed) {
+            _logDebug('检测到键盘长按恢复被覆盖，再次设置倍速为 $_previousSpeed');
+            player.setRate(_previousSpeed);
+          }
+        });
+
+        _showSpeedIndicatorOverlay(_previousSpeed);
+        _speedIndicatorTimer?.cancel();
+        _speedIndicatorTimer = Timer(
+          const Duration(seconds: 2),
+          () => _hideSpeedIndicatorOverlay(),
+        );
+
+        setState(() {
+          _currentSpeed = _previousSpeed;
+        });
+        _rateNotifier.value = _previousSpeed;
+      } else {
+        final target = player.state.position + _shortSeekDuration;
+        _logDebug('键盘短按松开，快进至: ${target.inMilliseconds}ms');
+        player.seek(target);
+      }
+
+      return true;
+    }
+
+    return false;
   }
 
   // 切换视频信息显示
@@ -4381,89 +4463,6 @@ class VideoPlayerState extends State<VideoPlayer> {
         ),
       ),
     );
-  }
-}
-
-class VideoShortcutActivator extends ShortcutActivator {
-  final LogicalKeyboardKey key;
-  final VoidCallback? onPress;
-  final VoidCallback? onLongPress;
-  final VoidCallback? onRelease;
-
-  VideoShortcutActivator({
-    required this.key,
-    this.onPress,
-    this.onLongPress,
-    this.onRelease,
-  });
-
-  // Track key states per key to avoid conflicts between different keys
-  static final Map<LogicalKeyboardKey, DateTime?> _pressStartTimes = {};
-  static final Map<LogicalKeyboardKey, bool> _isLongPressMap = {};
-  static final Map<LogicalKeyboardKey, Timer?> _pressTimers = {};
-  static const _longPressThreshold = Duration(milliseconds: 500);
-
-  @override
-  bool accepts(KeyEvent event, HardwareKeyboard state) {
-    if (event is KeyDownEvent && event.logicalKey == key) {
-      // Check if key is already pressed to avoid duplicate KeyDownEvents
-      if (_pressStartTimes.containsKey(key)) {
-        return false; // Skip duplicate key down events
-      }
-
-      _pressStartTimes[key] = DateTime.now();
-      _isLongPressMap[key] = false;
-
-      // 使用Timer延迟判断是否为短按
-      _pressTimers[key]?.cancel();
-      _pressTimers[key] = Timer(_longPressThreshold, () {
-        if (_pressStartTimes[key] != null) {
-          _isLongPressMap[key] = true;
-          onLongPress?.call();
-        }
-      });
-      return true; // 返回true表示已处理此事件
-    } else if (event is KeyUpEvent && event.logicalKey == key) {
-      _pressTimers[key]?.cancel();
-
-      if (_isLongPressMap[key] == true) {
-        onRelease?.call();
-      } else if (_pressStartTimes[key] != null &&
-          DateTime.now().difference(_pressStartTimes[key]!) <
-              _longPressThreshold) {
-        onPress?.call();
-      }
-
-      // Clear key state on key up
-      _pressStartTimes.remove(key);
-      _isLongPressMap.remove(key);
-      _pressTimers.remove(key);
-      return true; // 返回true表示已处理此事件
-    }
-    return false; // 不是我们关心的事件
-  }
-
-  @override
-  bool operator ==(Object other) {
-    return other is VideoShortcutActivator && other.key == key;
-  }
-
-  @override
-  int get hashCode => key.hashCode;
-
-  @override
-  String debugDescribeKeys() {
-    return key.debugName ?? 'unknown';
-  }
-
-  // Clean up method to be called when disposing the widget
-  static void dispose() {
-    for (final timer in _pressTimers.values) {
-      timer?.cancel();
-    }
-    _pressStartTimes.clear();
-    _isLongPressMap.clear();
-    _pressTimers.clear();
   }
 }
 
