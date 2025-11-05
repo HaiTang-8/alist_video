@@ -1007,6 +1007,15 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     final usernameController = TextEditingController(text: preset.username);
     final passwordController = TextEditingController(text: preset.password);
     final descController = TextEditingController(text: preset.description ?? '');
+    final dialogControllers = <TextEditingController>[
+      nameController,
+      hostController,
+      portController,
+      databaseController,
+      usernameController,
+      passwordController,
+      descController,
+    ];
     bool obscurePassword = true;
 
     final result = await showDialog<bool>(
@@ -1206,13 +1215,12 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     }
 
     // 清理控制器
-    nameController.dispose();
-    hostController.dispose();
-    portController.dispose();
-    databaseController.dispose();
-    usernameController.dispose();
-    passwordController.dispose();
-    descController.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // 延迟释放控制器，确保对话框在所有平台的关闭动画完成时不再引用已释放的控制器，避免触发 dispose 后使用的异常。
+      for (final controller in dialogControllers) {
+        controller.dispose();
+      }
+    });
   }
 
   /// 删除预设
@@ -1384,7 +1392,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     );
   }
 
-  /// 构建紧凑的文本输入框
+  /// 构建紧凑的文本输入框，兼顾桌面端与移动端的紧凑排版需求
   Widget _buildCompactTextField({
     required TextEditingController controller,
     required String label,
@@ -1459,7 +1467,6 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       ],
     );
   }
-
 
 
   @override
