@@ -75,6 +75,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加一个变量来跟踪当前播放速度
   double _currentSpeed = AppConstants.defaultPlaybackSpeed;
 
+  // 标记 Player 是否已释放，避免跨端重复触发释放流程导致断言失败
+  bool _isPlayerDisposed = false;
+
   // 添加一个变量来存储长按前的速度
   double _previousSpeed = AppConstants.defaultPlaybackSpeed;
 
@@ -1120,6 +1123,11 @@ class VideoPlayerState extends State<VideoPlayer> {
     bool waitForCompletion = false, // 新增参数：是否等待完成（用于退出时）
   }) async {
     // 不需要重置标志，以避免重复调用时重复执行
+    if (_isPlayerDisposed) {
+      print('跳过进度保存: 播放器已释放');
+      return;
+    }
+
     if (!mounted ||
         _currentUsername == null ||
         playList.isEmpty ||
@@ -1343,6 +1351,11 @@ class VideoPlayerState extends State<VideoPlayer> {
       try {
         print('视频播放器正在清理资源...');
 
+        if (_isPlayerDisposed) {
+          print('播放器已提前释放，跳过重复清理');
+          return;
+        }
+
         // 先暂停播放器
         await player.pause();
 
@@ -1355,6 +1368,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
         // 播放器关闭完成
         print('正在关闭播放器...');
+        _isPlayerDisposed = true;
         await player.dispose();
         print('播放器已关闭');
 
@@ -1408,6 +1422,10 @@ class VideoPlayerState extends State<VideoPlayer> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () async {
             if (_isExiting) return;
+            if (_isPlayerDisposed) {
+              Navigator.of(context).pop();
+              return;
+            }
 
             setState(() => _isExiting = true);
 
@@ -1427,6 +1445,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               }
 
               // 等播放器关闭
+              _isPlayerDisposed = true;
               await player.dispose();
 
               if (!mounted) return;
