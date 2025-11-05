@@ -14,8 +14,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:async';
 import 'dart:io'; // Add this import for File class and Platform
-import 'package:image/image.dart' as img; // Add this import for image processing
+import 'package:image/image.dart'
+    as img; // Add this import for image processing
 import 'package:path_provider/path_provider.dart'; // Added for path_provider
+import 'package:alist_player/widgets/custom_material_video_controls.dart';
 
 class VideoPlayer extends StatefulWidget {
   final String path;
@@ -59,7 +61,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加 ItemScrollController 用于精确的索引滚动
   final ItemScrollController _itemScrollController = ItemScrollController();
-  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
 
   String? _currentUsername;
   bool _hasSeekInitialPosition = false;
@@ -185,10 +188,11 @@ class VideoPlayerState extends State<VideoPlayer> {
         seconds: prefs.getInt(AppConstants.longSeekKey) ??
             AppConstants.defaultLongSeekDuration.inSeconds,
       );
-      _preferLocalPlayback = prefs.getBool(AppConstants.preferLocalPlaybackKey) ??
-          AppConstants.defaultPreferLocalPlayback;
+      _preferLocalPlayback =
+          prefs.getBool(AppConstants.preferLocalPlaybackKey) ??
+              AppConstants.defaultPreferLocalPlayback;
     });
-    
+
     // 加载当前文件夹的音轨和字幕记录
     await _loadFolderTrackSettings();
   }
@@ -198,16 +202,17 @@ class VideoPlayerState extends State<VideoPlayer> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final folderKey = 'folder_tracks_${widget.path}';
-      
+
       final audioTrackId = prefs.getString('${folderKey}_audio');
       final subtitleTrackId = prefs.getString('${folderKey}_subtitle');
       final subtitlePath = prefs.getString('${folderKey}_subtitle_path');
-      
+
       _recordedAudioTrackId = audioTrackId;
       _recordedSubtitleTrackId = subtitleTrackId;
       _recordedSubtitlePath = subtitlePath;
-      
-      _logDebug('加载文件夹音轨字幕记录: 音轨=$audioTrackId, 字幕=$subtitleTrackId, 外部字幕=$subtitlePath');
+
+      _logDebug(
+          '加载文件夹音轨字幕记录: 音轨=$audioTrackId, 字幕=$subtitleTrackId, 外部字幕=$subtitlePath');
     } catch (e) {
       _logDebug('加载文件夹音轨字幕记录失败: $e');
     }
@@ -222,7 +227,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final folderKey = 'folder_tracks_${widget.path}';
-      
+
       if (audioTrackId != null) {
         if (audioTrackId.isEmpty) {
           await prefs.remove('${folderKey}_audio');
@@ -231,16 +236,17 @@ class VideoPlayerState extends State<VideoPlayer> {
         }
         _recordedAudioTrackId = audioTrackId.isEmpty ? null : audioTrackId;
       }
-      
+
       if (subtitleTrackId != null) {
         if (subtitleTrackId.isEmpty) {
           await prefs.remove('${folderKey}_subtitle');
         } else {
           await prefs.setString('${folderKey}_subtitle', subtitleTrackId);
         }
-        _recordedSubtitleTrackId = subtitleTrackId.isEmpty ? null : subtitleTrackId;
+        _recordedSubtitleTrackId =
+            subtitleTrackId.isEmpty ? null : subtitleTrackId;
       }
-      
+
       if (subtitlePath != null) {
         if (subtitlePath.isEmpty) {
           await prefs.remove('${folderKey}_subtitle_path');
@@ -249,8 +255,9 @@ class VideoPlayerState extends State<VideoPlayer> {
         }
         _recordedSubtitlePath = subtitlePath.isEmpty ? null : subtitlePath;
       }
-      
-      _logDebug('保存文件夹音轨字幕记录: 音轨=$audioTrackId, 字幕=$subtitleTrackId, 外部字幕=$subtitlePath');
+
+      _logDebug(
+          '保存文件夹音轨字幕记录: 音轨=$audioTrackId, 字幕=$subtitleTrackId, 外部字幕=$subtitlePath');
     } catch (e) {
       _logDebug('保存文件夹音轨字幕记录失败: $e');
     }
@@ -325,7 +332,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 如果正在保存进度或正在重新加载界面，跳过
     if (_isSavingProgress || _isReloadingInterface) {
-      _logDebug('正在保存进度中或重新加载界面中，跳过此次保存请求: isSaving=$_isSavingProgress, isReloading=$_isReloadingInterface');
+      _logDebug(
+          '正在保存进度中或重新加载界面中，跳过此次保存请求: isSaving=$_isSavingProgress, isReloading=$_isReloadingInterface');
       return;
     }
 
@@ -346,7 +354,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 异步处理视频切换时的操作（不包含进度保存），避免阻塞UI
   void _handleVideoSwitchAsyncWithoutProgressSave(int newIndex) {
-    _logDebug('_handleVideoSwitchAsyncWithoutProgressSave 被调用: newIndex=$newIndex');
+    _logDebug(
+        '_handleVideoSwitchAsyncWithoutProgressSave 被调用: newIndex=$newIndex');
     Future.microtask(() async {
       try {
         final startTime = DateTime.now();
@@ -378,7 +387,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       // 获取截图数据（这个操作相对较快）
       final Uint8List? screenshotBytes = await player.screenshot();
       if (screenshotBytes == null) {
-        if (mounted && specificVideoName == null) { // 只在直接调用时显示错误
+        if (mounted && specificVideoName == null) {
+          // 只在直接调用时显示错误
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Failed to take screenshot: No data received.'),
@@ -390,7 +400,8 @@ class VideoPlayerState extends State<VideoPlayer> {
         return null;
       }
 
-      final screenshotTime = DateTime.now().difference(startTime).inMilliseconds;
+      final screenshotTime =
+          DateTime.now().difference(startTime).inMilliseconds;
       _logDebug('截图数据获取完成，耗时: ${screenshotTime}ms');
 
       // 获取当前视频名称
@@ -400,12 +411,14 @@ class VideoPlayerState extends State<VideoPlayer> {
               : 'video');
 
       // 使用优化的主线程处理，但通过Future.microtask避免阻塞当前操作
-      return await _saveScreenshotToFileOptimized(screenshotBytes, videoNameToUse, widget.path);
+      return await _saveScreenshotToFileOptimized(
+          screenshotBytes, videoNameToUse, widget.path);
     } catch (e) {
       final totalTime = DateTime.now().difference(startTime).inMilliseconds;
       _logDebug('截图操作失败，总耗时: ${totalTime}ms, 错误: $e');
 
-      if (mounted && specificVideoName == null) { // 只在直接调用时显示错误
+      if (mounted && specificVideoName == null) {
+        // 只在直接调用时显示错误
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error saving screenshot: $e'),
@@ -418,7 +431,8 @@ class VideoPlayerState extends State<VideoPlayer> {
   }
 
   // 优化的截图保存方法，在主线程处理但使用异步优化
-  Future<String?> _saveScreenshotToFileOptimized(Uint8List screenshotBytes, String videoName, String videoPath) async {
+  Future<String?> _saveScreenshotToFileOptimized(
+      Uint8List screenshotBytes, String videoName, String videoPath) async {
     return await Future.microtask(() async {
       final startTime = DateTime.now();
       try {
@@ -428,9 +442,11 @@ class VideoPlayerState extends State<VideoPlayer> {
         _logDebug('应用文档目录: ${directory.path}');
 
         // Sanitize videoName for use in filename, allowing Chinese characters
-        final String sanitizedVideoName = videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+        final String sanitizedVideoName =
+            videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
         // Sanitize videoPath for use in filename, allowing Chinese characters
-        final String sanitizedVideoPath = videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+        final String sanitizedVideoPath =
+            videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
         // 确保目录存在
         final screenshotDir = Directory('${directory.path}/alist_player');
@@ -438,13 +454,15 @@ class VideoPlayerState extends State<VideoPlayer> {
         _logDebug('截图目录创建: ${screenshotDir.path}');
 
         // 使用compute只处理图片压缩部分（不涉及文件系统操作）
-        final compressionResult = await compute(_compressScreenshotInBackground, screenshotBytes);
+        final compressionResult =
+            await compute(_compressScreenshotInBackground, screenshotBytes);
         final compressedBytes = compressionResult['bytes'] as Uint8List;
         final isJpeg = compressionResult['isJpeg'] as bool;
 
         // 在主线程处理文件保存
         final String fileExtension = isJpeg ? 'jpg' : 'png';
-        final String fileName = 'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.$fileExtension';
+        final String fileName =
+            'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.$fileExtension';
         final String filePath = '${screenshotDir.path}/$fileName';
 
         final File file = File(filePath);
@@ -483,11 +501,13 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       try {
         if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
-          final videoName = playList[currentPlayingIndex].extras!['name'] as String;
+          final videoName =
+              playList[currentPlayingIndex].extras!['name'] as String;
           final position = player.state.position;
           final duration = player.state.duration;
 
-          _logDebug('当前播放: $videoName, 进度: ${position.inSeconds}/${duration.inSeconds}秒');
+          _logDebug(
+              '当前播放: $videoName, 进度: ${position.inSeconds}/${duration.inSeconds}秒');
         }
       } catch (e) {
         // 忽略任何错误
@@ -542,7 +562,8 @@ class VideoPlayerState extends State<VideoPlayer> {
         final videoName = playList.isNotEmpty && event.index < playList.length
             ? playList[event.index].extras!['name'] as String
             : "未知";
-        _logDebug('播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading');
+        _logDebug(
+            '播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading');
 
         if (_isReorderingPlaylist) {
           _logDebug('检测到排序导致的播放列表变化，忽略进一步处理');
@@ -795,7 +816,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     try {
       final downloadManager = DownloadManager();
-      final localVideos = await downloadManager.getLocalVideosInPath(widget.path);
+      final localVideos =
+          await downloadManager.getLocalVideosInPath(widget.path);
 
       if (mounted) {
         setState(() {
@@ -907,7 +929,6 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 重新加载整个界面
       await _reloadEntireInterface();
-
     } catch (e) {
       _logDebug('切换本地优先播放设置时发生错误: $e');
       if (mounted) {
@@ -936,13 +957,15 @@ class VideoPlayerState extends State<VideoPlayer> {
       final totalDuration = player.state.duration;
 
       if (currentPosition.inSeconds <= 0 || totalDuration.inSeconds <= 0) {
-        _logDebug('播放位置或总时长无效，跳过进度保存: 位置=${currentPosition.inSeconds}秒, 总时长=${totalDuration.inSeconds}秒');
+        _logDebug(
+            '播放位置或总时长无效，跳过进度保存: 位置=${currentPosition.inSeconds}秒, 总时长=${totalDuration.inSeconds}秒');
         return;
       }
 
       // 检查当前是否播放本地文件
       final isPlayingLocalFile = currentVideo.uri.startsWith('file://');
-      _logDebug('保存当前播放进度: 视频=$videoName, 位置=${currentPosition.inSeconds}秒, 总时长=${totalDuration.inSeconds}秒, 本地文件=$isPlayingLocalFile');
+      _logDebug(
+          '保存当前播放进度: 视频=$videoName, 位置=${currentPosition.inSeconds}秒, 总时长=${totalDuration.inSeconds}秒, 本地文件=$isPlayingLocalFile');
 
       // 无论是本地文件还是在线文件，都使用相同的标识符和路径
       // 这样确保本地播放和在线播放的进度记录是同一条
@@ -975,8 +998,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       final videoKey = "${widget.path}/$videoName";
       _videoHistoryRecords[videoKey] = record;
 
-      _logDebug('播放进度保存成功: $videoName (${isPlayingLocalFile ? "本地文件" : "在线文件"})');
-
+      _logDebug(
+          '播放进度保存成功: $videoName (${isPlayingLocalFile ? "本地文件" : "在线文件"})');
     } catch (e) {
       _logDebug('保存播放进度时发生错误: $e');
     }
@@ -1027,7 +1050,6 @@ class VideoPlayerState extends State<VideoPlayer> {
       _isReloadingInterface = false;
 
       _logDebug('整个界面重新加载完成');
-
     } catch (e) {
       _logDebug('重新加载整个界面时发生错误: $e');
 
@@ -1056,7 +1078,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     try {
       // 获取当前目录下所有视频文件的历史记录
-      final historyRecords = await DatabaseHelper.instance.getHistoricalRecordsByPath(
+      final historyRecords =
+          await DatabaseHelper.instance.getHistoricalRecordsByPath(
         path: widget.path,
         userId: _currentUsername!.hashCode,
       );
@@ -1113,10 +1136,6 @@ class VideoPlayerState extends State<VideoPlayer> {
     return null;
   }
 
-
-
-
-
   // 立即更新UI中的播放进度，然后异步保存到数据库
   Future<void> _saveCurrentProgress({
     bool updateUIImmediately = false,
@@ -1132,7 +1151,8 @@ class VideoPlayerState extends State<VideoPlayer> {
         _currentUsername == null ||
         playList.isEmpty ||
         _isLoading) {
-      print('跳过进度保存: mounted=$mounted, username=$_currentUsername, isEmpty=${playList.isEmpty}, isLoading=$_isLoading');
+      print(
+          '跳过进度保存: mounted=$mounted, username=$_currentUsername, isEmpty=${playList.isEmpty}, isLoading=$_isLoading');
       return;
     }
 
@@ -1194,7 +1214,6 @@ class VideoPlayerState extends State<VideoPlayer> {
           updateUIImmediately: updateUIImmediately,
         );
       }
-
     } catch (e) {
       print('保存进度失败: $e');
     }
@@ -1220,7 +1239,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       // 标记进度已保存成功
-      print('播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
+      print(
+          '播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
 
       // 如果之前没有立即更新UI，现在更新
       if (!updateUIImmediately && mounted) {
@@ -1239,7 +1259,6 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 异步截图，完全不阻塞主流程
       _takeScreenshotAsync(videoName);
-
     } catch (e) {
       print('数据库保存进度失败: $e');
     }
@@ -1265,7 +1284,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       // 标记进度已保存成功
-      print('播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
+      print(
+          '播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
 
       // 如果之前没有立即更新UI，现在更新
       if (!updateUIImmediately && mounted) {
@@ -1284,9 +1304,11 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 同步截图，等待完成（退出时确保截图也保存）
       try {
-        final screenshotFilePath = await _takeScreenshot(specificVideoName: videoName);
+        final screenshotFilePath =
+            await _takeScreenshot(specificVideoName: videoName);
         if (screenshotFilePath != null) {
-          print('Screenshot for $videoName saved to $screenshotFilePath during exit.');
+          print(
+              'Screenshot for $videoName saved to $screenshotFilePath during exit.');
         } else {
           print('Failed to take screenshot for $videoName during exit.');
         }
@@ -1294,7 +1316,6 @@ class VideoPlayerState extends State<VideoPlayer> {
         print('Screenshot failed for $videoName during exit: $e');
         // 截图失败不影响进度保存
       }
-
     } catch (e) {
       print('数据库保存进度失败: $e');
     }
@@ -1305,11 +1326,14 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 使用 Future.microtask 确保在下一个事件循环中执行
     Future.microtask(() async {
       try {
-        final screenshotFilePath = await _takeScreenshot(specificVideoName: videoName);
+        final screenshotFilePath =
+            await _takeScreenshot(specificVideoName: videoName);
         if (screenshotFilePath != null) {
-          print('Screenshot for $videoName saved to $screenshotFilePath during progress save.');
+          print(
+              'Screenshot for $videoName saved to $screenshotFilePath during progress save.');
         } else {
-          print('Failed to take screenshot for $videoName during progress save.');
+          print(
+              'Failed to take screenshot for $videoName during progress save.');
         }
       } catch (e) {
         print('Screenshot failed for $videoName: $e');
@@ -1360,7 +1384,9 @@ class VideoPlayerState extends State<VideoPlayer> {
         await player.pause();
 
         // 等待进度保存成功
-        if (mounted && playList.isNotEmpty && currentPlayingIndex < playList.length) {
+        if (mounted &&
+            playList.isNotEmpty &&
+            currentPlayingIndex < playList.length) {
           print('正在保存最终播放进度...');
           await _saveCurrentProgress(waitForCompletion: true);
           print('最终播放进度保存完成');
@@ -1438,7 +1464,8 @@ class VideoPlayerState extends State<VideoPlayer> {
               // 重置进度保存标志，确保可以保存进度
 
               // 等待进度保存
-              if (playList.isNotEmpty && currentPlayingIndex < playList.length) {
+              if (playList.isNotEmpty &&
+                  currentPlayingIndex < playList.length) {
                 print('退出前保存最终播放进度...');
                 await _saveCurrentProgress(waitForCompletion: true);
                 print('退出前进度保存完成');
@@ -1664,7 +1691,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                   children: [
                     Video(
                       controller: controller,
-                      controls: MaterialVideoControls,
+                      // 使用自定义控件以屏蔽 iOS 全屏长按时的默认遮罩闪现
+                      controls: customMaterialVideoControls,
                     ),
 
                     // 非全屏模式下的倍速提示组件
@@ -1799,43 +1827,43 @@ class VideoPlayerState extends State<VideoPlayer> {
         // Wrap [Video] widget with [MaterialDesktopVideoControlsTheme].
         MaterialDesktopVideoControlsTheme(
           normal: MaterialDesktopVideoControlsThemeData(
-              displaySeekBar: true,
-              visibleOnMount: false,
-              primaryButtonBar: [],
-              seekBarMargin: const EdgeInsets.only(
-                  bottom: 10, left: 0, right: 0),
-              bottomButtonBarMargin: const EdgeInsets.only(
-                  bottom: 0, left: 0, right: 0, top: 0),
-              bottomButtonBar: [
-                const MaterialDesktopSkipPreviousButton(),
-                const MaterialPlayOrPauseButton(),
-                const MaterialSkipNextButton(),
-                const MaterialDesktopVolumeButton(),
-                const MaterialPositionIndicator(),
-                const Spacer(), // 将全屏按钮推到最右边
-                buildSpeedButton(),
-                buildAudioTrackButton(),
-                buildSubtitleButton(),
-                buildScreenshotButton(), // Added screenshot button
-                buildKeyboardShortcutsButton(),
-                buildFramelessButton(), // 始终显示无边框按钮
-                // 在无边框模式下显示拉伸切换按钮
-                if (isFrameless) buildStretchButton(),
-                const MaterialFullscreenButton(
-                  iconSize: 28,
-                ),
-              ],
-              keyboardShortcuts: _buildDesktopKeyboardShortcuts(), // 添加到normal模式
-            ),
+            displaySeekBar: true,
+            visibleOnMount: false,
+            primaryButtonBar: [],
+            seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
+            bottomButtonBarMargin:
+                const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
+            bottomButtonBar: [
+              const MaterialDesktopSkipPreviousButton(),
+              const MaterialPlayOrPauseButton(),
+              const MaterialSkipNextButton(),
+              const MaterialDesktopVolumeButton(),
+              const MaterialPositionIndicator(),
+              const Spacer(), // 将全屏按钮推到最右边
+              buildSpeedButton(),
+              buildAudioTrackButton(),
+              buildSubtitleButton(),
+              buildScreenshotButton(), // Added screenshot button
+              buildKeyboardShortcutsButton(),
+              buildFramelessButton(), // 始终显示无边框按钮
+              // 在无边框模式下显示拉伸切换按钮
+              if (isFrameless) buildStretchButton(),
+              const MaterialFullscreenButton(
+                iconSize: 28,
+              ),
+            ],
+            keyboardShortcuts: _buildDesktopKeyboardShortcuts(), // 添加到normal模式
+          ),
           fullscreen: MaterialDesktopVideoControlsThemeData(
               displaySeekBar: true,
               visibleOnMount: false,
               topButtonBar: [],
               primaryButtonBar: [],
               keyboardShortcuts: _buildDesktopKeyboardShortcuts(),
-              seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
-              bottomButtonBarMargin: const EdgeInsets.only(
-                  bottom: 0, left: 0, right: 0, top: 0),
+              seekBarMargin:
+                  const EdgeInsets.only(bottom: 10, left: 0, right: 0),
+              bottomButtonBarMargin:
+                  const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
               bottomButtonBar: [
                 const MaterialDesktopSkipPreviousButton(),
                 const MaterialPlayOrPauseButton(),
@@ -1954,7 +1982,8 @@ class VideoPlayerState extends State<VideoPlayer> {
     _logDebug('开始智能匹配字幕，视频名称: $videoName');
 
     // 提取视频名称中的SxxxExx模式
-    final seasonEpisodePattern = RegExp(r'[Ss](\d+)[Ee](\d+)', caseSensitive: false);
+    final seasonEpisodePattern =
+        RegExp(r'[Ss](\d+)[Ee](\d+)', caseSensitive: false);
     final videoMatch = seasonEpisodePattern.firstMatch(videoName);
 
     if (videoMatch == null) {
@@ -1963,9 +1992,14 @@ class VideoPlayerState extends State<VideoPlayer> {
       final videoNameWithoutExt = videoName.replaceAll(RegExp(r'\.[^.]+$'), '');
 
       for (final subtitle in _availableSubtitles) {
-        final subtitleNameWithoutExt = subtitle.name.replaceAll(RegExp(r'\.[^.]+$'), '');
-        if (subtitleNameWithoutExt.toLowerCase().contains(videoNameWithoutExt.toLowerCase()) ||
-            videoNameWithoutExt.toLowerCase().contains(subtitleNameWithoutExt.toLowerCase())) {
+        final subtitleNameWithoutExt =
+            subtitle.name.replaceAll(RegExp(r'\.[^.]+$'), '');
+        if (subtitleNameWithoutExt
+                .toLowerCase()
+                .contains(videoNameWithoutExt.toLowerCase()) ||
+            videoNameWithoutExt
+                .toLowerCase()
+                .contains(subtitleNameWithoutExt.toLowerCase())) {
           _logDebug('通过名称匹配找到字幕: ${subtitle.name}');
           return subtitle;
         }
@@ -1981,10 +2015,13 @@ class VideoPlayerState extends State<VideoPlayer> {
     final patterns = [
       RegExp('S${season}E${episode}', caseSensitive: false),
       RegExp('s${season}e${episode}', caseSensitive: false),
-      RegExp('S${season.padLeft(2, '0')}E${episode.padLeft(2, '0')}', caseSensitive: false),
-      RegExp('s${season.padLeft(2, '0')}e${episode.padLeft(2, '0')}', caseSensitive: false),
+      RegExp('S${season.padLeft(2, '0')}E${episode.padLeft(2, '0')}',
+          caseSensitive: false),
+      RegExp('s${season.padLeft(2, '0')}e${episode.padLeft(2, '0')}',
+          caseSensitive: false),
       RegExp('${season}x${episode.padLeft(2, '0')}', caseSensitive: false),
-      RegExp('${season.padLeft(2, '0')}x${episode.padLeft(2, '0')}', caseSensitive: false),
+      RegExp('${season.padLeft(2, '0')}x${episode.padLeft(2, '0')}',
+          caseSensitive: false),
     ];
 
     // 按优先级匹配字幕
@@ -2009,9 +2046,10 @@ class VideoPlayerState extends State<VideoPlayer> {
       return;
     }
 
-    final currentVideoName = playList.isNotEmpty && currentPlayingIndex < playList.length
-        ? playList[currentPlayingIndex].extras!['name'] as String
-        : '';
+    final currentVideoName =
+        playList.isNotEmpty && currentPlayingIndex < playList.length
+            ? playList[currentPlayingIndex].extras!['name'] as String
+            : '';
 
     if (currentVideoName.isEmpty) {
       await _applyRecordedTracks();
@@ -2083,7 +2121,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     try {
       // 应用记录的音轨
       await _applyRecordedAudioTrack();
-      
+
       // 应用记录的字幕
       await _applyRecordedSubtitle();
     } catch (e) {
@@ -2131,7 +2169,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     try {
       final wasPlaying = player.state.playing;
-      
+
       // 如果记录的是外部字幕文件
       if (_recordedSubtitlePath != null && _recordedSubtitlePath!.isNotEmpty) {
         final matchedSubtitle = _availableSubtitles.firstWhere(
@@ -2155,7 +2193,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             );
           });
           _logDebug('已应用记录的外部字幕: ${matchedSubtitle.name}');
-          
+
           if (wasPlaying) {
             await player.play();
           }
@@ -2164,7 +2202,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
 
       // 如果记录的是内嵌字幕
-      if (_recordedSubtitleTrackId != null && _recordedSubtitleTrackId!.isNotEmpty) {
+      if (_recordedSubtitleTrackId != null &&
+          _recordedSubtitleTrackId!.isNotEmpty) {
         final tracks = player.state.tracks;
         final subtitleTrack = tracks.subtitle.firstWhere(
           (track) => track.id == _recordedSubtitleTrackId,
@@ -2178,7 +2217,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             _currentSubtitle = subtitleTrack;
           });
           _logDebug('已应用记录的内嵌字幕: ${subtitleTrack.title ?? subtitleTrack.id}');
-          
+
           if (wasPlaying) {
             await player.play();
           }
@@ -2258,7 +2297,8 @@ class VideoPlayerState extends State<VideoPlayer> {
     // Get file size and modified time information if available
     final size = playList[index].extras?['size'] as int? ?? 0;
     final modifiedStr = playList[index].extras?['modified'] as String? ?? '';
-    final modified = modifiedStr.isNotEmpty ? DateTime.tryParse(modifiedStr) : null;
+    final modified =
+        modifiedStr.isNotEmpty ? DateTime.tryParse(modifiedStr) : null;
 
     // 获取该视频的历史记录
     final historyRecord = _videoHistoryRecords[videoName];
@@ -2321,11 +2361,15 @@ class VideoPlayerState extends State<VideoPlayer> {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: isPlaying ? Colors.blue.withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.05),
+                    color: isPlaying
+                        ? Colors.blue.withValues(alpha: 0.1)
+                        : Colors.grey.withValues(alpha: 0.05),
                     shape: BoxShape.circle,
                     border: isPlaying
                         ? Border.all(color: Colors.blue, width: 1)
-                        : Border.all(color: Colors.grey.withValues(alpha: 0.3), width: 1),
+                        : Border.all(
+                            color: Colors.grey.withValues(alpha: 0.3),
+                            width: 1),
                   ),
                   child: Stack(
                     alignment: Alignment.center,
@@ -2335,7 +2379,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                         '${index + 1}',
                         style: TextStyle(
                           color: isPlaying ? Colors.blue : Colors.grey[700],
-                          fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                          fontWeight:
+                              isPlaying ? FontWeight.bold : FontWeight.normal,
                           fontSize: 12,
                         ),
                       ),
@@ -2371,7 +2416,9 @@ class VideoPlayerState extends State<VideoPlayer> {
                               style: TextStyle(
                                 fontSize: AppConstants.defaultFontSize,
                                 color: isPlaying ? Colors.blue : Colors.black87,
-                                fontWeight: isPlaying ? FontWeight.bold : FontWeight.normal,
+                                fontWeight: isPlaying
+                                    ? FontWeight.bold
+                                    : FontWeight.normal,
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -2381,79 +2428,83 @@ class VideoPlayerState extends State<VideoPlayer> {
                       ),
                       // 副标题
                       Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Wrap(
-              spacing: 4, // horizontal spacing between items
-              runSpacing: 2, // vertical spacing between lines
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                // Local file indicator
-                if (isLocalVideo)
-                  Container(
-                    margin: const EdgeInsets.only(right: 2),
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(3),
-                      border: Border.all(color: Colors.green.withValues(alpha: 0.5)),
-                    ),
-                    child: const Text(
-                      '已缓存',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: Colors.green,
-                      ),
-                    ),
-                  ),
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Wrap(
+                          spacing: 4, // horizontal spacing between items
+                          runSpacing: 2, // vertical spacing between lines
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            // Local file indicator
+                            if (isLocalVideo)
+                              Container(
+                                margin: const EdgeInsets.only(right: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(3),
+                                  border: Border.all(
+                                      color:
+                                          Colors.green.withValues(alpha: 0.5)),
+                                ),
+                                child: const Text(
+                                  '已缓存',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.green,
+                                  ),
+                                ),
+                              ),
 
-                // File size
-                if (size > 0)
-                  Text(
-                    _formatSize(size),
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey[600],
-                    ),
-                  ),
+                            // File size
+                            if (size > 0)
+                              Text(
+                                _formatSize(size),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey[600],
+                                ),
+                              ),
 
-                // Modified date with separator
-                if (modified != null)
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '|',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[400],
+                            // Modified date with separator
+                            if (modified != null)
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    '|',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[400],
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    _formatDate(modified),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                            // 历史记录信息
+                            if (historyRecord != null)
+                              Container(
+                                width: double.infinity,
+                                margin: const EdgeInsets.only(top: 4),
+                                child: RichText(
+                                  text: TextSpan(
+                                    style: DefaultTextStyle.of(context).style,
+                                    children:
+                                        _buildWatchProgressText(historyRecord),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _formatDate(modified),
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: Colors.grey[600],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                // 历史记录信息
-                if (historyRecord != null)
-                  Container(
-                    width: double.infinity,
-                    margin: const EdgeInsets.only(top: 4),
-                    child: RichText(
-                      text: TextSpan(
-                        style: DefaultTextStyle.of(context).style,
-                        children: _buildWatchProgressText(historyRecord),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
                     ],
                   ),
                 ),
@@ -2484,9 +2535,12 @@ class VideoPlayerState extends State<VideoPlayer> {
   Widget _buildPlaylistHeader() {
     // 计算当前播放索引的文字信息
     String playingIndexInfo = '';
-    if (playList.isNotEmpty && currentPlayingIndex >= 0 && currentPlayingIndex < playList.length) {
+    if (playList.isNotEmpty &&
+        currentPlayingIndex >= 0 &&
+        currentPlayingIndex < playList.length) {
       // 显示当前播放索引 (索引+1，从1开始计数更符合用户习惯)
-      playingIndexInfo = ' | 正在播放: ${currentPlayingIndex + 1}/${playList.length}';
+      playingIndexInfo =
+          ' | 正在播放: ${currentPlayingIndex + 1}/${playList.length}';
     }
 
     return Container(
@@ -2552,7 +2606,8 @@ class VideoPlayerState extends State<VideoPlayer> {
             onPressed: () {
               _toggleLocalPlaybackPreference();
             },
-            tooltip: _preferLocalPlayback ? '本地优先 (点击切换为在线优先)' : '在线优先 (点击切换为本地优先)',
+            tooltip:
+                _preferLocalPlayback ? '本地优先 (点击切换为在线优先)' : '在线优先 (点击切换为本地优先)',
           ),
         ],
       ),
@@ -2938,19 +2993,24 @@ class VideoPlayerState extends State<VideoPlayer> {
                               width: double.infinity,
                               child: ElevatedButton.icon(
                                 onPressed: () async {
-                                  final currentVideoName = playList.isNotEmpty && currentPlayingIndex < playList.length
-                                      ? playList[currentPlayingIndex].extras!['name'] as String
+                                  final currentVideoName = playList
+                                              .isNotEmpty &&
+                                          currentPlayingIndex < playList.length
+                                      ? playList[currentPlayingIndex]
+                                          .extras!['name'] as String
                                       : '';
 
                                   if (currentVideoName.isNotEmpty) {
-                                    final matchedSubtitle = _smartMatchSubtitle(currentVideoName);
+                                    final matchedSubtitle =
+                                        _smartMatchSubtitle(currentVideoName);
                                     if (matchedSubtitle != null) {
                                       // 自动加载匹配的字幕
                                       final wasPlaying = player.state.playing;
                                       await player.pause();
 
                                       try {
-                                        await player.setSubtitleTrack(SubtitleTrack.no());
+                                        await player.setSubtitleTrack(
+                                            SubtitleTrack.no());
                                         await player.setSubtitleTrack(
                                           SubtitleTrack.uri(
                                             matchedSubtitle.rawUrl,
@@ -2959,13 +3019,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                                         );
 
                                         setDialogState(() {
-                                          _smartMatchedSubtitle = matchedSubtitle;
+                                          _smartMatchedSubtitle =
+                                              matchedSubtitle;
                                           _currentSubtitle = SubtitleTrack.uri(
                                             matchedSubtitle.rawUrl,
                                             title: matchedSubtitle.name,
                                           );
                                         });
-                                        
+
                                         // 保存智能匹配的字幕记录
                                         await _saveFolderTrackSettings(
                                           subtitleTrackId: '',
@@ -2976,23 +3037,29 @@ class VideoPlayerState extends State<VideoPlayer> {
                                           await player.play();
                                         }
 
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
                                           SnackBar(
-                                            content: Text('智能匹配成功: ${matchedSubtitle.name}'),
+                                            content: Text(
+                                                '智能匹配成功: ${matchedSubtitle.name}'),
                                             backgroundColor: Colors.green,
-                                            duration: const Duration(seconds: 2),
+                                            duration:
+                                                const Duration(seconds: 2),
                                           ),
                                         );
                                       } catch (e) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
+                                        ScaffoldMessenger.of(context)
+                                            .showSnackBar(
                                           SnackBar(
-                                            content: Text('加载字幕失败: ${matchedSubtitle.name}'),
+                                            content: Text(
+                                                '加载字幕失败: ${matchedSubtitle.name}'),
                                             backgroundColor: Colors.red,
                                           ),
                                         );
                                       }
                                     } else {
-                                      ScaffoldMessenger.of(context).showSnackBar(
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
                                         const SnackBar(
                                           content: Text('未找到匹配的字幕'),
                                           backgroundColor: Colors.orange,
@@ -3007,7 +3074,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                                   backgroundColor: Colors.blue[50],
                                   foregroundColor: Colors.blue[700],
                                   elevation: 0,
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 8),
                                 ),
                               ),
                             ),
@@ -3097,9 +3165,11 @@ class VideoPlayerState extends State<VideoPlayer> {
                                         ),
                                         decoration: BoxDecoration(
                                           color: Colors.green.withOpacity(0.1),
-                                          borderRadius: BorderRadius.circular(4),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
                                           border: Border.all(
-                                            color: Colors.green.withOpacity(0.3),
+                                            color:
+                                                Colors.green.withOpacity(0.3),
                                           ),
                                         ),
                                         child: Text(
@@ -3178,7 +3248,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               );
             });
             print('外部字幕加载成功: ${subtitle.name}');
-            
+
             // 保存字幕记录（外部字幕）
             await _saveFolderTrackSettings(
               subtitleTrackId: '',
@@ -3227,7 +3297,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                   subtitle.name,
                   style: TextStyle(
                     color: isSelected ? Colors.blue : Colors.grey[800],
-                    fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                    fontWeight:
+                        isSelected ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
               ),
@@ -3282,7 +3353,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 _currentSubtitle = track;
               });
               print('已关闭字幕');
-              
+
               // 保存字幕记录（关闭字幕）
               await _saveFolderTrackSettings(
                 subtitleTrackId: '',
@@ -3296,7 +3367,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 _currentSubtitle = track;
               });
               print('内嵌字幕加载成功: $label (ID: ${track.id})');
-              
+
               // 保存字幕记录（内嵌字幕）
               await _saveFolderTrackSettings(
                 subtitleTrackId: track.id,
@@ -3419,7 +3490,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                             // 可用音轨列表
                             if (player.state.tracks.audio.isNotEmpty)
                               Padding(
-                                padding: const EdgeInsets.only(top: 8, bottom: 8),
+                                padding:
+                                    const EdgeInsets.only(top: 8, bottom: 8),
                                 child: Text(
                                   '可用音轨',
                                   style: TextStyle(
@@ -3430,7 +3502,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                               ),
 
                             ...player.state.tracks.audio.map((track) {
-                              final displayName = _getAudioTrackDisplayName(track);
+                              final displayName =
+                                  _getAudioTrackDisplayName(track);
                               return Padding(
                                 padding: const EdgeInsets.only(bottom: 8.0),
                                 child: _buildAudioTrackOption(
@@ -3980,160 +4053,180 @@ class VideoPlayerState extends State<VideoPlayer> {
                   ? player.state.playlist.medias[player.state.playlist.index]
                   : null;
               final currentUrl = currentMedia?.uri ?? 'unknown';
-              
+
               // 获取当前视频名称
               String videoName = '视频播放';
-              if (playList.isNotEmpty && currentPlayingIndex >= 0 && currentPlayingIndex < playList.length) {
-                videoName = playList[currentPlayingIndex].extras!['name'] as String;
+              if (playList.isNotEmpty &&
+                  currentPlayingIndex >= 0 &&
+                  currentPlayingIndex < playList.length) {
+                videoName =
+                    playList[currentPlayingIndex].extras!['name'] as String;
               }
 
               // 使用FutureBuilder获取更多视频信息
               return FutureBuilder<Map<String, String>>(
-                future: _getExtendedVideoInfo(),
-                builder: (context, snapshot) {
-                  // 获取扩展视频信息
-                  final extInfo = snapshot.data ?? {};
-                  final videoBitrateStr = extInfo['videoBitrate'] ?? 'N/A';
-                  final codecInfo = extInfo['videoCodec'] ?? 'N/A';
-                  final videoFps = extInfo['videoFps'] ?? 'N/A';
+                  future: _getExtendedVideoInfo(),
+                  builder: (context, snapshot) {
+                    // 获取扩展视频信息
+                    final extInfo = snapshot.data ?? {};
+                    final videoBitrateStr = extInfo['videoBitrate'] ?? 'N/A';
+                    final codecInfo = extInfo['videoCodec'] ?? 'N/A';
+                    final videoFps = extInfo['videoFps'] ?? 'N/A';
 
-                  return Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.7),
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          spreadRadius: 1,
-                        ),
-                      ],
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          '视频流信息',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
+                    return Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(8),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.3),
+                            blurRadius: 8,
+                            spreadRadius: 1,
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '视频名称: ${_truncateString(videoName, 35)}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '分辨率: ${width}x$height',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '帧率: $videoFps',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '编码: $codecInfo',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '像素格式: $pixelFormat',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '宽高比: ${aspect.toStringAsFixed(2)}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '视频码率: $videoBitrateStr',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '色彩矩阵: $colorMatrix',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '色彩原色: $primaries',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '播放速度: ${rate}x',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '音量: ${volume.toStringAsFixed(0)}%',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        Text(
-                          '进度: ${_formatDuration(position)}/${_formatDuration(duration)}',
-                          style: const TextStyle(color: Colors.white, fontSize: 12),
-                        ),
-                        const SizedBox(height: 4),
-                        // 当前URL（可点击复制）
-                        GestureDetector(
-                          onTap: () {
-                            Clipboard.setData(ClipboardData(text: currentUrl));
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('已复制URL到剪切板'),
-                                  duration: Duration(seconds: 2),
-                                  backgroundColor: Colors.green,
+                        ],
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '视频流信息',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            '视频名称: ${_truncateString(videoName, 35)}',
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '分辨率: ${width}x$height',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '帧率: $videoFps',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '编码: $codecInfo',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '像素格式: $pixelFormat',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '宽高比: ${aspect.toStringAsFixed(2)}',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '视频码率: $videoBitrateStr',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '色彩矩阵: $colorMatrix',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '色彩原色: $primaries',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '播放速度: ${rate}x',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '音量: ${volume.toStringAsFixed(0)}%',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          Text(
+                            '进度: ${_formatDuration(position)}/${_formatDuration(duration)}',
+                            style: const TextStyle(
+                                color: Colors.white, fontSize: 12),
+                          ),
+                          const SizedBox(height: 4),
+                          // 当前URL（可点击复制）
+                          GestureDetector(
+                            onTap: () {
+                              Clipboard.setData(
+                                  ClipboardData(text: currentUrl));
+                              if (mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('已复制URL到剪切板'),
+                                    duration: Duration(seconds: 2),
+                                    backgroundColor: Colors.green,
+                                  ),
+                                );
+                              }
+                            },
+                            child: Container(
+                              width: 300, // 添加固定宽度
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withValues(alpha: 0.1),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.3),
+                                  width: 1,
                                 ),
-                              );
-                            }
-                          },
-                          child: Container(
-                            width: 300, // 添加固定宽度
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.3),
-                                width: 1,
+                              ),
+                              child: Row(
+                                mainAxisSize:
+                                    MainAxisSize.min, // 改为MainAxisSize.min
+                                children: [
+                                  const Icon(
+                                    Icons.link,
+                                    color: Colors.white,
+                                    size: 12,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Flexible(
+                                    // 改为Flexible
+                                    child: Text(
+                                      '当前URL: ${_truncateString(currentUrl, 50)}',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        decoration: TextDecoration.underline,
+                                        decorationColor: Colors.white,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Icon(
+                                    Icons.copy,
+                                    color: Colors.white,
+                                    size: 12,
+                                  ),
+                                ],
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min, // 改为MainAxisSize.min
-                              children: [
-                                const Icon(
-                                  Icons.link,
-                                  color: Colors.white,
-                                  size: 12,
-                                ),
-                                const SizedBox(width: 4),
-                                Flexible( // 改为Flexible
-                                  child: Text(
-                                    '当前URL: ${_truncateString(currentUrl, 50)}',
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      decoration: TextDecoration.underline,
-                                      decorationColor: Colors.white,
-                                    ),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                const Icon(
-                                  Icons.copy,
-                                  color: Colors.white,
-                                  size: 12,
-                                ),
-                              ],
-                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-              );
+                        ],
+                      ),
+                    );
+                  });
             },
           ),
         ),
@@ -4174,7 +4267,8 @@ class VideoPlayerState extends State<VideoPlayer> {
   }
 
   // 安全获取播放器属性
-  Future<dynamic> _getPlayerProperty(String property, [dynamic defaultValue]) async {
+  Future<dynamic> _getPlayerProperty(String property,
+      [dynamic defaultValue]) async {
     try {
       final value = await (player.platform as dynamic).getProperty(property);
       return value;
@@ -4213,7 +4307,11 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 尝试获取视频帧率
       String fps = 'N/A';
-      for (final prop in ['container-fps', 'estimated-vf-fps', 'current-tracks/video/demux-fps']) {
+      for (final prop in [
+        'container-fps',
+        'estimated-vf-fps',
+        'current-tracks/video/demux-fps'
+      ]) {
         final value = debugValues[prop];
         if (value != null) {
           if (value is num) {
@@ -4229,7 +4327,12 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 尝试获取视频编码
       String codec = 'N/A';
-      for (final prop in ['video-codec', 'video-format', 'video-codec-name', 'current-tracks/video/codec']) {
+      for (final prop in [
+        'video-codec',
+        'video-format',
+        'video-codec-name',
+        'current-tracks/video/codec'
+      ]) {
         final value = debugValues[prop];
         if (value != null && value is String && value.isNotEmpty) {
           codec = value;
@@ -4239,7 +4342,12 @@ class VideoPlayerState extends State<VideoPlayer> {
       result['videoCodec'] = codec;
 
       // 尝试从已知属性获取视频码率
-      for (final prop in ['video-bitrate', 'video-params/bitrate', 'stats/video/bitrate', 'packet-video-bitrate']) {
+      for (final prop in [
+        'video-bitrate',
+        'video-params/bitrate',
+        'stats/video/bitrate',
+        'packet-video-bitrate'
+      ]) {
         final value = debugValues[prop];
         if (value != null) {
           double? bitrate;
@@ -4276,9 +4384,11 @@ class VideoPlayerState extends State<VideoPlayer> {
           // 减去音频码率（如果有）
           final audioBitrateValue = player.state.audioBitrate ?? 0;
           // 估算视频码率
-          final estimatedVideoBitrate = (totalBitrate - audioBitrateValue * 1000) / 1000000;
+          final estimatedVideoBitrate =
+              (totalBitrate - audioBitrateValue * 1000) / 1000000;
           if (estimatedVideoBitrate > 0) {
-            result['videoBitrate'] = '约 ${estimatedVideoBitrate.toStringAsFixed(2)} Mbps (估算)';
+            result['videoBitrate'] =
+                '约 ${estimatedVideoBitrate.toStringAsFixed(2)} Mbps (估算)';
             return result;
           }
         }
@@ -4321,8 +4431,6 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     }
   }
-
-
 
   Future<void> _loadPlaybackSpeeds() async {
     final prefs = await SharedPreferences.getInstance();
@@ -4390,7 +4498,8 @@ class VideoPlayerState extends State<VideoPlayer> {
         final screenWidth = MediaQuery.of(context).size.width;
         final isMobile = screenWidth < 600;
 
-        _logDebug('开始滚动到索引 $currentPlayingIndex, 设备类型: ${isMobile ? "移动端" : "桌面端"}');
+        _logDebug(
+            '开始滚动到索引 $currentPlayingIndex, 设备类型: ${isMobile ? "移动端" : "桌面端"}');
 
         // 根据设备类型选择不同的对齐方式
         // 移动端：将项目滚动到顶部
@@ -4617,10 +4726,9 @@ class _SpeedIndicatorOverlayState extends State<_SpeedIndicatorOverlay>
   }
 }
 
-
-
 // 后台线程压缩截图的函数
-Future<Map<String, dynamic>> _compressScreenshotInBackground(Uint8List originalBytes) async {
+Future<Map<String, dynamic>> _compressScreenshotInBackground(
+    Uint8List originalBytes) async {
   try {
     // 解码原始图片
     final img.Image? originalImage = img.decodeImage(originalBytes);
@@ -4662,7 +4770,8 @@ Future<Map<String, dynamic>> _compressScreenshotInBackground(Uint8List originalB
 
     // 如果压缩后的文件反而更大，或者原始文件很小（小于100KB），则保持原格式
     const int minSizeForCompression = 100 * 1024; // 100KB
-    if (originalBytes.length < minSizeForCompression || compressedBytes.length >= originalBytes.length) {
+    if (originalBytes.length < minSizeForCompression ||
+        compressedBytes.length >= originalBytes.length) {
       // 如果需要调整尺寸但不需要压缩，使用PNG格式保存调整后的图片
       if (needsResize) {
         final resizedPngBytes = img.encodePng(resizedImage);

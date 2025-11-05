@@ -46,10 +46,13 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
-<dict>
-    <key>NSAllowsArbitraryLoads</key>
-    <true/>
-</dict>
+	<dict>
+		<!-- 为兼顾移动端与桌面端的内网调试场景，显式允许基于IPv4地址的HTTP明文访问，避免iOS默认的IP拦截导致跨端请求失败 -->
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<!-- 后台下载模式 -->
 	<key>UIBackgroundModes</key>
 	<array>
