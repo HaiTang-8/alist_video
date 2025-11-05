@@ -384,6 +384,8 @@ class _CustomMaterialVideoControlsState
           .setApplicationScreenBrightness(value);
     } catch (_) {}
     setState(() {
+      // 立即同步 UI 上的亮度百分比，避免拖动时指示器一直显示 0%
+      _brightnessValue = value.clamp(0.0, 1.0);
       _brightnessIndicator = true;
     });
     _brightnessTimer?.cancel();
