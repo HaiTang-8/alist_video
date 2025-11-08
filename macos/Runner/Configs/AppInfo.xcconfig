@@ -12,3 +12,6 @@ PRODUCT_BUNDLE_IDENTIFIER = com.example.webdavVideo
 
 // The copyright displayed in application information
 PRODUCT_COPYRIGHT = Copyright © 2024 com.example. All rights reserved.
+
+// macOS 10.15 起才提供 wakelock_plus 等插件所需 API，避免 10.14 触发编译失败。
+MACOSX_DEPLOYMENT_TARGET = 10.15

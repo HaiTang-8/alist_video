@@ -330,6 +330,12 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 取消之前的定时器
     _saveProgressDebounceTimer?.cancel();
 
+    // 正在退出或播放器释放时只保留同步保存，防止重复截图拖慢返回速度。
+    if (_isExiting || _isPlayerDisposed) {
+      _logDebug('退出流程中或播放器已释放，跳过防抖保存');
+      return;
+    }
+
     // 如果正在保存进度或正在重新加载界面，跳过
     if (_isSavingProgress || _isReloadingInterface) {
       _logDebug(
@@ -1141,6 +1147,12 @@ class VideoPlayerState extends State<VideoPlayer> {
     bool updateUIImmediately = false,
     bool waitForCompletion = false, // 新增参数：是否等待完成（用于退出时）
   }) async {
+    // 退出阶段只允许 waitForCompletion 的强制保存，避免异步重复执行。
+    if (_isExiting && !waitForCompletion) {
+      _logDebug('退出流程中收到异步保存请求，直接跳过');
+      return;
+    }
+
     // 不需要重置标志，以避免重复调用时重复执行
     if (_isPlayerDisposed) {
       print('跳过进度保存: 播放器已释放');
@@ -1367,6 +1379,8 @@ class VideoPlayerState extends State<VideoPlayer> {
   void dispose() {
     // Cancel the save progress debounce timer
     _saveProgressDebounceTimer?.cancel();
+    // dispose 场景同样视为退出流程，阻止监听器再次调度防抖保存。
+    _isExiting = true;
 
     // 重置进度保存标志，确保可以保存进度
 
@@ -1453,6 +1467,8 @@ class VideoPlayerState extends State<VideoPlayer> {
               return;
             }
 
+            // 退出时先取消防抖定时器，确保不会再触发额外的进度保存与截图。
+            _saveProgressDebounceTimer?.cancel();
             setState(() => _isExiting = true);
 
             final navigator = Navigator.of(context);
