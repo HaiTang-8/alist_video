@@ -9,6 +9,7 @@ import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:alist_player/widgets/batch_rename_dialog.dart';
 import 'package:alist_player/widgets/quick_regex_rename_dialog.dart';
+import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -48,6 +49,20 @@ class _HomePageState extends State<HomePage>
   // 添加一个映射来跟踪哪些文件已下载
   final Set<String> _localFiles = {};
 
+  // 过滤规则：隐藏名称含“更多电视剧集”且小于 2MB 的文件，避免展示提示性伪文件
+  bool _shouldHideFile(FileItem file) {
+    const int twoMegabytes = 2 * 1024 * 1024;
+    return file.type == 2 &&
+        file.size < twoMegabytes &&
+        file.name.contains('请访问');
+  }
+
+  // 为长文件名插入零宽空格，模拟 word-break: break-all，让英文和符号都能在任意字符处换行
+  String _insertWordBreakHints(String text) {
+    if (text.isEmpty) return text;
+    return text.characters.join('\u200B');
+  }
+
   @override
   bool get wantKeepAlive => true;
 
@@ -64,9 +79,12 @@ class _HomePageState extends State<HomePage>
           perPage: 0,
           refresh: refresh);
       if (res.code == 200) {
+        final contents = res.data?.content;
         setState(() {
-          files = res.data?.content
-                  ?.where((data) => data.type == 1 || data.type == 2)
+          files = contents == null
+              ? []
+              : contents
+                  .where((data) => data.type == 1 || data.type == 2)
                   .map((data) => FileItem(
                         type: data.type ?? -1,
                         sha1: data.hashInfo?.sha1 ?? '',
@@ -76,8 +94,8 @@ class _HomePageState extends State<HomePage>
                             DateTime.now(),
                         parent: data.parent ?? currentPath.join('/'),
                       ))
-                  .toList() ??
-              [];
+                  .where((file) => !_shouldHideFile(file)) // _shouldHideFile 避免显示“更多电视剧集”伪文件
+                  .toList();
           _sort((file) => file.modified.millisecondsSinceEpoch, 2, false);
         });
         
@@ -1279,13 +1297,14 @@ class _HomePageState extends State<HomePage>
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  file.name,
+                                  _insertWordBreakHints(file.name), // _insertWordBreakHints 确保英文长词也能在任意字符处换行
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: textColor,
                                     height: 1.3,
                                   ),
                                   maxLines: 2,
+                                  softWrap: true,
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 // 在移动端显示文件大小和修改时间
