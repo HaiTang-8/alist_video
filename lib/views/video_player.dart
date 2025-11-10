@@ -1562,10 +1562,23 @@ class VideoPlayerState extends State<VideoPlayer> {
         // 视频播放器
         AspectRatio(
           aspectRatio: 16 / 9,
-          child: Stack(
-            children: [
-              MaterialVideoControlsTheme(
-                normal: MaterialVideoControlsThemeData(
+          child: IconButtonTheme(
+            // 移动端控件统一缩小点击热区并压缩横向 padding，确保在增大图标尺寸的同时减小按钮间距。
+            data: const IconButtonThemeData(
+              style: ButtonStyle(
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: WidgetStatePropertyAll(
+                  EdgeInsets.symmetric(horizontal: 2),
+                ),
+                minimumSize: WidgetStatePropertyAll(
+                  Size(36, 36),
+                ),
+              ),
+            ),
+            child: Stack(
+              children: [
+                MaterialVideoControlsTheme(
+                  normal: MaterialVideoControlsThemeData(
                     displaySeekBar: true,
                     seekGesture: true,
                     speedUpOnLongPress: true,
@@ -1578,16 +1591,17 @@ class VideoPlayerState extends State<VideoPlayer> {
                         const EdgeInsets.only(bottom: 15, left: 10, right: 10),
                     bottomButtonBarMargin:
                         const EdgeInsets.only(bottom: 0, left: 0, right: 0),
+                    // 使用更大的 iconSize 配合上方 IconButtonTheme，改善移动端的操控视觉与间距。
                     bottomButtonBar: [
                       // 第二行：控制按钮
                       const MaterialPlayOrPauseButton(
-                        iconSize: 16,
+                        iconSize: 20,
                       ),
                       const MaterialSkipNextButton(
-                        iconSize: 16,
+                        iconSize: 20,
                       ),
                       const MaterialDesktopVolumeButton(
-                        iconSize: 16,
+                        iconSize: 20,
                       ),
                       MaterialPositionIndicator(
                         style: TextStyle(
@@ -1601,12 +1615,13 @@ class VideoPlayerState extends State<VideoPlayer> {
                       // buildAudioTrackButton(),
                       // buildSubtitleButton(),
                       // buildScreenshotButton(), // Added screenshot button
-                      buildKeyboardShortcutsButton(),
+                      // 移动端不展示键盘快捷键按钮，避免无物理键盘场景的冗余入口。
                       const MaterialFullscreenButton(
-                        iconSize: 22,
+                        iconSize: 24,
                       ),
-                    ]),
-                fullscreen: MaterialVideoControlsThemeData(
+                    ],
+                  ),
+                  fullscreen: MaterialVideoControlsThemeData(
                     displaySeekBar: true,
                     seekGesture: true,
                     speedUpOnLongPress: true,
@@ -1621,16 +1636,17 @@ class VideoPlayerState extends State<VideoPlayer> {
                         const EdgeInsets.only(bottom: 15, left: 10, right: 10),
                     bottomButtonBarMargin:
                         const EdgeInsets.only(bottom: 0, left: 0, right: 0),
+                    // 全屏下同样提高 iconSize，保持操作一致性。
                     bottomButtonBar: [
                       // 第二行：控制按钮
                       const MaterialPlayOrPauseButton(
-                        iconSize: 18,
+                        iconSize: 22,
                       ),
                       const MaterialSkipNextButton(
-                        iconSize: 18,
+                        iconSize: 22,
                       ),
                       const MaterialDesktopVolumeButton(
-                        iconSize: 18,
+                        iconSize: 22,
                       ),
                       MaterialPositionIndicator(
                         style: TextStyle(
@@ -1644,39 +1660,41 @@ class VideoPlayerState extends State<VideoPlayer> {
                       buildAudioTrackButton(),
                       buildSubtitleButton(),
                       buildScreenshotButton(), // Added screenshot button
-                      buildKeyboardShortcutsButton(),
+                      // 移动端全屏也不显示键盘快捷键按钮，确保交互元素只与触控相关。
                       const MaterialFullscreenButton(
-                        iconSize: 22,
+                        iconSize: 24,
                       ),
-                    ]),
-                child: Stack(
-                  children: [
-                    Video(
-                      controller: controller,
-                      // 当全屏/横竖屏切换触发生命周期暂停时, 自动恢复播放避免误暂停
-                      resumeUponEnteringForegroundMode: true,
-                      // 使用自定义控件以屏蔽 iOS 全屏长按时的默认遮罩闪现
-                      controls: customMaterialVideoControls,
-                    ),
+                    ],
+                  ),
+                  child: Stack(
+                    children: [
+                      Video(
+                        controller: controller,
+                        // 当全屏/横竖屏切换触发生命周期暂停时, 自动恢复播放避免误暂停
+                        resumeUponEnteringForegroundMode: true,
+                        // 使用自定义控件以屏蔽 iOS 全屏长按时的默认遮罩闪现
+                        controls: customMaterialVideoControls,
+                      ),
 
-                    // 统一倍速提示组件：覆盖全屏与非全屏，确保只渲染一份提示内容。
-                    ValueListenableBuilder<bool>(
-                      valueListenable: _showSpeedIndicator,
-                      builder: (context, isVisible, _) {
-                        return _SpeedIndicatorOverlay(
-                          isVisible: isVisible,
-                          speedValue: _indicatorSpeedValue,
-                        );
-                      },
-                    ),
-                  ],
+                      // 统一倍速提示组件：覆盖全屏与非全屏，确保只渲染一份提示内容。
+                      ValueListenableBuilder<bool>(
+                        valueListenable: _showSpeedIndicator,
+                        builder: (context, isVisible, _) {
+                          return _SpeedIndicatorOverlay(
+                            isVisible: isVisible,
+                            speedValue: _indicatorSpeedValue,
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (_isLoading)
-                const Center(
-                  child: CircularProgressIndicator(),
-                ),
-            ],
+                if (_isLoading)
+                  const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+              ],
+            ),
           ),
         ),
         // 播放列表
