@@ -45,7 +45,9 @@ class _HomePageState extends State<HomePage>
   int _searchScope = 0;
   String? _currentUsername;
   bool _isFavorite = false;
-  
+  bool _isLoading = false; // 控制列表在初次加载或重试时的全屏加载状态，避免出现空白页
+  String? _errorMessage; // 记录最近一次加载失败的原因，用于在空页面展示错误提示与重试操作
+
   // 添加一个映射来跟踪哪些文件已下载
   final Set<String> _localFiles = {};
 
@@ -59,94 +61,115 @@ class _HomePageState extends State<HomePage>
   bool get wantKeepAlive => true;
 
   Future<void> _getList({bool refresh = false}) async {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
+
     if (refresh) {
       await _animationController.reverse();
     }
 
     try {
       var res = await FsApi.list(
-          path: currentPath.join('/'),
-          password: '',
-          page: 1,
-          perPage: 0,
-          refresh: refresh);
+        path: currentPath.join('/'),
+        password: '',
+        page: 1,
+        perPage: 0,
+        refresh: refresh,
+      );
+
       if (res.code == 200) {
         final contents = res.data?.content;
-        setState(() {
-          files = contents == null
-              ? []
-              : contents
-                  .where((data) => data.type == 1 || data.type == 2)
-                  .map((data) => FileItem(
-                        type: data.type ?? -1,
-                        sha1: data.hashInfo?.sha1 ?? '',
-                        name: data.name ?? '',
-                        size: data.size ?? 0,
-                        modified: DateTime.tryParse(data.modified ?? '') ??
-                            DateTime.now(),
-                        parent: data.parent ?? currentPath.join('/'),
-                      ))
-                  .toList();
-          _sort((file) => file.modified.millisecondsSinceEpoch, 2, false);
-        });
-        
+        if (mounted) {
+          setState(() {
+            files = contents == null
+                ? []
+                : contents
+                    .where((data) => data.type == 1 || data.type == 2)
+                    .map((data) => FileItem(
+                          type: data.type ?? -1,
+                          sha1: data.hashInfo?.sha1 ?? '',
+                          name: data.name ?? '',
+                          size: data.size ?? 0,
+                          modified: DateTime.tryParse(data.modified ?? '') ??
+                              DateTime.now(),
+                          parent: data.parent ?? currentPath.join('/'),
+                        ))
+                    .toList();
+            _sort((file) => file.modified.millisecondsSinceEpoch, 2, false);
+          });
+        }
+
         // 检查当前目录是否已收藏
-        _checkFavoriteStatus();
-        
-        // 检查哪些文件已下载到本地
-        _checkLocalFiles();
-        
-        // 加载视频文件的播放历史记录
-        _loadVideoHistoryRecords();
+        if (mounted) {
+          _checkFavoriteStatus();
+
+          // 检查哪些文件已下载到本地
+          _checkLocalFiles();
+
+          // 加载视频文件的播放历史记录
+          _loadVideoHistoryRecords();
+        }
       } else {
         _handleError(res.message ?? '获取文件失败');
       }
-
+    } catch (e) {
+      _handleError('操作失败,请检查日志');
+    } finally {
       if (refresh) {
         await _animationController.forward();
       }
-    } catch (e) {
-      _handleError('操作失败,请检查日志');
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
   // 新增方法：检查哪些文件已下载到本地
   Future<void> _checkLocalFiles() async {
     final downloadManager = DownloadManager();
-    
+
     try {
       // 使用新方法获取当前路径下的本地视频列表
-      final localVideos = await downloadManager.getLocalVideosInPath(currentPath.join('/'));
-      
+      final localVideos =
+          await downloadManager.getLocalVideosInPath(currentPath.join('/'));
+
       setState(() {
         _localFiles.clear();
         _localFiles.addAll(localVideos);
       });
-      
+
       print("Found ${_localFiles.length} local videos in current directory");
     } catch (e) {
       print("Error checking local files: $e");
     }
   }
-  
+
   // 新增方法：加载视频文件的播放历史记录
   Future<void> _loadVideoHistoryRecords() async {
     if (_currentUsername == null) return;
-    
+
     try {
       // 获取当前目录下所有视频文件的历史记录
       final currentDirectory = currentPath.join('/');
-      final historyRecords = await DatabaseHelper.instance.getHistoricalRecordsByPath(
+      final historyRecords =
+          await DatabaseHelper.instance.getHistoricalRecordsByPath(
         path: currentDirectory,
         userId: _currentUsername!.hashCode,
       );
-      
+
       if (historyRecords.isEmpty) return;
-      
+
       // 将历史记录关联到对应的文件项
       setState(() {
         for (var file in files) {
-          if (file.type == 2) { // 只处理视频文件
+          if (file.type == 2) {
+            // 只处理视频文件
             // 查找匹配的历史记录
             try {
               final record = historyRecords.firstWhere(
@@ -159,8 +182,9 @@ class _HomePageState extends State<HomePage>
           }
         }
       });
-      
-      print("Found ${historyRecords.length} history records for current directory");
+
+      print(
+          "Found ${historyRecords.length} history records for current directory");
     } catch (e) {
       print("Error loading video history records: $e");
     }
@@ -169,14 +193,14 @@ class _HomePageState extends State<HomePage>
   // 检查当前目录是否已收藏
   Future<void> _checkFavoriteStatus() async {
     if (_currentUsername == null) return;
-    
+
     try {
       final currentDirectory = currentPath.join('/');
       final isFavorite = await DatabaseHelper.instance.isFavoriteDirectory(
         path: currentDirectory,
         userId: _currentUsername!.hashCode,
       );
-      
+
       setState(() {
         _isFavorite = isFavorite;
       });
@@ -188,10 +212,10 @@ class _HomePageState extends State<HomePage>
   // 收藏/取消收藏当前目录
   Future<void> _toggleFavorite() async {
     if (_currentUsername == null) return;
-    
+
     final currentDirectory = currentPath.join('/');
     final directoryName = currentPath.last == '/' ? '主目录' : currentPath.last;
-    
+
     try {
       if (_isFavorite) {
         // 取消收藏
@@ -199,7 +223,7 @@ class _HomePageState extends State<HomePage>
           path: currentDirectory,
           userId: _currentUsername!.hashCode,
         );
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已取消收藏')),
         );
@@ -210,12 +234,12 @@ class _HomePageState extends State<HomePage>
           name: directoryName,
           userId: _currentUsername!.hashCode,
         );
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('已添加到收藏夹')),
         );
       }
-      
+
       setState(() {
         _isFavorite = !_isFavorite;
       });
@@ -226,13 +250,24 @@ class _HomePageState extends State<HomePage>
     }
   }
 
-  void _handleError(String message) {
-    setState(() {
-      currentPath.removeLast();
-      if (currentPath.isEmpty) {
-        currentPath.add('/');
-      }
-    });
+  void _handleError(
+    String message, {
+    bool revertPath = true,
+    bool recordErrorState = true,
+  }) {
+    if (mounted) {
+      setState(() {
+        if (recordErrorState) {
+          _errorMessage = message;
+        }
+        if (revertPath && currentPath.isNotEmpty) {
+          currentPath.removeLast();
+        }
+        if (revertPath && currentPath.isEmpty) {
+          currentPath.add('/');
+        }
+      });
+    }
     toastification.show(
       style: ToastificationStyle.flat,
       type: ToastificationType.error,
@@ -277,47 +312,59 @@ class _HomePageState extends State<HomePage>
       await _getList(refresh: true);
     }
   }
-  
 
-  
+  Future<void> _reloadCurrentDirectory({bool jumpToRoot = false}) async {
+    // jumpToRoot=true 时用于一键回到根目录后重试，避免陷入无操作状态
+    if (jumpToRoot && mounted) {
+      setState(() {
+        currentPath = ['/'];
+      });
+    }
+    _animationController.reset();
+    await _getList();
+    if (mounted) {
+      _animationController.forward();
+    }
+  }
+
   // 获取中文星期几
   String _getChineseWeekday(int weekday) {
     const weekdays = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
     return weekdays[weekday - 1];
   }
-  
+
   // 构建带有不同颜色的播放进度文本
   List<TextSpan> _buildWatchProgressText(HistoricalRecord record) {
     // 计算进度百分比
     final progressPercent = (record.progressValue * 100).toStringAsFixed(0);
-    
+
     // 格式化观看进度时间（分:秒）
     int minutes = 0;
     int seconds = 0;
-    
+
     // 确保videoSeek有效
     if (record.videoSeek > 0) {
       // videoSeek是总秒数，直接计算分钟和剩余秒数
       minutes = (record.videoSeek / 60).floor();
       seconds = (record.videoSeek % 60).floor();
     }
-    
+
     final progressTime = "$minutes分$seconds秒";
-    
+
     // 格式化观看日期时间
     final now = DateTime.now();
     final changeTime = record.changeTime;
     final isSameYear = now.year == changeTime.year;
-    
+
     // 获取星期几
     final weekday = _getChineseWeekday(changeTime.weekday);
-    
+
     // 格式化日期，如果是今年则不显示年份
-    final dateFormat = isSameYear 
+    final dateFormat = isSameYear
         ? DateFormat('MM-dd $weekday HH:mm')
         : DateFormat('yyyy-MM-dd $weekday HH:mm');
     final formattedDate = dateFormat.format(changeTime);
-    
+
     // 返回带有不同颜色的TextSpan列表
     return [
       const TextSpan(
@@ -378,10 +425,18 @@ class _HomePageState extends State<HomePage>
           );
         });
       } else {
-        _handleError(res.message ?? '搜索失败');
+        _handleError(
+          res.message ?? '搜索失败',
+          revertPath: false,
+          recordErrorState: false,
+        );
       }
     } catch (e) {
-      _handleError('搜索失败,请检查网络连接');
+      _handleError(
+        '搜索失败,请检查网络连接',
+        revertPath: false,
+        recordErrorState: false,
+      );
     }
   }
 
@@ -774,9 +829,10 @@ class _HomePageState extends State<HomePage>
       vsync: this,
     );
     _loadCurrentUser();
-    
-    print('HomePage.initState: initialUrl=${widget.initialUrl}, initialTitle=${widget.initialTitle}');
-    
+
+    print(
+        'HomePage.initState: initialUrl=${widget.initialUrl}, initialTitle=${widget.initialTitle}');
+
     // 如果传入了初始URL，先使用该URL
     if (widget.initialUrl != null) {
       setState(() {
@@ -800,11 +856,13 @@ class _HomePageState extends State<HomePage>
   @override
   void didUpdateWidget(HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
-    
-    print('HomePage.didUpdateWidget: 旧initialUrl=${oldWidget.initialUrl}, 新initialUrl=${widget.initialUrl}');
-    
+
+    print(
+        'HomePage.didUpdateWidget: 旧initialUrl=${oldWidget.initialUrl}, 新initialUrl=${widget.initialUrl}');
+
     // 当widget更新且initialUrl有变化时，重新加载目录
-    if (widget.initialUrl != oldWidget.initialUrl && widget.initialUrl != null) {
+    if (widget.initialUrl != oldWidget.initialUrl &&
+        widget.initialUrl != null) {
       setState(() {
         currentPath = widget.initialUrl!.split('/')
           ..removeWhere((element) => element.isEmpty);
@@ -814,7 +872,8 @@ class _HomePageState extends State<HomePage>
           currentPath.insert(0, '/');
         }
       });
-      print('HomePage.didUpdateWidget: 路径已更新 currentPath=${currentPath.join('/')}');
+      print(
+          'HomePage.didUpdateWidget: 路径已更新 currentPath=${currentPath.join('/')}');
       _animationController.reset();
       _getList().then((_) => _animationController.forward());
     }
@@ -965,8 +1024,110 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-  // 空状态展示
+  // 空状态展示，根据不同状态给出加载、错误或正常空目录提示
   Widget _buildEmptyState() {
+    if (_isLoading) {
+      return _buildLoadingState();
+    }
+    if (_errorMessage != null) {
+      return _buildErrorState();
+    }
+    return _buildNoDataState();
+  }
+
+  // 全屏加载状态，移动端和桌面端均显示一致的等待提示
+  Widget _buildLoadingState() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 360),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 56,
+              height: 56,
+              child: CircularProgressIndicator(strokeWidth: 3),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '正在加载当前目录',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '如果长时间无响应，可检查网络或稍后重试',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 错误状态，提供重试和快速返回根目录的操作，避免只能重启应用
+  Widget _buildErrorState() {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 420),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.cloud_off_outlined,
+              size: 80,
+              color: Colors.red[300],
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _errorMessage ?? '文件列表加载失败',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '可以尝试重新加载或返回根目录重新进入',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey[600],
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Wrap(
+              alignment: WrapAlignment.center,
+              runSpacing: 8,
+              spacing: 12,
+              children: [
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('重新加载'),
+                  onPressed: () => _reloadCurrentDirectory(),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.home_outlined),
+                  label: const Text('返回根目录'),
+                  onPressed: () => _reloadCurrentDirectory(jumpToRoot: true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 正常的空目录展示
+  Widget _buildNoDataState() {
     return FadeTransition(
       opacity: _animationController,
       child: SlideTransition(
@@ -981,8 +1142,11 @@ class _HomePageState extends State<HomePage>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.folder_open_outlined,
-                  size: 80, color: Colors.grey[300]),
+              Icon(
+                Icons.folder_open_outlined,
+                size: 80,
+                color: Colors.grey[300],
+              ),
               const SizedBox(height: 16),
               Text(
                 '文件夹为空',
@@ -1260,7 +1424,7 @@ class _HomePageState extends State<HomePage>
                             child: _getIconForFile(file.name),
                           ),
                           const SizedBox(width: 12),
-                          
+
                           // 本地文件标识 (放在文件名前面)
                           if (isLocal)
                             Padding(
@@ -1281,14 +1445,15 @@ class _HomePageState extends State<HomePage>
                                 ),
                               ),
                             ),
-                          
+
                           // 文件名称和播放进度
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _insertWordBreakHints(file.name), // _insertWordBreakHints 确保英文长词也能在任意字符处换行
+                                  _insertWordBreakHints(file
+                                      .name), // _insertWordBreakHints 确保英文长词也能在任意字符处换行
                                   style: TextStyle(
                                     fontSize: 14,
                                     color: textColor,
@@ -1326,12 +1491,14 @@ class _HomePageState extends State<HomePage>
                                   ),
                                 ],
                                 // 如果有播放历史记录，显示播放进度
-                                if (file.type == 2 && file.historyRecord != null) ...[
+                                if (file.type == 2 &&
+                                    file.historyRecord != null) ...[
                                   const SizedBox(height: 4),
                                   // 使用RichText来设置不同部分的文本颜色
                                   RichText(
                                     text: TextSpan(
-                                      children: _buildWatchProgressText(file.historyRecord!),
+                                      children: _buildWatchProgressText(
+                                          file.historyRecord!),
                                     ),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -1559,8 +1726,10 @@ class _HomePageState extends State<HomePage>
 
   Widget _buildBatchOperationBar() {
     final videoFiles = files.where((file) => file.type == 2).toList();
-    final selectedVideoFiles = _selectedFiles.where((file) => file.type == 2).toList();
-    final allVideoFilesSelected = videoFiles.isNotEmpty && selectedVideoFiles.length == videoFiles.length;
+    final selectedVideoFiles =
+        _selectedFiles.where((file) => file.type == 2).toList();
+    final allVideoFilesSelected =
+        videoFiles.isNotEmpty && selectedVideoFiles.length == videoFiles.length;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -1676,21 +1845,25 @@ class _HomePageState extends State<HomePage>
             color: Colors.transparent,
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
-              onTap: selectedVideoFiles.isNotEmpty ? () {
-                for (var file in selectedVideoFiles) {
-                  DownloadManager().addTask(
-                    currentPath.join('/'),
-                    file.name,
-                  );
-                }
-                setState(() {
-                  _isSelectMode = false;
-                  _selectedFiles.clear();
-                });
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('已添加 ${selectedVideoFiles.length} 个文件到下载队列')),
-                );
-              } : null,
+              onTap: selectedVideoFiles.isNotEmpty
+                  ? () {
+                      for (var file in selectedVideoFiles) {
+                        DownloadManager().addTask(
+                          currentPath.join('/'),
+                          file.name,
+                        );
+                      }
+                      setState(() {
+                        _isSelectMode = false;
+                        _selectedFiles.clear();
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(
+                                '已添加 ${selectedVideoFiles.length} 个文件到下载队列')),
+                      );
+                    }
+                  : null,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                 decoration: BoxDecoration(
@@ -1736,8 +1909,6 @@ class _HomePageState extends State<HomePage>
     );
   }
 
-
-
   void _showBatchRenameDialog() {
     showDialog(
       context: context,
@@ -1754,10 +1925,12 @@ class _HomePageState extends State<HomePage>
 
   void _toggleSelectAll() {
     final videoFiles = files.where((file) => file.type == 2).toList();
-    final selectedVideoFiles = _selectedFiles.where((file) => file.type == 2).toList();
+    final selectedVideoFiles =
+        _selectedFiles.where((file) => file.type == 2).toList();
 
     setState(() {
-      if (selectedVideoFiles.length == videoFiles.length && videoFiles.isNotEmpty) {
+      if (selectedVideoFiles.length == videoFiles.length &&
+          videoFiles.isNotEmpty) {
         // 如果所有视频文件都已选中，则取消全选
         _selectedFiles.removeWhere((file) => file.type == 2);
       } else {
@@ -1833,7 +2006,8 @@ class _HomePageState extends State<HomePage>
 
   // 显示单个文件重命名对话框
   void _showSingleRenameDialog(FileItem file) {
-    final TextEditingController controller = TextEditingController(text: file.name);
+    final TextEditingController controller =
+        TextEditingController(text: file.name);
 
     showDialog(
       context: context,
@@ -1971,8 +2145,10 @@ class _HomePageState extends State<HomePage>
       final String oldFolderPath = '$basePath/$oldFolderName';
       final String newFolderPath = '$basePath/$newFolderName';
 
-      final String sanitizedOldFolderPath = oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedNewFolderPath = newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedOldFolderPath =
+          oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewFolderPath =
+          newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
       final List<FileSystemEntity> files = screenshotDir.listSync();
 
@@ -2005,8 +2181,10 @@ class _HomePageState extends State<HomePage>
     required String videoPath,
   }) async {
     try {
-      final String sanitizedOldVideoPath = '$videoPath/$oldVideoName'.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedNewVideoPath = '$videoPath/$newVideoName'.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedOldVideoPath = '$videoPath/$oldVideoName'
+          .replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewVideoPath = '$videoPath/$newVideoName'
+          .replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
       final List<FileSystemEntity> files = screenshotDir.listSync();
 
@@ -2044,11 +2222,13 @@ class _HomePageState extends State<HomePage>
       final userId = currentUsername.hashCode;
 
       // 使用现有的批量更新方法，传入单个重命名项
-      final renameMap = [{
-        'oldName': oldName,
-        'newName': newName,
-        'type': fileType,
-      }];
+      final renameMap = [
+        {
+          'oldName': oldName,
+          'newName': newName,
+          'type': fileType,
+        }
+      ];
 
       await DatabaseHelper.instance.batchUpdateHistoricalRecordPaths(
         renameMap: renameMap,
