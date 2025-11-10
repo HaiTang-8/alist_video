@@ -1614,62 +1614,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                     brightnessGesture: true,
                     visibleOnMount: false,
                     topButtonBar: [],
-                    primaryButtonBar: [
-                      // 添加在顶部显示的倍速提示
-                      ValueListenableBuilder<bool>(
-                        valueListenable: _showSpeedIndicator,
-                        builder: (context, isVisible, _) {
-                          if (!isVisible) return const SizedBox.shrink();
-                          return Center(
-                            child: ValueListenableBuilder<double>(
-                              valueListenable: _indicatorSpeedValue,
-                              builder: (context, speed, _) {
-                                return AnimatedOpacity(
-                                  opacity: isVisible ? 1.0 : 0.0,
-                                  duration: const Duration(milliseconds: 300),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 16, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.7),
-                                      borderRadius: BorderRadius.circular(20),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.3),
-                                          blurRadius: 10,
-                                          spreadRadius: 1,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.speed,
-                                          color: Colors.white,
-                                          size: 24,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          '${speed}x',
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                      ),
-                    ],
+                    // 全屏场景的倍速提示由统一覆盖层负责，这里保持空列表避免重复绘制。
+                    primaryButtonBar: const [],
                     seekBarAlignment: Alignment.topCenter,
                     seekBarMargin:
                         const EdgeInsets.only(bottom: 15, left: 10, right: 10),
@@ -1713,7 +1659,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                       controls: customMaterialVideoControls,
                     ),
 
-                    // 非全屏模式下的倍速提示组件
+                    // 统一倍速提示组件：覆盖全屏与非全屏，确保只渲染一份提示内容。
                     ValueListenableBuilder<bool>(
                       valueListenable: _showSpeedIndicator,
                       builder: (context, isVisible, _) {
@@ -3866,6 +3812,12 @@ class VideoPlayerState extends State<VideoPlayer> {
       });
     }
 
+    final bool useEmbeddedIndicator = _shouldUseEmbeddedSpeedIndicator();
+    if (useEmbeddedIndicator) {
+      // 移动端非全屏场景已经通过 Stack 中的 _SpeedIndicatorOverlay 展示提示，这里无需重复插入 OverlayEntry。
+      return;
+    }
+
     // 创建新overlay
     _speedIndicatorOverlay = OverlayEntry(
       builder: (context) => Positioned(
@@ -3938,6 +3890,21 @@ class VideoPlayerState extends State<VideoPlayer> {
     if (mounted) {
       Overlay.of(context).insert(_speedIndicatorOverlay!);
     }
+  }
+
+  bool _shouldUseEmbeddedSpeedIndicator() {
+    if (!mounted) {
+      return false;
+    }
+    final mediaQuery = MediaQuery.maybeOf(context);
+    if (mediaQuery == null) {
+      return false;
+    }
+    final bool isMobileLayout = mediaQuery.size.width < 600;
+    final bool isFullscreenContext =
+        FullscreenInheritedWidget.maybeOf(context) != null;
+    // 仅在移动端非全屏时需要使用内嵌的倍速提示，其余场景依旧通过 OverlayEntry 覆盖整个播放器。
+    return isMobileLayout && !isFullscreenContext;
   }
 
   // 隐藏全局倍速提示
