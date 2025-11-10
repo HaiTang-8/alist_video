@@ -49,14 +49,6 @@ class _HomePageState extends State<HomePage>
   // 添加一个映射来跟踪哪些文件已下载
   final Set<String> _localFiles = {};
 
-  // 过滤规则：隐藏名称含“更多电视剧集”且小于 2MB 的文件，避免展示提示性伪文件
-  bool _shouldHideFile(FileItem file) {
-    const int twoMegabytes = 2 * 1024 * 1024;
-    return file.type == 2 &&
-        file.size < twoMegabytes &&
-        file.name.contains('请访问');
-  }
-
   // 为长文件名插入零宽空格，模拟 word-break: break-all，让英文和符号都能在任意字符处换行
   String _insertWordBreakHints(String text) {
     if (text.isEmpty) return text;
@@ -94,7 +86,6 @@ class _HomePageState extends State<HomePage>
                             DateTime.now(),
                         parent: data.parent ?? currentPath.join('/'),
                       ))
-                  .where((file) => !_shouldHideFile(file)) // _shouldHideFile 避免显示“更多电视剧集”伪文件
                   .toList();
           _sort((file) => file.modified.millisecondsSinceEpoch, 2, false);
         });

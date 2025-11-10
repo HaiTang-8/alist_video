@@ -1,7 +1,29 @@
+import 'package:alist_player/models/fs_resp/content.dart';
 import 'package:alist_player/models/fs_resp/fs_resp.dart';
 import 'package:alist_player/utils/woo_http.dart';
 
 class FsApi {
+  static const int _twoMegabytes = 2 * 1024 * 1024;
+
+  // 统一过滤掉“更多电视剧集”伪文件，避免任意页面重复实现相同逻辑
+  static FsResp _filterPseudoSeriesFiles(FsResp resp) {
+    final data = resp.data;
+    final items = data?.content;
+    if (data == null || items == null) {
+      return resp;
+    }
+
+    bool _shouldRemove(Content entry) {
+      final name = entry.name ?? '';
+      final size = entry.size ?? 0;
+      final type = entry.type ?? 0;
+      return type == 2 && size < _twoMegabytes && name.contains('更多电视剧集');
+    }
+
+    data.content = items.where((entry) => !_shouldRemove(entry)).toList();
+    return resp;
+  }
+
   static Future<FsResp> list({
     required String path,
     required String password,
@@ -16,7 +38,8 @@ class FsApi {
       'per_page': perPage,
       'refresh': refresh,
     });
-    return FsResp.fromJson(res.data);
+    final resp = FsResp.fromJson(res.data);
+    return _filterPseudoSeriesFiles(resp);
   }
 
   static Future<FsGetResponse> get({
@@ -46,7 +69,8 @@ class FsApi {
       'per_page': per_page,
       'password': password,
     });
-    return FsResp.fromJson(res.data);
+    final resp = FsResp.fromJson(res.data);
+    return _filterPseudoSeriesFiles(resp);
   }
 
   static Future<FsResp> rename({
