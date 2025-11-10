@@ -167,6 +167,10 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 本地优先播放设置
   bool _preferLocalPlayback = AppConstants.defaultPreferLocalPlayback;
 
+  // 判断当前是否为移动端平台（排除 Web，避免 Platform 调用异常）
+  bool get _isMobilePlatform =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
 
@@ -195,6 +199,54 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 加载当前文件夹的音轨和字幕记录
     await _loadFolderTrackSettings();
+  }
+
+  /// 针对移动端高帧率（60FPS）视频出现卡顿问题，通过设置 MPV 属性启用更稳定的渲染与硬解码。
+  Future<void> _optimizeMobileMpvPlayback() async {
+    if (!_isMobilePlatform) {
+      return;
+    }
+
+    final dynamic mpvPlayer = player.platform;
+    if (mpvPlayer == null) {
+      _logDebug('移动端MPV优化跳过：未获取到底层播放器实例');
+      return;
+    }
+
+    // 参考 mpv 文档（https://mpv.io/manual/master/）中关于 GPU、硬解与插帧的章节进行设定。
+    final String hwDecodingBackend =
+        Platform.isIOS ? 'videotoolbox' : 'mediacodec';
+    final String gpuApi = Platform.isIOS ? 'metal' : 'opengl';
+
+    final properties = <String, String>{
+      // 指定 libmpv 视频输出，避免默认值在移动端被包装层覆盖。
+      'vo': 'libmpv',
+      // 指定平台原生硬解方案，降低 60FPS H.264/HEVC 流的 CPU 压力。
+      'hwdec': hwDecodingBackend,
+      // 预加载硬解上下文，减少首次切换到高帧率流的卡顿。
+      'hwdec-preload': 'yes',
+      // MPV GPU 管线强制使用移动端对应后端（iOS Metal、Android GLES）。
+      'gpu-api': gpuApi,
+      'opengl-es': 'yes',
+      // 启用硬解纹理与 GL 共享，防止 YUV->RGB 重复拷贝。
+      'opengl-hwdec-interop': 'auto',
+      // 启用显示重采样同步，平滑 60FPS 时间戳（mpv 手册 video-sync）。
+      'video-sync': 'display-resample',
+      // 开启帧插值（mpv 手册 interpolation），配合 tscale 提升动感连续性。
+      'interpolation': 'yes',
+      'tscale': 'oversample',
+      // 避免 GLES 在垂直同步阶段提前 flush，减小掉帧概率。
+      'opengl-early-flush': 'no',
+    };
+
+    for (final entry in properties.entries) {
+      try {
+        await mpvPlayer.setProperty(entry.key, entry.value);
+        _logDebug('移动端MPV属性 ${entry.key}=${entry.value} 设置成功');
+      } catch (e) {
+        _logDebug('移动端MPV属性 ${entry.key} 设置失败: $e');
+      }
+    }
   }
 
   // 加载文件夹的音轨和字幕记录
@@ -521,6 +573,9 @@ class VideoPlayerState extends State<VideoPlayer> {
     });
 
     player.setPlaylistMode(PlaylistMode.none);
+
+    // 移动端在播放60FPS视频时容易掉帧，提前设置 MPV 属性以启用硬件解码与同步优化
+    _optimizeMobileMpvPlayback();
 
     // 注册硬件键盘事件处理，统一管理长按与短按逻辑
     HardwareKeyboard.instance.addHandler(_handleHardwareKeyEvent);

@@ -9,7 +9,6 @@ import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:alist_player/widgets/batch_rename_dialog.dart';
 import 'package:alist_player/widgets/quick_regex_rename_dialog.dart';
-import 'package:characters/characters.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
