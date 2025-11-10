@@ -1,6 +1,5 @@
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/database_config_preset.dart';
-import 'package:alist_player/models/database_connection_config.dart';
 import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:alist_player/utils/database_config_manager.dart';
 import 'package:alist_player/utils/db.dart';
