@@ -6,11 +6,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:media_kit_video/media_kit_video.dart';
-import 'package:media_kit_video/media_kit_video_controls/media_kit_video_controls.dart';
 import 'package:media_kit_video/media_kit_video_controls/src/controls/extensions/duration.dart';
 import 'package:media_kit_video/media_kit_video_controls/src/controls/methods/video_state.dart';
 import 'package:media_kit_video/media_kit_video_controls/src/controls/widgets/video_controls_theme_data_injector.dart';
-import 'package:screen_brightness_platform_interface/screen_brightness_platform_interface.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 import 'package:volume_controller/volume_controller.dart';
 
 Widget customMaterialVideoControls(VideoState state) {
@@ -50,6 +49,7 @@ class _CustomMaterialVideoControlsState
   Timer? _volumeTimer;
   // The default event stream in package:volume_controller is buggy.
   bool _volumeInterceptEventStream = false;
+  StreamSubscription<double>? _volumeSubscription; // 手动管理原生侧音量变更订阅，避免降级后 API 差异造成内存泄漏。
 
   Offset _dragInitialDelta =
       Offset.zero; // Initial position for horizontal drag
@@ -59,7 +59,13 @@ class _CustomMaterialVideoControlsState
   bool _speedUpIndicator = false;
   late /* private */ var playlist = controller(context).player.state.playlist;
   late bool buffering = controller(context).player.state.buffering;
-  final VolumeController _volumeController = VolumeController.instance;
+  final VolumeController _volumeController =
+      VolumeController(); // 2.x 版本通过工厂构造提供单例。
+  final ScreenBrightness _screenBrightness =
+      ScreenBrightness(); // 通过插件公开 API 管理亮度，避免直接依赖平台接口。
+
+  static const Duration _kDefaultDoubleTapSeekDuration =
+      Duration(seconds: 10); // 降级后控件缺失自定义快进/快退时间，使用常量兜底。
 
   bool _mountSeekBackwardButton = false;
   bool _mountSeekForwardButton = false;
@@ -72,6 +78,31 @@ class _CustomMaterialVideoControlsState
       ValueNotifier<Duration>(Duration.zero);
 
   final List<StreamSubscription> subscriptions = [];
+
+  Duration _resolveSeekDuration(Duration? Function(dynamic) accessor) {
+    // 旧版 MaterialVideoControlsThemeData 没有暴露 seekOnDoubleTapXXDuration 字段，运行时尝试读取，失败则回退默认值。
+    try {
+      final Duration? value = accessor(_theme(context));
+      if (value != null) {
+        return value;
+      }
+    } catch (_) {}
+    return _kDefaultDoubleTapSeekDuration;
+  }
+
+  Duration _seekOnDoubleTapBackwardDuration() {
+    return _resolveSeekDuration(
+      (dynamic theme) =>
+          theme.seekOnDoubleTapBackwardDuration as Duration?, // 新版可用。
+    );
+  }
+
+  Duration _seekOnDoubleTapForwardDuration() {
+    return _resolveSeekDuration(
+      (dynamic theme) =>
+          theme.seekOnDoubleTapForwardDuration as Duration?, // 新版可用。
+    );
+  }
 
   double get subtitleVerticalShiftOffset =>
       (_theme(context).padding?.bottom ?? 0.0) +
@@ -164,12 +195,13 @@ class _CustomMaterialVideoControlsState
     for (final subscription in subscriptions) {
       subscription.cancel();
     }
+    _volumeSubscription?.cancel();
+    _volumeController.removeListener(); // 兼容旧版插件的监听取消方式。
     // --------------------------------------------------
     // package:screen_brightness
     Future.microtask(() async {
       try {
-        await ScreenBrightnessPlatform.instance
-            .resetApplicationScreenBrightness();
+        await _screenBrightness.resetApplicationScreenBrightness();
       } catch (_) {}
     });
     // --------------------------------------------------
@@ -325,7 +357,7 @@ class _CustomMaterialVideoControlsState
       try {
         _volumeController.showSystemUI = false;
         _volumeValue = await _volumeController.getVolume();
-        _volumeController.addListener((value) {
+        _volumeSubscription = _volumeController.listener((value) {
           if (mounted && !_volumeInterceptEventStream) {
             setState(() {
               _volumeValue = value;
@@ -339,9 +371,8 @@ class _CustomMaterialVideoControlsState
     // package:screen_brightness
     Future.microtask(() async {
       try {
-        _brightnessValue = await ScreenBrightnessPlatform.instance.application;
-        ScreenBrightnessPlatform.instance.onApplicationScreenBrightnessChanged
-            .listen((value) {
+        _brightnessValue = await _screenBrightness.application;
+        _screenBrightness.onApplicationScreenBrightnessChanged.listen((value) {
           if (mounted) {
             setState(() {
               _brightnessValue = value;
@@ -380,8 +411,7 @@ class _CustomMaterialVideoControlsState
     // --------------------------------------------------
     // package:screen_brightness
     try {
-      await ScreenBrightnessPlatform.instance
-          .setApplicationScreenBrightness(value);
+      await _screenBrightness.setApplicationScreenBrightness(value);
     } catch (_) {}
     setState(() {
       // 立即同步 UI 上的亮度百分比，避免拖动时指示器一直显示 0%
@@ -927,8 +957,8 @@ class _CustomMaterialVideoControlsState
                                   opacity: _hideSeekBackwardButton ? 0 : 1.0,
                                   duration: const Duration(milliseconds: 200),
                                   child: _BackwardSeekIndicator(
-                                    duration: _theme(context)
-                                        .seekOnDoubleTapBackwardDuration,
+                                    duration:
+                                        _seekOnDoubleTapBackwardDuration(),
                                     onChanged: (value) {
                                       _seekBarDeltaValueNotifier.value = -value;
                                     },
@@ -981,8 +1011,8 @@ class _CustomMaterialVideoControlsState
                                   opacity: _hideSeekForwardButton ? 0 : 1.0,
                                   duration: const Duration(milliseconds: 200),
                                   child: _ForwardSeekIndicator(
-                                    duration: _theme(context)
-                                        .seekOnDoubleTapForwardDuration,
+                                    duration:
+                                        _seekOnDoubleTapForwardDuration(),
                                     onChanged: (value) {
                                       _seekBarDeltaValueNotifier.value = value;
                                     },
@@ -1076,7 +1106,7 @@ class _BackwardSeekIndicatorState extends State<_BackwardSeekIndicator> {
     });
     widget.onChanged.call(value);
     setState(() {
-      value += const Duration(seconds: 10);
+      value += widget.duration; // 使用可配置的步进值，兼容新旧版本行为。
     });
   }
 
@@ -1170,7 +1200,7 @@ class _ForwardSeekIndicatorState extends State<_ForwardSeekIndicator> {
     });
     widget.onChanged.call(value);
     setState(() {
-      value += const Duration(seconds: 10);
+      value += widget.duration; // 使用可配置的步进值，兼容新旧版本行为。
     });
   }
 

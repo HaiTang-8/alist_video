@@ -1707,6 +1707,8 @@ class VideoPlayerState extends State<VideoPlayer> {
                   children: [
                     Video(
                       controller: controller,
+                      // 当全屏/横竖屏切换触发生命周期暂停时, 自动恢复播放避免误暂停
+                      resumeUponEnteringForegroundMode: true,
                       // 使用自定义控件以屏蔽 iOS 全屏长按时的默认遮罩闪现
                       controls: customMaterialVideoControls,
                     ),
@@ -1822,6 +1824,8 @@ class VideoPlayerState extends State<VideoPlayer> {
           },
           child: Video(
             controller: controller,
+            // 桌面端也需要在全屏切换时自动恢复播放, 避免误触暂停
+            resumeUponEnteringForegroundMode: true,
             controls: MaterialDesktopVideoControls,
           ),
         ),
