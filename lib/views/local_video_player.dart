@@ -4,13 +4,13 @@ import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/foundation.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:async';
 import 'dart:io';
+import 'package:alist_player/utils/logger.dart';
 
 class LocalVideoPlayer extends StatefulWidget {
   final String filePath;
@@ -28,7 +28,8 @@ class LocalVideoPlayer extends StatefulWidget {
   State<LocalVideoPlayer> createState() => LocalVideoPlayerState();
 
   // 静态方法：播放单个本地视频文件
-  static void playLocalVideo(BuildContext context, String filePath, String fileName) {
+  static void playLocalVideo(
+      BuildContext context, String filePath, String fileName) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => LocalVideoPlayer(
@@ -40,7 +41,11 @@ class LocalVideoPlayer extends StatefulWidget {
   }
 
   // 静态方法：播放本地视频播放列表
-  static void playLocalPlaylist(BuildContext context, List<String> playlistPaths, String currentFilePath, String currentFileName) {
+  static void playLocalPlaylist(
+      BuildContext context,
+      List<String> playlistPaths,
+      String currentFilePath,
+      String currentFileName) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => LocalVideoPlayer(
@@ -53,7 +58,8 @@ class LocalVideoPlayer extends StatefulWidget {
   }
 
   // 静态方法：播放下载目录中的所有视频
-  static void playDownloadedVideos(BuildContext context, {String? startWithFile}) {
+  static void playDownloadedVideos(BuildContext context,
+      {String? startWithFile}) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (context) => LocalVideoPlayer(
@@ -82,7 +88,8 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
 
   // 添加 ItemScrollController 用于精确的索引滚动
   final ItemScrollController _itemScrollController = ItemScrollController();
-  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
 
   String? _currentUsername;
   bool _hasSeekInitialPosition = false;
@@ -141,10 +148,20 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
   bool _isInitialLoading = true;
 
   // 添加调试日志方法
-  void _logDebug(String message) {
-    if (kDebugMode) {
-      print('[LocalVideoPlayer] $message');
-    }
+  void _logDebug(
+    String message, {
+    LogLevel level = LogLevel.debug,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    // 统一将播放器日志写入 AppLogger，便于跨端排查问题
+    AppLogger().captureConsoleOutput(
+      'LocalVideoPlayer',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   @override
@@ -253,7 +270,6 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
 
       // 初始化播放器
       await _initializePlayer();
-
     } catch (e) {
       _logDebug('初始化本地播放列表失败: $e');
       if (mounted) {
@@ -302,7 +318,6 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
       });
 
       _logDebug('扫描完成，找到${videoPaths.length}个视频文件');
-
     } catch (e) {
       _logDebug('扫描下载目录失败: $e');
     }
@@ -370,7 +385,6 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
         _isInitialLoading = false;
         _logDebug('初始加载标记设置为false');
       });
-
     } catch (e) {
       _logDebug('初始化播放器失败: $e');
       if (mounted) {
@@ -393,7 +407,8 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
         final videoName = playList.isNotEmpty && event.index < playList.length
             ? playList[event.index].extras!['name'] as String
             : "未知";
-        _logDebug('播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading');
+        _logDebug(
+            '播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading');
 
         // 如果是初始加载，跳过检查
         if (_isInitialLoading) {
@@ -432,8 +447,7 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
       if (event.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
         _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
             .then((_) {
-          if (mounted) {
-          }
+          if (mounted) {}
         });
         _hasSeekInitialPosition = true;
       }
@@ -462,7 +476,9 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
 
   // 保存当前播放进度
   Future<void> _saveCurrentProgress({bool updateUIImmediately = false}) async {
-    if (_isSavingProgress || playList.isEmpty || currentPlayingIndex >= playList.length) {
+    if (_isSavingProgress ||
+        playList.isEmpty ||
+        currentPlayingIndex >= playList.length) {
       return;
     }
 
@@ -498,7 +514,8 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
         // 更新本地缓存
         _playlistHistoryRecords[videoName] = record;
 
-        _logDebug('保存播放进度: 视频=$videoName, 位置=${position.inSeconds}s, 进度=${(position.inSeconds / duration.inSeconds * 100).toStringAsFixed(1)}%');
+        _logDebug(
+            '保存播放进度: 视频=$videoName, 位置=${position.inSeconds}s, 进度=${(position.inSeconds / duration.inSeconds * 100).toStringAsFixed(1)}%');
 
         if (updateUIImmediately && mounted) {
           setState(() {});
@@ -563,8 +580,8 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
     }
 
     // 更新当前播放索引
-    final newIndex = playList.indexWhere(
-        (item) => item.extras!['name'] == currentPlayingName);
+    final newIndex = playList
+        .indexWhere((item) => item.extras!['name'] == currentPlayingName);
     if (newIndex != -1) {
       setState(() {
         currentPlayingIndex = newIndex;
@@ -794,8 +811,10 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
               displaySeekBar: true,
               visibleOnMount: false,
               primaryButtonBar: [],
-              seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
-              bottomButtonBarMargin: const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
+              seekBarMargin:
+                  const EdgeInsets.only(bottom: 10, left: 0, right: 0),
+              bottomButtonBarMargin:
+                  const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
               bottomButtonBar: [
                 const MaterialDesktopSkipPreviousButton(),
                 const MaterialPlayOrPauseButton(),
@@ -813,8 +832,10 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
               displaySeekBar: true,
               visibleOnMount: false,
               primaryButtonBar: [],
-              seekBarMargin: const EdgeInsets.only(bottom: 10, left: 0, right: 0),
-              bottomButtonBarMargin: const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
+              seekBarMargin:
+                  const EdgeInsets.only(bottom: 10, left: 0, right: 0),
+              bottomButtonBarMargin:
+                  const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
               bottomButtonBar: [
                 const MaterialDesktopSkipPreviousButton(),
                 const MaterialPlayOrPauseButton(),
@@ -1139,9 +1160,12 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
               valueListenable: _indicatorSpeedValue,
               builder: (context, speedValue, child) {
                 return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   decoration: BoxDecoration(
-                    color: isLongPress ? Colors.orange.withValues(alpha: 0.9) : Colors.black.withValues(alpha: 0.7),
+                    color: isLongPress
+                        ? Colors.orange.withValues(alpha: 0.9)
+                        : Colors.black.withValues(alpha: 0.7),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -1212,7 +1236,8 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
                 ),
               ),
               const SizedBox(height: 8),
-              if (playList.isNotEmpty && currentPlayingIndex < playList.length) ...[
+              if (playList.isNotEmpty &&
+                  currentPlayingIndex < playList.length) ...[
                 Text(
                   '文件名: ${playList[currentPlayingIndex].extras!['name']}',
                   style: const TextStyle(color: Colors.white, fontSize: 14),
@@ -1457,8 +1482,10 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
                           Navigator.of(context).pop();
                         },
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isSelected ? Colors.blue : Colors.grey[200],
-                          foregroundColor: isSelected ? Colors.white : Colors.black87,
+                          backgroundColor:
+                              isSelected ? Colors.blue : Colors.grey[200],
+                          foregroundColor:
+                              isSelected ? Colors.white : Colors.black87,
                           elevation: isSelected ? 2 : 0,
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(6),
@@ -1554,10 +1581,8 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
         final volume = player.state.volume - 5.0;
         player.setVolume(volume.clamp(0.0, 100.0));
       },
-      const SingleActivator(LogicalKeyboardKey.keyF): () =>
-          _toggleFullscreen(),
-      const SingleActivator(LogicalKeyboardKey.escape): () =>
-          _exitFullscreen(),
+      const SingleActivator(LogicalKeyboardKey.keyF): () => _toggleFullscreen(),
+      const SingleActivator(LogicalKeyboardKey.escape): () => _exitFullscreen(),
 
       // 添加z/x/c键快捷键用于播放速度控制
       const SingleActivator(LogicalKeyboardKey.keyZ): () {

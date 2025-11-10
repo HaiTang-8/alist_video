@@ -1,6 +1,23 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:encrypt/encrypt.dart';
+import 'package:alist_player/utils/logger.dart';
+
+/// 统一的日志方法，确保 139Yun 加解密示例信息被纳入 AppLogger
+void _logCrypto(
+  String message, {
+  LogLevel level = LogLevel.info,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  AppLogger().captureConsoleOutput(
+    'Yun139Crypto',
+    message,
+    level: level,
+    error: error,
+    stackTrace: stackTrace,
+  );
+}
 
 /// 139Yun 加解密工具
 /// 将 JavaScript 版本的加解密逻辑转换为 Dart
@@ -109,21 +126,24 @@ class Yun139Crypto {
     // 原始文本
     const originalText =
         '{"getOutLinkInfoReq":{"account":"","linkID":"2nc6qeAi4Ldqc","passwd":"","caSrt":0,"coSrt":0,"srtDr":1,"bNum":1,"pCaID":"DFxcHJuuAEwA1611n9kDV5nd05620231211111605jef/Fg0EpY3OPm5KzIL2A-CFEC5RWLkWYD4iS","eNum":200}}';
-    print("原始文本: $originalText");
+    _logCrypto("原始文本: $originalText");
 
     // 加密
     try {
       final encryptedBase64 = encrypt(originalText);
-      print("加密结果 (Base64): $encryptedBase64");
+      _logCrypto("加密结果 (Base64): $encryptedBase64");
 
       // 解密
       final decryptedText = decrypt(encryptedBase64);
-      print("解密结果: $decryptedText");
+      _logCrypto("解密结果: $decryptedText");
 
       // 验证
-      print("验证结果: ${originalText == decryptedText ? '成功' : '失败'}");
-    } catch (e) {
-      print("操作失败: $e");
+      _logCrypto(
+        "验证结果: ${originalText == decryptedText ? '成功' : '失败'}",
+      );
+    } catch (e, stack) {
+      _logCrypto("操作失败: $e",
+          level: LogLevel.error, error: e, stackTrace: stack);
     }
 
     // 解密示例 (使用已有的加密字符串)
@@ -132,10 +152,11 @@ class Yun139Crypto {
 
     try {
       final decryptedString = decrypt(encryptedBase64String);
-      print("解密已有字符串结果: $decryptedString");
-    } catch (e) {
-      print("解密失败: $e");
-      print("请确保输入的 Base64 字符串正确且包含 IV 和密文。");
+      _logCrypto("解密已有字符串结果: $decryptedString");
+    } catch (e, stack) {
+      _logCrypto("解密失败: $e",
+          level: LogLevel.error, error: e, stackTrace: stack);
+      _logCrypto("请确保输入的 Base64 字符串正确且包含 IV 和密文。");
     }
   }
 }

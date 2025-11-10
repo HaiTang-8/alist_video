@@ -14,6 +14,7 @@ import 'package:alist_player/constants/app_constants.dart';
 import 'package:flutter/services.dart';
 import 'home_page.dart';
 import 'package:alist_player/utils/download_manager.dart';
+import 'package:alist_player/utils/logger.dart';
 
 // Add this extension to avoid importing additional packages
 extension FutureExtensions<T> on Future<T> {
@@ -72,6 +73,22 @@ class _HistoryPageState extends State<HistoryPage>
   List<HistoricalRecord> _searchResults = [];
   int _searchTotalRecords = 0;
   Timer? _searchDebounceTimer;
+
+  /// 历史页统一日志输出，方便定位分页/搜索异常
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.info,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    AppLogger().captureConsoleOutput(
+      'HistoryPage',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
 
   @override
   void initState() {
@@ -201,8 +218,13 @@ class _HistoryPageState extends State<HistoryPage>
           }
         });
       }
-    } catch (e) {
-      print('Error loading history: $e');
+    } catch (e, stack) {
+      _log(
+        '加载历史记录失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       if (!mounted) return;
       setState(() => _isLoading = false);
     }
@@ -239,8 +261,13 @@ class _HistoryPageState extends State<HistoryPage>
       _groupByTimeline(_allRecords);
 
       setState(() => _isLoadingMore = false);
-    } catch (e) {
-      print('Error loading more history: $e');
+    } catch (e, stack) {
+      _log(
+        '加载更多历史记录失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
     }
@@ -293,8 +320,13 @@ class _HistoryPageState extends State<HistoryPage>
         _isLoading = false;
       });
       _controller.forward(from: 0);
-    } catch (e) {
-      print('Error searching history: $e');
+    } catch (e, stack) {
+      _log(
+        '搜索历史记录失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       if (!mounted) return;
       setState(() => _isLoading = false);
     }
@@ -329,8 +361,13 @@ class _HistoryPageState extends State<HistoryPage>
       _groupByTimeline(_searchResults);
 
       setState(() => _isLoadingMore = false);
-    } catch (e) {
-      print('Error loading more search results: $e');
+    } catch (e, stack) {
+      _log(
+        '加载更多搜索结果失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       if (!mounted) return;
       setState(() => _isLoadingMore = false);
     }
@@ -760,8 +797,13 @@ class _HistoryPageState extends State<HistoryPage>
     try {
       final response = await FsApi.get(path: path);
       return (response.code == 200, response.message);
-    } catch (e) {
-      print('Error checking file: $e');
+    } catch (e, stack) {
+      _log(
+        '检查远程文件状态失败 path=$path',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return (false, e.toString());
     }
   }
@@ -809,8 +851,13 @@ class _HistoryPageState extends State<HistoryPage>
       // 如果两种格式都不存在
       _screenshotPathCache[cacheKey] = null;
       return null;
-    } catch (e) {
-      print('Error getting screenshot path: $e');
+    } catch (e, stack) {
+      _log(
+        '获取历史截图路径失败 video=${record.videoName}',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       _screenshotPathCache[cacheKey] = null;
       return null;
     }
@@ -825,8 +872,13 @@ class _HistoryPageState extends State<HistoryPage>
         return stat.modified.millisecondsSinceEpoch;
       }
       return 0;
-    } catch (e) {
-      print('Error getting file modification time: $e');
+    } catch (e, stack) {
+      _log(
+        '获取截图文件修改时间失败 file=$filePath',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return 0;
     }
   }
@@ -2136,7 +2188,12 @@ class _HistoryPageState extends State<HistoryPage>
                       fit: BoxFit.cover,
                       key: ValueKey(cacheKey),
                       errorBuilder: (context, error, stackTrace) {
-                        print('Error loading image: $error');
+                        _log(
+                          '加载截图失败: $error',
+                          level: LogLevel.error,
+                          error: error,
+                          stackTrace: stackTrace,
+                        );
                         // 当图片加载失败时，清除对应的缓存
                         final recordCacheKey =
                             '${record.videoPath}_${record.videoName}';

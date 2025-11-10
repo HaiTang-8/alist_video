@@ -4,6 +4,7 @@ import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/font_helper.dart';
+import 'package:alist_player/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // Add this for compute
@@ -166,6 +167,22 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 本地优先播放设置
   bool _preferLocalPlayback = AppConstants.defaultPreferLocalPlayback;
+
+  /// 视频播放器统一日志封装，方便跨端排查播放/下载/字幕问题
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.info,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    AppLogger().captureConsoleOutput(
+      'VideoPlayer',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
 
   // 判断当前是否为移动端平台（排除 Web，避免 Platform 调用异常）
   bool get _isMobilePlatform =>
@@ -368,13 +385,21 @@ class VideoPlayerState extends State<VideoPlayer> {
       _currentUsername = prefs.getString('current_username');
     });
     if (_currentUsername == null) {
-      print('Warning: No logged in user found!');
+      _log(
+        '未获取到当前登录用户，后续操作可能失败',
+        level: LogLevel.warning,
+      );
     }
   }
 
   // 添加日志方法来统一记录视频播放器相关日志
-  void _logDebug(String message) {
-    print('[VideoPlayer] $message');
+  void _logDebug(String message, {Object? error, StackTrace? stackTrace}) {
+    _log(
+      message,
+      level: LogLevel.debug,
+      error: error,
+      stackTrace: stackTrace,
+    );
   }
 
   // 防抖保存进度方法
@@ -900,9 +925,17 @@ class VideoPlayerState extends State<VideoPlayer> {
         });
       }
 
-      print("Found ${_localVideos.length} local videos in playlist");
-    } catch (e) {
-      print("Error checking all local files: $e");
+      _log(
+        '播放列表中存在 ${_localVideos.length} 个本地缓存文件',
+        level: LogLevel.debug,
+      );
+    } catch (e, stack) {
+      _log(
+        '扫描播放列表本地缓存失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -1210,7 +1243,10 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 不需要重置标志，以避免重复调用时重复执行
     if (_isPlayerDisposed) {
-      print('跳过进度保存: 播放器已释放');
+      _log(
+        '跳过进度保存：播放器已释放',
+        level: LogLevel.warning,
+      );
       return;
     }
 
@@ -1218,8 +1254,10 @@ class VideoPlayerState extends State<VideoPlayer> {
         _currentUsername == null ||
         playList.isEmpty ||
         _isLoading) {
-      print(
-          '跳过进度保存: mounted=$mounted, username=$_currentUsername, isEmpty=${playList.isEmpty}, isLoading=$_isLoading');
+      _log(
+        '跳过进度保存：mounted=$mounted, username=$_currentUsername, isEmpty=${playList.isEmpty}, isLoading=$_isLoading',
+        level: LogLevel.debug,
+      );
       return;
     }
 
@@ -1229,14 +1267,20 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 安全检查：确保当前播放索引有效
       if (currentPlayingIndex < 0 || currentPlayingIndex >= playList.length) {
-        print('跳过进度保存: 无效的播放索引 $currentPlayingIndex');
+        _log(
+          '跳过进度保存：无效播放索引 $currentPlayingIndex',
+          level: LogLevel.warning,
+        );
         return;
       }
 
       final currentVideo = playList[currentPlayingIndex];
       final videoName = currentVideo.extras!['name'] as String;
 
-      print('正在保存视频进度: $videoName, 位置: ${currentPosition.inSeconds}秒');
+      _log(
+        '正在保存视频进度: $videoName, 位置: ${currentPosition.inSeconds} 秒',
+        level: LogLevel.debug,
+      );
 
       final existingRecord =
           await DatabaseHelper.instance.getHistoricalRecordByName(
@@ -1281,8 +1325,13 @@ class VideoPlayerState extends State<VideoPlayer> {
           updateUIImmediately: updateUIImmediately,
         );
       }
-    } catch (e) {
-      print('保存进度失败: $e');
+    } catch (e, stack) {
+      _log(
+        '保存进度失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -1306,8 +1355,10 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       // 标记进度已保存成功
-      print(
-          '播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
+      _log(
+        '播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds} 秒',
+        level: LogLevel.debug,
+      );
 
       // 如果之前没有立即更新UI，现在更新
       if (!updateUIImmediately && mounted) {
@@ -1326,8 +1377,13 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 异步截图，完全不阻塞主流程
       _takeScreenshotAsync(videoName);
-    } catch (e) {
-      print('数据库保存进度失败: $e');
+    } catch (e, stack) {
+      _log(
+        '数据库保存进度失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -1351,8 +1407,10 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       // 标记进度已保存成功
-      print(
-          '播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds}秒');
+      _log(
+        '播放进度保存成功: $videoName, 位置: ${currentPosition.inSeconds}/${duration.inSeconds} 秒',
+        level: LogLevel.debug,
+      );
 
       // 如果之前没有立即更新UI，现在更新
       if (!updateUIImmediately && mounted) {
@@ -1374,17 +1432,32 @@ class VideoPlayerState extends State<VideoPlayer> {
         final screenshotFilePath =
             await _takeScreenshot(specificVideoName: videoName);
         if (screenshotFilePath != null) {
-          print(
-              'Screenshot for $videoName saved to $screenshotFilePath during exit.');
+          _log(
+            '退出时截图保存完成: $screenshotFilePath',
+            level: LogLevel.debug,
+          );
         } else {
-          print('Failed to take screenshot for $videoName during exit.');
+          _log(
+            '退出时截图保存失败: $videoName',
+            level: LogLevel.warning,
+          );
         }
-      } catch (e) {
-        print('Screenshot failed for $videoName during exit: $e');
+      } catch (e, stack) {
+        _log(
+          '退出时截图过程异常: $videoName',
+          level: LogLevel.error,
+          error: e,
+          stackTrace: stack,
+        );
         // 截图失败不影响进度保存
       }
-    } catch (e) {
-      print('数据库保存进度失败: $e');
+    } catch (e, stack) {
+      _log(
+        '数据库保存进度失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -1396,14 +1469,23 @@ class VideoPlayerState extends State<VideoPlayer> {
         final screenshotFilePath =
             await _takeScreenshot(specificVideoName: videoName);
         if (screenshotFilePath != null) {
-          print(
-              'Screenshot for $videoName saved to $screenshotFilePath during progress save.');
+          _log(
+            '截图保存成功（异步）：$screenshotFilePath',
+            level: LogLevel.debug,
+          );
         } else {
-          print(
-              'Failed to take screenshot for $videoName during progress save.');
+          _log(
+            '截图保存失败（异步）: $videoName',
+            level: LogLevel.warning,
+          );
         }
-      } catch (e) {
-        print('Screenshot failed for $videoName: $e');
+      } catch (e, stack) {
+        _log(
+          '异步截图异常: $videoName',
+          level: LogLevel.error,
+          error: e,
+          stackTrace: stack,
+        );
         // 截图失败不影响任何操作
       }
     });
@@ -1423,10 +1505,18 @@ class VideoPlayerState extends State<VideoPlayer> {
         player.play();
         player.seek(Duration(seconds: record.videoSeek));
         // await player.seek(Duration(seconds: record.videoSeek));
-        print('Seeked to position: ${record.videoSeek}s for video: $videoName');
+        _log(
+          '恢复播放进度: $videoName -> ${record.videoSeek}s',
+          level: LogLevel.debug,
+        );
       }
-    } catch (e) {
-      print('Failed to seek to last position: $e');
+    } catch (e, stack) {
+      _log(
+        '恢复播放进度失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -1442,10 +1532,10 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 创建一个异步函数来处理清理工作
     Future<void> cleanup() async {
       try {
-        print('视频播放器正在清理资源...');
+        _log('视频播放器正在清理资源...', level: LogLevel.debug);
 
         if (_isPlayerDisposed) {
-          print('播放器已提前释放，跳过重复清理');
+          _log('播放器已提前释放，跳过重复清理', level: LogLevel.debug);
           return;
         }
 
@@ -1456,22 +1546,27 @@ class VideoPlayerState extends State<VideoPlayer> {
         if (mounted &&
             playList.isNotEmpty &&
             currentPlayingIndex < playList.length) {
-          print('正在保存最终播放进度...');
+          _log('正在保存最终播放进度...', level: LogLevel.debug);
           await _saveCurrentProgress(waitForCompletion: true);
-          print('最终播放进度保存完成');
+          _log('最终播放进度保存完成', level: LogLevel.debug);
         }
 
         // 播放器关闭完成
-        print('正在关闭播放器...');
+        _log('正在关闭播放器...', level: LogLevel.debug);
         _isPlayerDisposed = true;
         await player.dispose();
-        print('播放器已关闭');
+        _log('播放器已关闭', level: LogLevel.debug);
 
         // 其他资源清理
         // ItemScrollController 不需要手动 dispose
-        print('资源清理完成');
-      } catch (e) {
-        print('清理过程中发生错误: $e');
+        _log('资源清理完成', level: LogLevel.debug);
+      } catch (e, stack) {
+        _log(
+          '清理过程中发生错误',
+          level: LogLevel.error,
+          error: e,
+          stackTrace: stack,
+        );
       }
     }
 
@@ -1537,9 +1632,9 @@ class VideoPlayerState extends State<VideoPlayer> {
               // 等待进度保存
               if (playList.isNotEmpty &&
                   currentPlayingIndex < playList.length) {
-                print('退出前保存最终播放进度...');
+                _log('退出前保存最终播放进度...', level: LogLevel.debug);
                 await _saveCurrentProgress(waitForCompletion: true);
-                print('退出前进度保存完成');
+                _log('退出前进度保存完成', level: LogLevel.debug);
               }
 
               // 等播放器关闭
@@ -3269,8 +3364,10 @@ class VideoPlayerState extends State<VideoPlayer> {
           await player.pause();
 
           try {
-            print('正在加载外部字幕: ${subtitle.name}');
-            print('字幕URL: ${subtitle.rawUrl}');
+            _log(
+              '正在加载外部字幕: ${subtitle.name} (${subtitle.rawUrl})',
+              level: LogLevel.debug,
+            );
 
             // 直接使用预先生成的 URL
             await player.setSubtitleTrack(SubtitleTrack.no());
@@ -3286,7 +3383,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                 title: subtitle.name,
               );
             });
-            print('外部字幕加载成功: ${subtitle.name}');
+            _log('外部字幕加载成功: ${subtitle.name}', level: LogLevel.debug);
 
             // 保存字幕记录（外部字幕）
             await _saveFolderTrackSettings(
@@ -3297,8 +3394,13 @@ class VideoPlayerState extends State<VideoPlayer> {
             if (wasPlaying) {
               await player.play();
             }
-          } catch (e) {
-            print('加载外部字幕失败: $e');
+          } catch (e, stack) {
+            _log(
+              '加载外部字幕失败: ${subtitle.name}',
+              level: LogLevel.error,
+              error: e,
+              stackTrace: stack,
+            );
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -3391,7 +3493,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               setDialogState(() {
                 _currentSubtitle = track;
               });
-              print('已关闭字幕');
+              _log('已关闭字幕', level: LogLevel.debug);
 
               // 保存字幕记录（关闭字幕）
               await _saveFolderTrackSettings(
@@ -3400,12 +3502,18 @@ class VideoPlayerState extends State<VideoPlayer> {
               );
             } else {
               // 内嵌字幕直接设置
-              print('正在加载内嵌字幕: $label (ID: ${track.id})');
+              _log(
+                '正在加载内嵌字幕: $label (ID: ${track.id})',
+                level: LogLevel.debug,
+              );
               await player.setSubtitleTrack(track);
               setDialogState(() {
                 _currentSubtitle = track;
               });
-              print('内嵌字幕加载成功: $label (ID: ${track.id})');
+              _log(
+                '内嵌字幕加载成功: $label (ID: ${track.id})',
+                level: LogLevel.debug,
+              );
 
               // 保存字幕记录（内嵌字幕）
               await _saveFolderTrackSettings(
@@ -3417,8 +3525,13 @@ class VideoPlayerState extends State<VideoPlayer> {
             if (wasPlaying) {
               await player.play();
             }
-          } catch (e) {
-            print('加载字幕失败: $e');
+          } catch (e, stack) {
+            _log(
+              '加载内嵌字幕失败: $label',
+              level: LogLevel.error,
+              error: e,
+              stackTrace: stack,
+            );
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
@@ -4455,10 +4568,18 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
 
       // 打印调试信息
-      print('MPV视频属性: $debugValues');
+      _log(
+        'MPV视频属性: $debugValues',
+        level: LogLevel.debug,
+      );
       result['videoBitrate'] = 'N/A (无法读取)';
-    } catch (e) {
-      print('获取扩展视频信息错误: $e');
+    } catch (e, stack) {
+      _log(
+        '获取扩展视频信息错误',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       result['videoBitrate'] = 'N/A (错误)';
     }
 

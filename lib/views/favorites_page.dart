@@ -6,6 +6,7 @@ import 'package:alist_player/views/index.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter/services.dart';
+import 'package:alist_player/utils/logger.dart';
 
 class FavoritesPage extends StatefulWidget {
   const FavoritesPage({super.key});
@@ -23,6 +24,22 @@ class _FavoritesPageState extends State<FavoritesPage>
   final Set<FavoriteDirectory> _selectedItems = {};
   late final AnimationController _controller;
   String _debugMessage = '';
+
+  /// 统一的收藏页日志出口，确保移动端与桌面端日志一致
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.info,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    AppLogger().captureConsoleOutput(
+      'FavoritesPage',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
 
   @override
   bool get wantKeepAlive => true;
@@ -203,7 +220,12 @@ class _FavoritesPageState extends State<FavoritesPage>
       });
       _controller.forward(from: 0);
     } catch (e) {
-      print('Error loading favorites: $e');
+      _log(
+        '加载收藏列表失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: StackTrace.current,
+      );
       if (!mounted) return;
       setState(() {
         _isLoading = false;

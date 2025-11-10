@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/historical_record.dart';
+import 'package:alist_player/utils/logger.dart';
 import 'package:postgres/postgres.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -16,6 +17,22 @@ class DatabaseHelper {
   late String _username;
   late String _password;
 
+  /// 数据库统一日志出口，便于跨端追踪 SQL 操作
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.info,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    AppLogger().captureConsoleOutput(
+      'DatabaseHelper',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
   // 单例模式
   static DatabaseHelper get instance {
     _instance ??= DatabaseHelper._();
@@ -28,7 +45,8 @@ class DatabaseHelper {
   Future<bool> _isSqlLoggingEnabled() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(AppConstants.enableSqlLoggingKey) ?? AppConstants.defaultEnableSqlLogging;
+      return prefs.getBool(AppConstants.enableSqlLoggingKey) ??
+          AppConstants.defaultEnableSqlLogging;
     } catch (e) {
       return AppConstants.defaultEnableSqlLogging;
     }
@@ -70,9 +88,17 @@ class DatabaseHelper {
           queryTimeout: Duration(seconds: 30),
         ),
       );
-      print('Database connected successfully to $host:$port/$database');
-    } catch (e) {
-      print('Database connection failed: $e');
+      _log(
+        'Database connected successfully to $host:$port/$database',
+        level: LogLevel.info,
+      );
+    } catch (e, stack) {
+      _log(
+        'Database connection failed',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       _connection = null;
       rethrow;
     }
@@ -87,8 +113,13 @@ class DatabaseHelper {
     try {
       // 测试连接是否有效
       await _connection!.execute('SELECT 1');
-    } catch (e) {
-      print('Connection test failed: $e');
+    } catch (e, stack) {
+      _log(
+        'Connection test failed',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       _connection = null;
       // 使用保存的配置重新连接
       await init(
@@ -112,8 +143,10 @@ class DatabaseHelper {
       // 根据设置决定是否打印SQL日志
       final enableLogging = await _isSqlLoggingEnabled();
       if (enableLogging) {
-        print('Executing SQL: $sql');
-        print('Parameters: $parameters');
+        _log(
+          'Executing SQL: $sql\nParameters: $parameters',
+          level: LogLevel.debug,
+        );
       }
 
       final results = await _connection!.execute(
@@ -123,11 +156,14 @@ class DatabaseHelper {
       );
 
       return results.map((row) => row.toColumnMap()).toList();
-    } catch (e) {
-      // 错误信息始终打印，不受设置控制
-      print('Query execution failed: $e');
-      print('SQL: $sql');
-      print('Parameters: $parameters');
+    } catch (e, stack) {
+      // 错误信息始终记录，不受设置控制
+      _log(
+        'Query execution failed: $sql\nParameters: $parameters',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -187,18 +223,25 @@ class DatabaseHelper {
         ORDER BY change_time DESC
       ''');
 
-      // 打印结果到控制台
-      print('=== Historical Records ===');
+      // 记录调试信息
+      final buffer = StringBuffer()..writeln('=== Historical Records ===');
       for (var record in results) {
-        print('ID: ${record['id']}');
-        print('Path: ${record['path']}');
-        print('Name: ${record['name']}');
-        print('Created At: ${record['created_at']}');
-        print('------------------------');
+        buffer
+          ..writeln('ID: ${record['id']}')
+          ..writeln('Path: ${record['path']}')
+          ..writeln('Name: ${record['name']}')
+          ..writeln('Created At: ${record['created_at']}')
+          ..writeln('------------------------');
       }
-      print('Total records: ${results.length}');
-    } catch (e) {
-      print('Failed to query historical records: $e');
+      buffer.writeln('Total records: ${results.length}');
+      _log(buffer.toString(), level: LogLevel.debug);
+    } catch (e, stack) {
+      _log(
+        'Failed to query historical records',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -232,9 +275,14 @@ class DatabaseHelper {
         'totalDuration': totalVideoDuration,
       });
 
-      print('Historical record upserted successfully');
-    } catch (e) {
-      print('Failed to upsert historical record: $e');
+      _log('Historical record upserted successfully', level: LogLevel.debug);
+    } catch (e, stack) {
+      _log(
+        'Failed to upsert historical record',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -248,8 +296,13 @@ class DatabaseHelper {
       );
 
       return results.isNotEmpty ? results.first : null;
-    } catch (e) {
-      print('Failed to get historical record: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get historical record',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -273,8 +326,13 @@ class DatabaseHelper {
       });
 
       return results;
-    } catch (e) {
-      print('Failed to get user historical records: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get user historical records',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -287,9 +345,14 @@ class DatabaseHelper {
         {'sha1': videoSha1},
       );
 
-      print('Historical record deleted successfully');
-    } catch (e) {
-      print('Failed to delete historical record: $e');
+      _log('Historical record deleted successfully', level: LogLevel.debug);
+    } catch (e, stack) {
+      _log(
+        'Failed to delete historical record',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -302,9 +365,17 @@ class DatabaseHelper {
         {'userId': userId},
       );
 
-      print('User historical records cleared successfully');
-    } catch (e) {
-      print('Failed to clear user historical records: $e');
+      _log(
+        'User historical records cleared successfully',
+        level: LogLevel.debug,
+      );
+    } catch (e, stack) {
+      _log(
+        'Failed to clear user historical records',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -324,9 +395,14 @@ class DatabaseHelper {
         'seek': videoSeek,
       });
 
-      print('Video seek updated successfully');
-    } catch (e) {
-      print('Failed to update video seek: $e');
+      _log('Video seek updated successfully', level: LogLevel.debug);
+    } catch (e, stack) {
+      _log(
+        'Failed to update video seek',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -358,8 +434,13 @@ class DatabaseHelper {
       });
 
       return results;
-    } catch (e) {
-      print('Failed to get recent historical records: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get recent historical records',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -376,8 +457,13 @@ class DatabaseHelper {
       });
 
       return results.first['count'] as int;
-    } catch (e) {
-      print('Failed to get user historical records count: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get user historical records count',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -407,8 +493,13 @@ class DatabaseHelper {
       });
 
       return results.map((record) => HistoricalRecord.fromMap(record)).toList();
-    } catch (e) {
-      print('Failed to get historical records by path: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get historical records by path',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -441,8 +532,13 @@ class DatabaseHelper {
       return results.isNotEmpty
           ? HistoricalRecord.fromMap(results.first)
           : null;
-    } catch (e) {
-      print('Failed to get historical record by name: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get historical record by name',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -480,8 +576,13 @@ class DatabaseHelper {
       });
 
       return results;
-    } catch (e) {
-      print('Failed to search historical records: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to search historical records',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -506,8 +607,13 @@ class DatabaseHelper {
       });
 
       return results.first['count'] as int;
-    } catch (e) {
-      print('Failed to get search historical records count: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get search historical records count',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -519,7 +625,10 @@ class DatabaseHelper {
     required int userId,
   }) async {
     try {
-      print('开始批量更新历史记录路径，共 ${renameMap.length} 个项目');
+      _log(
+        '开始批量更新历史记录路径，共 ${renameMap.length} 个项目',
+        level: LogLevel.info,
+      );
 
       int successCount = 0;
       int failCount = 0;
@@ -547,7 +656,10 @@ class DatabaseHelper {
               'userId': userId,
             });
 
-            print('更新文件夹历史记录成功: $oldName -> $newName');
+            _log(
+              '更新文件夹历史记录成功: $oldName -> $newName',
+              level: LogLevel.debug,
+            );
           } else if (fileType == 2) {
             // 文件重命名：更新 video_name
             await query('''
@@ -563,19 +675,35 @@ class DatabaseHelper {
               'userId': userId,
             });
 
-            print('更新文件历史记录成功: $oldName -> $newName');
+            _log(
+              '更新文件历史记录成功: $oldName -> $newName',
+              level: LogLevel.debug,
+            );
           }
 
           successCount++;
-        } catch (e) {
+        } catch (e, stack) {
           failCount++;
-          print('更新历史记录失败: $oldName -> $newName, 错误: $e');
+          _log(
+            '更新历史记录失败: $oldName -> $newName',
+            level: LogLevel.error,
+            error: e,
+            stackTrace: stack,
+          );
         }
       }
 
-      print('批量更新历史记录完成: 成功 $successCount 个, 失败 $failCount 个');
-    } catch (e) {
-      print('批量更新历史记录异常: $e');
+      _log(
+        '批量更新历史记录完成: 成功 $successCount 个, 失败 $failCount 个',
+        level: LogLevel.info,
+      );
+    } catch (e, stack) {
+      _log(
+        '批量更新历史记录异常',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -583,7 +711,10 @@ class DatabaseHelper {
   Future<void> saveHistoricalRecord(HistoricalRecord record) async {
     try {
       if (record.screenshot != null) {
-        print('Saving screenshot size: ${record.screenshot!.length} bytes');
+        _log(
+          'Saving screenshot size: ${record.screenshot!.length} bytes',
+          level: LogLevel.debug,
+        );
       }
 
       await query('''
@@ -608,9 +739,14 @@ class DatabaseHelper {
         'screenshot': record.screenshot,
       });
 
-      print('Historical record saved successfully');
-    } catch (e) {
-      print('Failed to save historical record: $e');
+      _log('Historical record saved successfully', level: LogLevel.debug);
+    } catch (e, stack) {
+      _log(
+        'Failed to save historical record',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -621,7 +757,10 @@ class DatabaseHelper {
     required int userId,
   }) async {
     try {
-      print('Fetching screenshot for video: $videoSha1, user: $userId');
+      _log(
+        'Fetching screenshot for video: $videoSha1, user: $userId',
+        level: LogLevel.debug,
+      );
 
       final results = await query('''
         SELECT screenshot  -- 直接获取二进制数据，不使用 encode
@@ -634,20 +773,28 @@ class DatabaseHelper {
       });
 
       if (results.isEmpty) {
-        print('No screenshot found');
+        _log('No screenshot found', level: LogLevel.debug);
         return null;
       }
 
       final bytes = results.first['screenshot'] as Uint8List?;
       if (bytes == null || bytes.isEmpty) {
-        print('Screenshot data is empty');
+        _log('Screenshot data is empty', level: LogLevel.debug);
         return null;
       }
 
-      print('Retrieved screenshot size: ${bytes.length} bytes');
+      _log(
+        'Retrieved screenshot size: ${bytes.length} bytes',
+        level: LogLevel.debug,
+      );
       return bytes;
-    } catch (e) {
-      print('Failed to get historical record screenshot: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get historical record screenshot',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return null;
     }
   }
@@ -659,8 +806,11 @@ class DatabaseHelper {
     required int userId,
   }) async {
     try {
-      print('Adding favorite directory - path: $path, name: $name, userId: $userId');
-      
+      _log(
+        'Adding favorite directory - path: $path, name: $name, userId: $userId',
+        level: LogLevel.debug,
+      );
+
       // 先检查是否已存在
       final existingCheck = await query('''
         SELECT COUNT(*) as count FROM t_favorite_directories 
@@ -669,10 +819,13 @@ class DatabaseHelper {
         'path': path,
         'userId': userId,
       });
-      
+
       final alreadyExists = (existingCheck.first['count'] as int) > 0;
-      print('Directory already exists in favorites: $alreadyExists');
-      
+      _log(
+        'Directory already exists in favorites: $alreadyExists',
+        level: LogLevel.debug,
+      );
+
       if (alreadyExists) {
         // 如果已存在，返回现有记录的ID
         final existing = await query('''
@@ -683,12 +836,15 @@ class DatabaseHelper {
           'path': path,
           'userId': userId,
         });
-        
+
         final existingId = existing.first['id'] as int;
-        print('Using existing favorite directory id: $existingId');
+        _log(
+          'Using existing favorite directory id: $existingId',
+          level: LogLevel.debug,
+        );
         return existingId;
       }
-      
+
       const sql = '''
         INSERT INTO t_favorite_directories 
         (path, name, user_id, created_at)
@@ -703,10 +859,15 @@ class DatabaseHelper {
       });
 
       final newId = result.first['id'] as int;
-      print('Added favorite directory with id: $newId');
+      _log('Added favorite directory with id: $newId', level: LogLevel.debug);
       return newId;
-    } catch (e) {
-      print('Failed to add favorite directory: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to add favorite directory',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -714,8 +875,11 @@ class DatabaseHelper {
   // 获取用户的所有收藏目录
   Future<List<Map<String, dynamic>>> getFavoriteDirectories(int userId) async {
     try {
-      print('Fetching favorite directories for userId: $userId');
-      
+      _log(
+        'Fetching favorite directories for userId: $userId',
+        level: LogLevel.debug,
+      );
+
       final results = await query('''
         SELECT * FROM t_favorite_directories 
         WHERE user_id = @userId
@@ -724,15 +888,22 @@ class DatabaseHelper {
         'userId': userId,
       });
 
-      print('Found ${results.length} favorite directories');
+      _log(
+        'Found ${results.length} favorite directories',
+        level: LogLevel.debug,
+      );
       if (results.isNotEmpty) {
-        // 打印第一条记录的详细信息
-        print('First record: ${results.first}');
+        _log('First record: ${results.first}', level: LogLevel.debug);
       }
 
       return results;
-    } catch (e) {
-      print('Failed to get favorite directories: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to get favorite directories',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -743,8 +914,11 @@ class DatabaseHelper {
     required int userId,
   }) async {
     try {
-      print('Checking if directory is favorite - path: $path, userId: $userId');
-      
+      _log(
+        'Checking if directory is favorite - path: $path, userId: $userId',
+        level: LogLevel.debug,
+      );
+
       final results = await query('''
         SELECT COUNT(*) as count FROM t_favorite_directories 
         WHERE path = @path AND user_id = @userId
@@ -754,11 +928,19 @@ class DatabaseHelper {
       });
 
       final count = results.first['count'] as int;
-      print('Directory favorite status: ${count > 0}');
-      
+      _log(
+        'Directory favorite status: ${count > 0}',
+        level: LogLevel.debug,
+      );
+
       return count > 0;
-    } catch (e) {
-      print('Failed to check favorite directory: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to check favorite directory',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -776,8 +958,13 @@ class DatabaseHelper {
         'path': path,
         'userId': userId,
       });
-    } catch (e) {
-      print('Failed to remove favorite directory: $e');
+    } catch (e, stack) {
+      _log(
+        'Failed to remove favorite directory',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }

@@ -2,12 +2,30 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/models/database_config_preset.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/utils/db.dart';
+import 'package:alist_player/utils/logger.dart';
 
 /// 数据库配置管理器
 class DatabaseConfigManager {
-  static final DatabaseConfigManager _instance = DatabaseConfigManager._internal();
+  static final DatabaseConfigManager _instance =
+      DatabaseConfigManager._internal();
   factory DatabaseConfigManager() => _instance;
   DatabaseConfigManager._internal();
+
+  /// 数据库配置管理日志
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.info,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    AppLogger().captureConsoleOutput(
+      'DatabaseConfigManager',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
 
   /// 获取所有数据库配置预设
   Future<List<DatabaseConfigPreset>> getAllPresets() async {
@@ -15,17 +33,22 @@ class DatabaseConfigManager {
       final prefs = await SharedPreferences.getInstance();
       final presetsJson = prefs.getString(AppConstants.dbPresetsKey) ?? '[]';
       final presets = DatabaseConfigPreset.fromJsonList(presetsJson);
-      
+
       // 如果没有预设，创建默认预设
       if (presets.isEmpty) {
         final defaultPreset = _createDefaultPreset();
         await _savePresets([defaultPreset]);
         return [defaultPreset];
       }
-      
+
       return presets;
-    } catch (e) {
-      print('获取数据库配置预设失败: $e');
+    } catch (e, stack) {
+      _log(
+        '获取数据库配置预设失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return [];
     }
   }
@@ -42,7 +65,8 @@ class DatabaseConfigManager {
         presets[existingIndexById] = preset;
       } else {
         // 检查是否已存在同名配置（用于新增时的重名检查）
-        final existingIndexByName = presets.indexWhere((p) => p.name == preset.name);
+        final existingIndexByName =
+            presets.indexWhere((p) => p.name == preset.name);
         if (existingIndexByName != -1) {
           throw Exception('已存在同名的配置预设');
         }
@@ -52,8 +76,13 @@ class DatabaseConfigManager {
 
       await _savePresets(presets);
       return true;
-    } catch (e) {
-      print('保存数据库配置预设失败: $e');
+    } catch (e, stack) {
+      _log(
+        '保存数据库配置预设失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return false;
     }
   }
@@ -63,25 +92,30 @@ class DatabaseConfigManager {
     try {
       final presets = await getAllPresets();
       final originalLength = presets.length;
-      
+
       // 不能删除默认配置
       presets.removeWhere((p) => p.id == presetId && !p.isDefault);
-      
+
       if (presets.length < originalLength) {
         await _savePresets(presets);
-        
+
         // 如果删除的是当前使用的配置，切换到第一个配置
         final currentId = await getCurrentPresetId();
         if (currentId == presetId && presets.isNotEmpty) {
           await setCurrentPreset(presets.first.id);
         }
-        
+
         return true;
       }
-      
+
       return false;
-    } catch (e) {
-      print('删除数据库配置预设失败: $e');
+    } catch (e, stack) {
+      _log(
+        '删除数据库配置预设失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return false;
     }
   }
@@ -91,8 +125,13 @@ class DatabaseConfigManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString(AppConstants.currentDbPresetIdKey);
-    } catch (e) {
-      print('获取当前数据库配置预设ID失败: $e');
+    } catch (e, stack) {
+      _log(
+        '获取当前数据库配置预设ID失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return null;
     }
   }
@@ -114,8 +153,13 @@ class DatabaseConfigManager {
         // 如果找不到指定ID的预设，返回第一个预设
         return presets.isNotEmpty ? presets.first : null;
       }
-    } catch (e) {
-      print('获取当前数据库配置预设失败: $e');
+    } catch (e, stack) {
+      _log(
+        '获取当前数据库配置预设失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return null;
     }
   }
@@ -125,16 +169,21 @@ class DatabaseConfigManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(AppConstants.currentDbPresetIdKey, presetId);
-      
+
       // 应用配置到当前设置
       final preset = await getPresetById(presetId);
       if (preset != null) {
         await _applyPresetToCurrentSettings(preset);
       }
-      
+
       return true;
-    } catch (e) {
-      print('设置当前数据库配置预设失败: $e');
+    } catch (e, stack) {
+      _log(
+        '设置当前数据库配置预设失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return false;
     }
   }
@@ -147,8 +196,13 @@ class DatabaseConfigManager {
         (p) => p.id == presetId,
         orElse: () => throw Exception('配置预设不存在'),
       );
-    } catch (e) {
-      print('根据ID获取配置预设失败: $e');
+    } catch (e, stack) {
+      _log(
+        '根据ID获取配置预设失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return null;
     }
   }
@@ -158,8 +212,13 @@ class DatabaseConfigManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getBool(AppConstants.customDbModeKey) ?? false;
-    } catch (e) {
-      print('检查自定义数据库模式失败: $e');
+    } catch (e, stack) {
+      _log(
+        '检查自定义数据库模式失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return false;
     }
   }
@@ -170,8 +229,13 @@ class DatabaseConfigManager {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool(AppConstants.customDbModeKey, isCustom);
       return true;
-    } catch (e) {
-      print('设置自定义数据库模式失败: $e');
+    } catch (e, stack) {
+      _log(
+        '设置自定义数据库模式失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return false;
     }
   }
@@ -192,8 +256,13 @@ class DatabaseConfigManager {
       // 测试连接
       await tempDb.query('SELECT 1');
       return true;
-    } catch (e) {
-      print('测试数据库连接失败: $e');
+    } catch (e, stack) {
+      _log(
+        '测试数据库连接失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       return false;
     }
   }
@@ -203,12 +272,12 @@ class DatabaseConfigManager {
     try {
       final presets = await getAllPresets();
       final currentId = await getCurrentPresetId();
-      
+
       // 如果没有当前配置，设置第一个为当前配置
       if (currentId == null && presets.isNotEmpty) {
         await setCurrentPreset(presets.first.id);
       }
-      
+
       // 如果不是自定义模式，应用当前配置预设
       final isCustom = await isCustomDbMode();
       if (!isCustom) {
@@ -217,8 +286,13 @@ class DatabaseConfigManager {
           await _applyPresetToCurrentSettings(currentPreset);
         }
       }
-    } catch (e) {
-      print('初始化数据库配置管理器失败: $e');
+    } catch (e, stack) {
+      _log(
+        '初始化数据库配置管理器失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -243,7 +317,8 @@ class DatabaseConfigManager {
   }
 
   /// 将配置预设应用到当前设置
-  Future<void> _applyPresetToCurrentSettings(DatabaseConfigPreset preset) async {
+  Future<void> _applyPresetToCurrentSettings(
+      DatabaseConfigPreset preset) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await Future.wait([
@@ -253,7 +328,7 @@ class DatabaseConfigManager {
         prefs.setString(AppConstants.dbUserKey, preset.username),
         prefs.setString(AppConstants.dbPasswordKey, preset.password),
       ]);
-      
+
       // 重新初始化数据库连接
       await DatabaseHelper.instance.close();
       await DatabaseHelper.instance.init(
@@ -263,8 +338,13 @@ class DatabaseConfigManager {
         username: preset.username,
         password: preset.password,
       );
-    } catch (e) {
-      print('应用配置预设到当前设置失败: $e');
+    } catch (e, stack) {
+      _log(
+        '应用配置预设到当前设置失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 }

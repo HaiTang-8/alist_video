@@ -6,6 +6,7 @@ import 'package:alist_player/models/file_item.dart';
 import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
+import 'package:alist_player/utils/logger.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:alist_player/widgets/batch_rename_dialog.dart';
 import 'package:alist_player/widgets/quick_regex_rename_dialog.dart';
@@ -49,6 +50,22 @@ class _HomePageState extends State<HomePage>
 
   // 添加一个映射来跟踪哪些文件已下载
   final Set<String> _localFiles = {};
+
+  /// HomePage 的统一日志出口，确保不同平台的行为记录一致
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.info,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    AppLogger().captureConsoleOutput(
+      'HomePage',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
 
   // 为长文件名插入零宽空格，模拟 word-break: break-all，让英文和符号都能在任意字符处换行
   String _insertWordBreakHints(String text) {
@@ -143,9 +160,17 @@ class _HomePageState extends State<HomePage>
         _localFiles.addAll(localVideos);
       });
 
-      print("Found ${_localFiles.length} local videos in current directory");
-    } catch (e) {
-      print("Error checking local files: $e");
+      _log(
+        '当前目录存在本地缓存视频 ${_localFiles.length} 个',
+        level: LogLevel.debug,
+      );
+    } catch (e, stack) {
+      _log(
+        '检测本地缓存视频失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -182,10 +207,16 @@ class _HomePageState extends State<HomePage>
         }
       });
 
-      print(
-          "Found ${historyRecords.length} history records for current directory");
-    } catch (e) {
-      print("Error loading video history records: $e");
+      _log(
+        '当前目录匹配到 ${historyRecords.length} 条历史记录',
+      );
+    } catch (e, stack) {
+      _log(
+        '加载当前目录历史记录失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -203,8 +234,13 @@ class _HomePageState extends State<HomePage>
       setState(() {
         _isFavorite = isFavorite;
       });
-    } catch (e) {
-      print('Failed to check favorite status: $e');
+    } catch (e, stack) {
+      _log(
+        '查询收藏状态失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
     }
   }
 
@@ -294,9 +330,10 @@ class _HomePageState extends State<HomePage>
   }
 
   void _gotoVideo(FileItem file) async {
-    print("path: ${currentPath.join('/')}");
-    print("name: ${file.name}");
-    print("file: ${file}");
+    _log(
+      '准备进入视频详情 path=${currentPath.join('/')}, name=${file.name}',
+      level: LogLevel.debug,
+    );
 
     // 等待视频播放器页面返回，然后刷新列表
     await Navigator.of(context).push(MaterialPageRoute(
@@ -307,7 +344,7 @@ class _HomePageState extends State<HomePage>
 
     // 从视频播放器返回后，刷新当前列表以更新播放历史记录等信息
     if (mounted) {
-      print("从视频播放器返回，正在刷新列表...");
+      _log('从视频播放器返回，正在刷新列表', level: LogLevel.debug);
       await _getList(refresh: true);
     }
   }
@@ -396,7 +433,10 @@ class _HomePageState extends State<HomePage>
     }
 
     try {
-      print('Searching with scope: $_searchScope');
+      _log(
+        '发起搜索 scope=$_searchScope, keyword=$_searchKeyword',
+        level: LogLevel.debug,
+      );
       var res = await FsApi.search(
         keyword: _searchKeyword,
         parent: currentPath.join('/'),
@@ -631,8 +671,10 @@ class _HomePageState extends State<HomePage>
                   .addAll(file.parent.split('/').where((e) => e.isNotEmpty));
             }
 
-            print("Video path: ${videoPath.join('/')}");
-            print("Video name: ${file.name}");
+            _log(
+              '搜索命中视频 path=${videoPath.join('/')}, name=${file.name}',
+              level: LogLevel.debug,
+            );
 
             // 等待视频播放器页面返回，然后刷新列表
             await Navigator.of(context).push(MaterialPageRoute(
@@ -644,7 +686,7 @@ class _HomePageState extends State<HomePage>
 
             // 从视频播放器返回后，刷新当前列表以更新播放历史记录等信息
             if (mounted) {
-              print("从搜索结果的视频播放器返回，正在刷新列表...");
+              _log('搜索结果返回后刷新列表', level: LogLevel.debug);
               await _getList(refresh: true);
             }
           }
@@ -770,7 +812,10 @@ class _HomePageState extends State<HomePage>
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: () {
-          print('Filter changed to: $value');
+          _log(
+            '搜索过滤条件切换为 $value',
+            level: LogLevel.debug,
+          );
           onValueChanged(value);
         },
         child: Container(
@@ -829,8 +874,10 @@ class _HomePageState extends State<HomePage>
     );
     _loadCurrentUser();
 
-    print(
-        'HomePage.initState: initialUrl=${widget.initialUrl}, initialTitle=${widget.initialTitle}');
+    _log(
+      'initState: initialUrl=${widget.initialUrl}, initialTitle=${widget.initialTitle}',
+      level: LogLevel.debug,
+    );
 
     // 如果传入了初始URL，先使用该URL
     if (widget.initialUrl != null) {
@@ -843,11 +890,17 @@ class _HomePageState extends State<HomePage>
           currentPath.insert(0, '/');
         }
       });
-      print('HomePage.initState: 已设置路径 currentPath=${currentPath.join('/')}');
+      _log(
+        'initState: 已设置路径 ${currentPath.join('/')}',
+        level: LogLevel.debug,
+      );
       _getList().then((_) => _animationController.forward());
     } else {
       // 否则加载默认路径
-      print('HomePage.initState: 使用默认路径 [/]');
+      _log(
+        'initState: 使用默认路径 [/]',
+        level: LogLevel.debug,
+      );
       _getList().then((_) => _animationController.forward());
     }
   }
@@ -856,8 +909,10 @@ class _HomePageState extends State<HomePage>
   void didUpdateWidget(HomePage oldWidget) {
     super.didUpdateWidget(oldWidget);
 
-    print(
-        'HomePage.didUpdateWidget: 旧initialUrl=${oldWidget.initialUrl}, 新initialUrl=${widget.initialUrl}');
+    _log(
+      'didUpdateWidget: 旧initialUrl=${oldWidget.initialUrl}, 新initialUrl=${widget.initialUrl}',
+      level: LogLevel.debug,
+    );
 
     // 当widget更新且initialUrl有变化时，重新加载目录
     if (widget.initialUrl != oldWidget.initialUrl &&
@@ -871,8 +926,10 @@ class _HomePageState extends State<HomePage>
           currentPath.insert(0, '/');
         }
       });
-      print(
-          'HomePage.didUpdateWidget: 路径已更新 currentPath=${currentPath.join('/')}');
+      _log(
+        'didUpdateWidget: 路径已更新 ${currentPath.join('/')}',
+        level: LogLevel.debug,
+      );
       _animationController.reset();
       _getList().then((_) => _animationController.forward());
     }

@@ -9,6 +9,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/apis/login.dart';
+import 'package:alist_player/utils/logger.dart';
 
 /// api 请求工具类
 class WooHttpUtil {
@@ -213,6 +214,21 @@ class RequestInterceptors extends Interceptor {
   int _retryCount = 0;
   static const int _maxRetries = 3;
 
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.info,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    AppLogger().captureConsoleOutput(
+      'WooHttpUtil',
+      message,
+      level: level,
+      error: error,
+      stackTrace: stackTrace,
+    );
+  }
+
   // 添加重试登录方法
   Future<bool> _retryLogin() async {
     try {
@@ -252,8 +268,8 @@ class RequestInterceptors extends Interceptor {
           DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
       await logFile.writeAsString('[$timestamp] $content\n',
           mode: FileMode.append);
-    } catch (e) {
-      print('写入日志失败: $e');
+    } catch (e, stack) {
+      _log('写入日志失败', level: LogLevel.error, error: e, stackTrace: stack);
     }
   }
 

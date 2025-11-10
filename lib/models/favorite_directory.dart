@@ -1,3 +1,20 @@
+import 'package:alist_player/utils/logger.dart';
+
+void _logFavorite(
+  String message, {
+  LogLevel level = LogLevel.info,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  AppLogger().captureConsoleOutput(
+    'FavoriteDirectory',
+    message,
+    level: level,
+    error: error,
+    stackTrace: stackTrace,
+  );
+}
+
 class FavoriteDirectory {
   final int id;
   final String path;
@@ -14,11 +31,11 @@ class FavoriteDirectory {
   });
 
   factory FavoriteDirectory.fromMap(Map<String, dynamic> map) {
-    print('转换记录: $map'); // 添加调试信息
+    _logFavorite('转换记录: $map', level: LogLevel.debug); // 添加调试信息
     try {
       final dynamic createdAtValue = map['created_at'];
       final DateTime createdAt;
-      
+
       if (createdAtValue is DateTime) {
         // 如果已经是DateTime类型，直接使用
         createdAt = createdAtValue;
@@ -37,8 +54,13 @@ class FavoriteDirectory {
         userId: map['user_id'] as int,
         createdAt: createdAt,
       );
-    } catch (e) {
-      print('记录转换错误: $e');
+    } catch (e, stack) {
+      _logFavorite(
+        '记录转换错误',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
       rethrow;
     }
   }
@@ -52,4 +74,4 @@ class FavoriteDirectory {
       'created_at': createdAt.toIso8601String(),
     };
   }
-} 
+}

@@ -4,22 +4,40 @@ import 'package:alist_player/views/home_page.dart';
 import 'package:alist_player/views/person_page.dart';
 import 'package:alist_player/views/downloads_page.dart';
 import 'package:flutter/material.dart';
+import 'package:alist_player/utils/logger.dart';
 import '../utils/download_manager.dart';
+
+/// Index 页统一日志方法，方便定位多 Tab 导航问题
+void _logIndex(
+  String message, {
+  LogLevel level = LogLevel.info,
+  Object? error,
+  StackTrace? stackTrace,
+}) {
+  AppLogger().captureConsoleOutput(
+    'IndexPage',
+    message,
+    level: level,
+    error: error,
+    stackTrace: stackTrace,
+  );
+}
 
 class IndexPage extends StatefulWidget {
   // 静态实例用于访问当前激活的IndexPage状态
   static _IndexState? currentState;
-  
+
   const IndexPage({super.key});
-  
+
   // 静态方法用于页面间导航
   static void navigateToHome(BuildContext context, String path, String? title) {
-    print('IndexPage.navigateToHome 被调用: path=$path, title=$title');
+    _logIndex('navigateToHome 被调用 path=$path, title=$title',
+        level: LogLevel.debug);
     if (currentState != null) {
-      print('找到当前IndexPage状态，执行导航');
+      _logIndex('找到当前 IndexPage 状态，执行导航', level: LogLevel.debug);
       currentState!.navigateToHomeWithPath(path, title);
     } else {
-      print('未找到当前IndexPage状态，导航失败');
+      _logIndex('未找到当前 IndexPage 状态，导航失败', level: LogLevel.warning);
       // 降级处理，直接导航到新页面
       Navigator.of(context).push(
         MaterialPageRoute(
@@ -31,7 +49,7 @@ class IndexPage extends StatefulWidget {
       );
     }
   }
-  
+
   @override
   State<IndexPage> createState() => _IndexState();
 }
@@ -73,7 +91,10 @@ class _IndexState extends State<IndexPage> {
 
   // 添加方法，允许其他页面直接切换到主页并加载指定路径
   void navigateToHomeWithPath(String path, String? title) {
-    print('_IndexState.navigateToHomeWithPath 被调用: path=$path, title=$title, 当前索引=$_selectedIndex');
+    _logIndex(
+      '_IndexState.navigateToHomeWithPath path=$path, title=$title, 当前索引=$_selectedIndex',
+      level: LogLevel.debug,
+    );
 
     // 通知HomePage更新路径
     _homePageKey.currentState?.updatePath(path, title);
@@ -81,12 +102,15 @@ class _IndexState extends State<IndexPage> {
     setState(() {
       _selectedIndex = 0; // 切换到首页
     });
-    print('导航状态已更新: path=$path, title=$title, _selectedIndex=$_selectedIndex');
+    _logIndex(
+      '导航状态已更新 path=$path, title=$title, _selectedIndex=$_selectedIndex',
+      level: LogLevel.debug,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    print('IndexPage.build: _selectedIndex=$_selectedIndex');
+    _logIndex('build: _selectedIndex=$_selectedIndex', level: LogLevel.debug);
 
     return Scaffold(
       body: IndexedStack(
