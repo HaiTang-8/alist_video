@@ -344,10 +344,6 @@ class _CustomMaterialVideoControlsState
     return _isInSegment(localX, 0);
   }
 
-  void _handlePointerDown(PointerDownEvent event) {
-    onTap();
-  }
-
   @override
   void initState() {
     super.initState();
@@ -486,83 +482,78 @@ class _CustomMaterialVideoControlsState
                       top: 16.0,
                       right: 16.0,
                       bottom: 16.0 + subtitleVerticalShiftOffset,
-                      child: Listener(
-                        onPointerDown: (event) => _handlePointerDown(event),
-                        child: GestureDetector(
-                          onDoubleTapDown: _handleDoubleTapDown,
-                          onLongPress: _theme(context).speedUpOnLongPress
-                              ? _handleLongPress
-                              : null,
-                          onLongPressEnd: _theme(context).speedUpOnLongPress
-                              ? _handleLongPressEnd
-                              : null,
-                          onDoubleTap: () {
-                            if (_tapPosition == null) {
-                              return;
+                      child: GestureDetector(
+                        // 仅在确认不是双击或长按后再切换遮罩，保证长按提速优先级更高且不会误触遮罩。
+                        onTap: onTap,
+                        onDoubleTapDown: _handleDoubleTapDown,
+                        onLongPress: _theme(context).speedUpOnLongPress
+                            ? _handleLongPress
+                            : null,
+                        onLongPressEnd: _theme(context).speedUpOnLongPress
+                            ? _handleLongPressEnd
+                            : null,
+                        onDoubleTap: () {
+                          if (_tapPosition == null) {
+                            return;
+                          }
+                          if (_isInRightSegment(_tapPosition!.dx)) {
+                            if ((!mount && _theme(context).seekOnDoubleTap) ||
+                                seekOnDoubleTapEnabledWhileControlsAreVisible) {
+                              onDoubleTapSeekForward();
                             }
-                            if (_isInRightSegment(_tapPosition!.dx)) {
+                          } else {
+                            if (_isInLeftSegment(_tapPosition!.dx)) {
                               if ((!mount && _theme(context).seekOnDoubleTap) ||
                                   seekOnDoubleTapEnabledWhileControlsAreVisible) {
-                                onDoubleTapSeekForward();
-                              }
-                            } else {
-                              if (_isInLeftSegment(_tapPosition!.dx)) {
-                                if ((!mount &&
-                                        _theme(context).seekOnDoubleTap) ||
-                                    seekOnDoubleTapEnabledWhileControlsAreVisible) {
-                                  onDoubleTapSeekBackward();
-                                }
+                                onDoubleTapSeekBackward();
                               }
                             }
-                          },
-                          onHorizontalDragUpdate: (details) {
-                            if ((!mount && _theme(context).seekGesture) ||
-                                (_theme(context).seekGesture &&
+                          }
+                        },
+                        onHorizontalDragUpdate: (details) {
+                          if ((!mount && _theme(context).seekGesture) ||
+                              (_theme(context).seekGesture &&
+                                  _theme(context)
+                                      .gesturesEnabledWhileControlsVisible)) {
+                            onHorizontalDragUpdate(details);
+                          }
+                        },
+                        onHorizontalDragEnd: (details) {
+                          onHorizontalDragEnd();
+                        },
+                        onVerticalDragUpdate: (e) async {
+                          final delta = e.delta.dy;
+                          final Offset position = e.localPosition;
+
+                          if (position.dx <= widgetWidth(context) / 2) {
+                            // Left side of screen swiped
+                            if ((!mount && _theme(context).brightnessGesture) ||
+                                (_theme(context).brightnessGesture &&
                                     _theme(context)
                                         .gesturesEnabledWhileControlsVisible)) {
-                              onHorizontalDragUpdate(details);
+                              final brightness = _brightnessValue -
+                                  delta /
+                                      _theme(context).verticalGestureSensitivity;
+                              final result = brightness.clamp(0.0, 1.0);
+                              setBrightness(result);
                             }
-                          },
-                          onHorizontalDragEnd: (details) {
-                            onHorizontalDragEnd();
-                          },
-                          onVerticalDragUpdate: (e) async {
-                            final delta = e.delta.dy;
-                            final Offset position = e.localPosition;
+                          } else {
+                            // Right side of screen swiped
 
-                            if (position.dx <= widgetWidth(context) / 2) {
-                              // Left side of screen swiped
-                              if ((!mount &&
-                                      _theme(context).brightnessGesture) ||
-                                  (_theme(context).brightnessGesture &&
-                                      _theme(context)
-                                          .gesturesEnabledWhileControlsVisible)) {
-                                final brightness = _brightnessValue -
-                                    delta /
-                                        _theme(context)
-                                            .verticalGestureSensitivity;
-                                final result = brightness.clamp(0.0, 1.0);
-                                setBrightness(result);
-                              }
-                            } else {
-                              // Right side of screen swiped
-
-                              if ((!mount && _theme(context).volumeGesture) ||
-                                  (_theme(context).volumeGesture &&
-                                      _theme(context)
-                                          .gesturesEnabledWhileControlsVisible)) {
-                                final volume = _volumeValue -
-                                    delta /
-                                        _theme(context)
-                                            .verticalGestureSensitivity;
-                                final result = volume.clamp(0.0, 1.0);
-                                setVolume(result);
-                              }
+                            if ((!mount && _theme(context).volumeGesture) ||
+                                (_theme(context).volumeGesture &&
+                                    _theme(context)
+                                        .gesturesEnabledWhileControlsVisible)) {
+                              final volume = _volumeValue -
+                                  delta /
+                                      _theme(context).verticalGestureSensitivity;
+                              final result = volume.clamp(0.0, 1.0);
+                              setVolume(result);
                             }
-                          },
-                          child: Container(
-                            color: const Color(0x00000000),
-                          ),
+                          }
+                        },
+                        child: Container(
+                          color: const Color(0x00000000),
                         ),
                       ),
                     ),

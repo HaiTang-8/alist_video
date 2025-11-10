@@ -6,6 +6,8 @@ PODS:
   - FlutterMacOS (1.0.0)
   - media_kit_libs_macos_video (1.0.4):
     - FlutterMacOS
+  - media_kit_native_event_loop (1.0.0):
+    - FlutterMacOS
   - media_kit_video (0.0.1):
     - FlutterMacOS
   - network_info_plus (0.0.1):
@@ -15,14 +17,14 @@ PODS:
   - path_provider_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
+  - screen_brightness_macos (0.1.0):
+    - FlutterMacOS
   - share_plus (0.0.1):
     - FlutterMacOS
   - shared_preferences_foundation (0.0.1):
     - Flutter
     - FlutterMacOS
   - url_launcher_macos (0.0.1):
-    - FlutterMacOS
-  - volume_controller (0.0.1):
     - FlutterMacOS
   - wakelock_plus (0.0.1):
     - FlutterMacOS
@@ -32,14 +34,15 @@ DEPENDENCIES:
   - flutter_local_notifications (from `Flutter/ephemeral/.symlinks/plugins/flutter_local_notifications/macos`)
   - FlutterMacOS (from `Flutter/ephemeral`)
   - media_kit_libs_macos_video (from `Flutter/ephemeral/.symlinks/plugins/media_kit_libs_macos_video/macos`)
+  - media_kit_native_event_loop (from `Flutter/ephemeral/.symlinks/plugins/media_kit_native_event_loop/macos`)
   - media_kit_video (from `Flutter/ephemeral/.symlinks/plugins/media_kit_video/macos`)
   - network_info_plus (from `Flutter/ephemeral/.symlinks/plugins/network_info_plus/macos`)
   - package_info_plus (from `Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos`)
   - path_provider_foundation (from `Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin`)
+  - screen_brightness_macos (from `Flutter/ephemeral/.symlinks/plugins/screen_brightness_macos/macos`)
   - share_plus (from `Flutter/ephemeral/.symlinks/plugins/share_plus/macos`)
   - shared_preferences_foundation (from `Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin`)
   - url_launcher_macos (from `Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos`)
-  - volume_controller (from `Flutter/ephemeral/.symlinks/plugins/volume_controller/macos`)
   - wakelock_plus (from `Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos`)
 
 EXTERNAL SOURCES:
@@ -51,6 +54,8 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral
   media_kit_libs_macos_video:
     :path: Flutter/ephemeral/.symlinks/plugins/media_kit_libs_macos_video/macos
+  media_kit_native_event_loop:
+    :path: Flutter/ephemeral/.symlinks/plugins/media_kit_native_event_loop/macos
   media_kit_video:
     :path: Flutter/ephemeral/.symlinks/plugins/media_kit_video/macos
   network_info_plus:
@@ -59,14 +64,14 @@ EXTERNAL SOURCES:
     :path: Flutter/ephemeral/.symlinks/plugins/package_info_plus/macos
   path_provider_foundation:
     :path: Flutter/ephemeral/.symlinks/plugins/path_provider_foundation/darwin
+  screen_brightness_macos:
+    :path: Flutter/ephemeral/.symlinks/plugins/screen_brightness_macos/macos
   share_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/share_plus/macos
   shared_preferences_foundation:
     :path: Flutter/ephemeral/.symlinks/plugins/shared_preferences_foundation/darwin
   url_launcher_macos:
     :path: Flutter/ephemeral/.symlinks/plugins/url_launcher_macos/macos
-  volume_controller:
-    :path: Flutter/ephemeral/.symlinks/plugins/volume_controller/macos
   wakelock_plus:
     :path: Flutter/ephemeral/.symlinks/plugins/wakelock_plus/macos
 
@@ -75,14 +80,15 @@ SPEC CHECKSUMS:
   flutter_local_notifications: 4b427ffabf278fc6ea9484c97505e231166927a5
   FlutterMacOS: 8f6f14fa908a6fb3fba0cd85dbd81ec4b251fb24
   media_kit_libs_macos_video: b3e2bbec2eef97c285f2b1baa7963c67c753fb82
+  media_kit_native_event_loop: 81fd5b45192b72f8b5b69eaf5b540f45777eb8d5
   media_kit_video: c75b07f14d59706c775778e4dd47dd027de8d1e5
   network_info_plus: f4fbc7877ab7b3294500d9441dfa53cd54972d05
   package_info_plus: 12f1c5c2cfe8727ca46cbd0b26677728972d9a5b
   path_provider_foundation: 2b6b4c569c0fb62ec74538f866245ac84301af46
+  screen_brightness_macos: 2d6d3af2165592d9a55ffcd95b7550970e41ebda
   share_plus: 76dd39142738f7a68dd57b05093b5e8193f220f7
   shared_preferences_foundation: fcdcbc04712aee1108ac7fda236f363274528f78
   url_launcher_macos: c82c93949963e55b228a30115bd219499a6fe404
-  volume_controller: 90a5978956cf18ebb7739bf5382fc1b0cfef66d0
   wakelock_plus: 9d63063ffb7af1c215209769067c57103bde719d
 
 PODFILE CHECKSUM: 236401fc2c932af29a9fcf0e97baeeb2d750d367
