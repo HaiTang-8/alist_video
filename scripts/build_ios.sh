@@ -4,6 +4,7 @@
 # 用法: ./scripts/build_ios.sh [--release|--debug] [--clean] [--simulator|--device]
 
 set -e  # 遇到错误立即退出
+set -o pipefail  # 确保管道出错时立即失败
 
 # 颜色定义
 RED='\033[0;31m'
@@ -18,6 +19,34 @@ CLEAN_BUILD=false
 TARGET_PLATFORM="device"
 APP_NAME="AlistPlayer"
 VERSION=$(grep "version:" pubspec.yaml | cut -d' ' -f2)
+
+# 剥离 Swift 标准库内的 Bitcode，避免 IPA 体积暴涨。
+strip_swift_bitcode() {
+    local frameworks_dir="$1"
+    if [ ! -d "$frameworks_dir" ]; then
+        return
+    fi
+
+    if ! command -v xcrun &> /dev/null; then
+        echo -e "${YELLOW}警告: 未找到 xcrun，跳过 Bitcode 剥离步骤${NC}"
+        return
+    fi
+
+    local stripped_any=false
+    while IFS= read -r lib; do
+        stripped_any=true
+        echo -e "${YELLOW}  → 剥离 $(basename "$lib") 的 Bitcode${NC}"
+        local tmp_file="${lib}.tmp"
+        xcrun bitcode_strip -r "$lib" -o "$tmp_file"
+        mv "$tmp_file" "$lib"
+    done < <(find "$frameworks_dir" -maxdepth 1 -name "libswift*.dylib" -type f)
+
+    if [ "$stripped_any" = true ]; then
+        echo -e "${GREEN}Swift 标准库 Bitcode 剥离完成${NC}"
+    else
+        echo -e "${YELLOW}未发现需要剥离的 libswift*.dylib 文件${NC}"
+    fi
+}
 
 # 解析命令行参数
 while [[ $# -gt 0 ]]; do
@@ -190,6 +219,11 @@ fi
 
 if [ -d "$APP_PATH" ]; then
     echo -e "${YELLOW}正在复制应用到输出目录...${NC}"
+
+    if [ "$TARGET_PLATFORM" = "device" ]; then
+        echo -e "${YELLOW}正在剥离 Swift 标准库 Bitcode...${NC}"
+        strip_swift_bitcode "$APP_PATH/Frameworks"
+    fi
     
     # 复制.app文件
     APP_OUTPUT_PATH="$OUTPUT_DIR/${OUTPUT_NAME}.app"
