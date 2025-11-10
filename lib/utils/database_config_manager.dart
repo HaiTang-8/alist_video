@@ -1,8 +1,10 @@
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:alist_player/models/database_config_preset.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/models/database_config_preset.dart';
+import 'package:alist_player/models/database_persistence_type.dart';
+import 'package:alist_player/services/persistence/persistence_driver.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 /// 数据库配置管理器
 class DatabaseConfigManager {
@@ -243,18 +245,10 @@ class DatabaseConfigManager {
   /// 测试数据库连接
   Future<bool> testConnection(DatabaseConfigPreset preset) async {
     try {
-      // 创建临时数据库连接进行测试
-      final tempDb = DatabaseHelper.instance;
-      await tempDb.init(
-        host: preset.host,
-        port: preset.port,
-        database: preset.database,
-        username: preset.username,
-        password: preset.password,
-      );
-
-      // 测试连接
-      await tempDb.query('SELECT 1');
+      final driver = PersistenceDriverFactory.create(preset.driverType);
+      await driver.init(preset.toConnectionConfig());
+      await driver.query('SELECT 1');
+      await driver.close();
       return true;
     } catch (e, stack) {
       _log(
@@ -307,6 +301,7 @@ class DatabaseConfigManager {
   DatabaseConfigPreset _createDefaultPreset() {
     return DatabaseConfigPreset.createDefault(
       name: AppConstants.defaultDbPresetName,
+      driverType: DatabasePersistenceType.remotePostgres,
       host: AppConstants.defaultDbHost,
       port: AppConstants.defaultDbPort,
       database: AppConstants.defaultDbName,
@@ -321,23 +316,46 @@ class DatabaseConfigManager {
       DatabaseConfigPreset preset) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await Future.wait([
-        prefs.setString(AppConstants.dbHostKey, preset.host),
-        prefs.setInt(AppConstants.dbPortKey, preset.port),
-        prefs.setString(AppConstants.dbNameKey, preset.database),
-        prefs.setString(AppConstants.dbUserKey, preset.username),
-        prefs.setString(AppConstants.dbPasswordKey, preset.password),
-      ]);
+      await prefs.setString(
+        AppConstants.dbDriverTypeKey,
+        preset.driverType.storageValue,
+      );
+      await prefs.setString(AppConstants.dbHostKey, preset.host);
+      await prefs.setInt(AppConstants.dbPortKey, preset.port);
+      await prefs.setString(AppConstants.dbNameKey, preset.database);
+      await prefs.setString(AppConstants.dbUserKey, preset.username);
+      await prefs.setString(AppConstants.dbPasswordKey, preset.password);
+
+      if ((preset.sqlitePath ?? '').isNotEmpty) {
+        await prefs.setString(
+          AppConstants.dbSqlitePathKey,
+          preset.sqlitePath!,
+        );
+      } else {
+        await prefs.remove(AppConstants.dbSqlitePathKey);
+      }
+
+      if ((preset.goBridgeEndpoint ?? '').isNotEmpty) {
+        await prefs.setString(
+          AppConstants.dbGoBridgeUrlKey,
+          preset.goBridgeEndpoint!,
+        );
+      } else {
+        await prefs.remove(AppConstants.dbGoBridgeUrlKey);
+      }
+
+      if ((preset.goBridgeAuthToken ?? '').isNotEmpty) {
+        await prefs.setString(
+          AppConstants.dbGoBridgeTokenKey,
+          preset.goBridgeAuthToken!,
+        );
+      } else {
+        await prefs.remove(AppConstants.dbGoBridgeTokenKey);
+      }
 
       // 重新初始化数据库连接
       await DatabaseHelper.instance.close();
-      await DatabaseHelper.instance.init(
-        host: preset.host,
-        port: preset.port,
-        database: preset.database,
-        username: preset.username,
-        password: preset.password,
-      );
+      await DatabaseHelper.instance.initWithConfig(preset.toConnectionConfig());
     } catch (e, stack) {
       _log(
         '应用配置预设到当前设置失败',

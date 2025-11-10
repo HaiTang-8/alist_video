@@ -5,6 +5,10 @@ class AppConstants {
   static const String dbUserKey = 'db_user';
   static const String dbPasswordKey = 'db_password';
   static const String dbPortKey = 'db_port';
+  static const String dbDriverTypeKey = 'db_driver_type';
+  static const String dbSqlitePathKey = 'db_sqlite_path';
+  static const String dbGoBridgeUrlKey = 'db_go_bridge_url';
+  static const String dbGoBridgeTokenKey = 'db_go_bridge_token';
 
   // 数据库默认配置
   // static const String defaultDbHost = '81.68.250.223';
@@ -13,6 +17,9 @@ class AppConstants {
   static const String defaultDbUser = 'postgres';
   static const String defaultDbPassword = 'wasd..123';
   static const int defaultDbPort = 5432;
+  static const String defaultDbDriverType = 'remotePostgres';
+  static const String defaultSqliteFilename = 'alist_video.db';
+  static const String defaultGoBridgeEndpoint = 'http://127.0.0.1:7788';
 
   // 数据库超时设置
   static const Duration dbConnectTimeout = Duration(seconds: 30);
@@ -113,7 +120,8 @@ class AppConstants {
 
   // API配置预设相关
   static const String apiPresetsKey = 'api_presets'; // 存储API配置预设列表
-  static const String currentApiPresetIdKey = 'current_api_preset_id'; // 当前使用的API配置预设ID
+  static const String currentApiPresetIdKey =
+      'current_api_preset_id'; // 当前使用的API配置预设ID
   static const String customApiModeKey = 'custom_api_mode'; // 是否使用自定义API模式
 
   // 默认API配置预设
@@ -122,7 +130,8 @@ class AppConstants {
 
   // 数据库配置预设相关
   static const String dbPresetsKey = 'db_presets'; // 存储数据库配置预设列表
-  static const String currentDbPresetIdKey = 'current_db_preset_id'; // 当前使用的数据库配置预设ID
+  static const String currentDbPresetIdKey =
+      'current_db_preset_id'; // 当前使用的数据库配置预设ID
   static const String customDbModeKey = 'custom_db_mode'; // 是否使用自定义数据库模式
 
   // 默认数据库配置预设
@@ -130,7 +139,8 @@ class AppConstants {
   static const String defaultDbPresetDescription = '默认的本地PostgreSQL数据库配置';
 
   // 本地播放优先设置
-  static const String preferLocalPlaybackKey = 'prefer_local_playback'; // 是否优先使用本地文件播放
+  static const String preferLocalPlaybackKey =
+      'prefer_local_playback'; // 是否优先使用本地文件播放
   static const bool defaultPreferLocalPlayback = true; // 默认优先使用本地文件
 
   // SQL日志设置

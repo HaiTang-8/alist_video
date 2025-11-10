@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:alist_player/models/database_connection_config.dart';
+import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
@@ -57,15 +59,26 @@ Future<void> main() async {
           AppConstants.defaultDbPassword;
       final dbPort =
           prefs.getInt(AppConstants.dbPortKey) ?? AppConstants.defaultDbPort;
+      final driverTypeValue = prefs.getString(AppConstants.dbDriverTypeKey) ??
+          AppConstants.defaultDbDriverType;
+      final sqlitePath = prefs.getString(AppConstants.dbSqlitePathKey);
+      final goBridgeUrl = prefs.getString(AppConstants.dbGoBridgeUrlKey);
+      final goBridgeToken = prefs.getString(AppConstants.dbGoBridgeTokenKey);
+
+      final dbConfig = DatabaseConnectionConfig(
+        type: DatabasePersistenceTypeExtension.fromStorage(driverTypeValue),
+        host: dbHost,
+        port: dbPort,
+        database: dbName,
+        username: dbUser,
+        password: dbPassword,
+        sqlitePath: sqlitePath,
+        goBridgeEndpoint: goBridgeUrl,
+        goBridgeAuthToken: goBridgeToken,
+      );
 
       try {
-        await DatabaseHelper.instance.init(
-          host: dbHost,
-          port: dbPort,
-          database: dbName,
-          username: dbUser,
-          password: dbPassword,
-        );
+        await DatabaseHelper.instance.initWithConfig(dbConfig);
       } catch (e, stack) {
         await AppLogger().error('Database', '数据库初始化失败', e, stack);
       }

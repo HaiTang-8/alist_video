@@ -1,21 +1,17 @@
 import 'dart:typed_data';
 
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/models/database_connection_config.dart';
+import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:alist_player/models/historical_record.dart';
+import 'package:alist_player/services/persistence/persistence_driver.dart';
 import 'package:alist_player/utils/logger.dart';
-import 'package:postgres/postgres.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class DatabaseHelper {
   static DatabaseHelper? _instance;
-  static Connection? _connection;
-
-  // 添加配置字段
-  late String _host;
-  late int _port;
-  late String _database;
-  late String _username;
-  late String _password;
+  PersistenceDriver? _driver;
+  DatabaseConnectionConfig? _config;
 
   /// 数据库统一日志出口，便于跨端追踪 SQL 操作
   void _log(
@@ -41,6 +37,9 @@ class DatabaseHelper {
 
   DatabaseHelper._();
 
+  DatabaseConnectionConfig? get currentConfig => _config;
+  DatabasePersistenceType? get currentDriverType => _config?.type;
+
   /// 检查是否启用SQL日志
   Future<bool> _isSqlLoggingEnabled() async {
     try {
@@ -52,7 +51,7 @@ class DatabaseHelper {
     }
   }
 
-  // 初始化数据库连接
+  /// 兼容旧代码的初始化方法，默认使用远程PostgreSQL
   Future<void> init({
     required String host,
     required int port,
@@ -60,76 +59,42 @@ class DatabaseHelper {
     required String username,
     required String password,
   }) async {
-    // 保存配置以供重连使用
-    _host = host;
-    _port = port;
-    _database = database;
-    _username = username;
-    _password = password;
-
-    try {
-      if (_connection != null) {
-        await _connection!.close();
-      }
-
-      _connection = await Connection.open(
-        Endpoint(
-          host: host,
-          port: port,
-          database: database,
-          username: username,
-          password: password,
-        ),
-        settings: const ConnectionSettings(
-          sslMode: SslMode.disable,
-          // 添加连接超时
-          connectTimeout: Duration(seconds: 30),
-          // 添加查询超时
-          queryTimeout: Duration(seconds: 30),
-        ),
-      );
-      _log(
-        'Database connected successfully to $host:$port/$database',
-        level: LogLevel.info,
-      );
-    } catch (e, stack) {
-      _log(
-        'Database connection failed',
-        level: LogLevel.error,
-        error: e,
-        stackTrace: stack,
-      );
-      _connection = null;
-      rethrow;
-    }
+    await initWithConfig(
+      DatabaseConnectionConfig(
+        type: DatabasePersistenceType.remotePostgres,
+        host: host,
+        port: port,
+        database: database,
+        username: username,
+        password: password,
+      ),
+    );
   }
 
-  // 检查并确保数据库连接
-  Future<void> _ensureConnection() async {
-    if (_connection == null) {
-      throw Exception('Database not initialized. Please call init() first.');
+  /// 根据运行时配置初始化具体持久化驱动
+  Future<void> initWithConfig(DatabaseConnectionConfig config) async {
+    _config = config;
+    await _driver?.close();
+    _driver = PersistenceDriverFactory.create(config.type);
+    await _driver!.init(config);
+    _log(
+      'Initialized persistence driver: ${config.type.displayName}',
+      level: LogLevel.info,
+    );
+  }
+
+  /// 确保底层驱动已就绪，若因异常被关闭则自动重建
+  Future<PersistenceDriver> _ensureDriver() async {
+    if (_driver != null) {
+      return _driver!;
     }
 
-    try {
-      // 测试连接是否有效
-      await _connection!.execute('SELECT 1');
-    } catch (e, stack) {
-      _log(
-        'Connection test failed',
-        level: LogLevel.error,
-        error: e,
-        stackTrace: stack,
-      );
-      _connection = null;
-      // 使用保存的配置重新连接
-      await init(
-        host: _host, // 需要添加这个字段
-        port: _port,
-        database: _database,
-        username: _username,
-        password: _password,
-      );
+    if (_config == null) {
+      throw Exception('数据库尚未初始化，请先调用 initWithConfig');
     }
+
+    await initWithConfig(_config!);
+    return _driver!;
   }
 
   // 执行查询并返回结果
@@ -138,7 +103,7 @@ class DatabaseHelper {
     Map<String, dynamic>? parameters,
   ]) async {
     try {
-      await _ensureConnection();
+      final driver = await _ensureDriver();
 
       // 根据设置决定是否打印SQL日志
       final enableLogging = await _isSqlLoggingEnabled();
@@ -149,13 +114,9 @@ class DatabaseHelper {
         );
       }
 
-      final results = await _connection!.execute(
-        Sql.named(sql),
-        parameters: parameters,
-        timeout: const Duration(seconds: 30),
-      );
-
-      return results.map((row) => row.toColumnMap()).toList();
+      final results =
+          await driver.query(sql, parameters: parameters ?? const {});
+      return results;
     } catch (e, stack) {
       // 错误信息始终记录，不受设置控制
       _log(
@@ -173,14 +134,8 @@ class DatabaseHelper {
     String table,
     Map<String, dynamic> values,
   ) async {
-    final columns = values.keys.join(', ');
-    final placeholders = values.keys.map((key) => '@$key').join(', ');
-
-    final sql =
-        'INSERT INTO $table ($columns) VALUES ($placeholders) RETURNING id';
-
-    final result = await query(sql, values);
-    return result.first['id'] as int;
+    final driver = await _ensureDriver();
+    return driver.insert(table, values);
   }
 
   // 执行更新操作
@@ -190,12 +145,8 @@ class DatabaseHelper {
     String where,
     Map<String, dynamic> whereArgs,
   ) async {
-    final setColumns = values.keys.map((key) => '$key = @$key').join(', ');
-    final sql = 'UPDATE $table SET $setColumns WHERE $where';
-
-    final parameters = {...values, ...whereArgs};
-    await query(sql, parameters);
-    return 1; // 返回影响的行数
+    final driver = await _ensureDriver();
+    return driver.update(table, values, where, whereArgs);
   }
 
   // 执行删除操作
@@ -204,15 +155,14 @@ class DatabaseHelper {
     String where,
     Map<String, dynamic> whereArgs,
   ) async {
-    final sql = 'DELETE FROM $table WHERE $where';
-    await query(sql, whereArgs);
-    return 1; // 返回影响的行数
+    final driver = await _ensureDriver();
+    return driver.delete(table, where, whereArgs);
   }
 
   // 关闭数据库连接
   Future<void> close() async {
-    await _connection?.close();
-    _connection = null;
+    await _driver?.close();
+    _driver = null;
   }
 
   // 查询历史记录
@@ -260,10 +210,11 @@ class DatabaseHelper {
         INSERT INTO t_historical_records 
         (video_sha1, video_path, video_seek, user_id, change_time, video_name, total_video_duration)
         VALUES (@sha1, @path, @seek, @userId, CURRENT_TIMESTAMP, @name, @totalDuration)
-        ON CONFLICT (video_sha1) 
+        ON CONFLICT (video_sha1, user_id) 
         DO UPDATE SET 
           video_seek = @seek,
-          change_time = CURRENT_TIMESTAMP
+          change_time = CURRENT_TIMESTAMP,
+          total_video_duration = @totalDuration
       ''';
 
       await query(sql, {
@@ -722,7 +673,7 @@ class DatabaseHelper {
         (video_sha1, video_path, video_seek, user_id, change_time, video_name, total_video_duration, screenshot)
         VALUES 
         (@sha1, @path, @seek, @userId, @changeTime, @name, @duration, @screenshot)
-        ON CONFLICT ON CONSTRAINT unique_video_user
+        ON CONFLICT (video_sha1, user_id)
         DO UPDATE SET 
           video_seek = EXCLUDED.video_seek,
           change_time = EXCLUDED.change_time,
@@ -845,20 +796,12 @@ class DatabaseHelper {
         return existingId;
       }
 
-      const sql = '''
-        INSERT INTO t_favorite_directories 
-        (path, name, user_id, created_at)
-        VALUES (@path, @name, @userId, CURRENT_TIMESTAMP)
-        RETURNING id
-      ''';
-
-      final result = await query(sql, {
+      final newId = await insert('t_favorite_directories', {
         'path': path,
         'name': name,
-        'userId': userId,
+        'user_id': userId,
+        'created_at': DateTime.now(),
       });
-
-      final newId = result.first['id'] as int;
       _log('Added favorite directory with id: $newId', level: LogLevel.debug);
       return newId;
     } catch (e, stack) {

@@ -1,16 +1,18 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/database_config_preset.dart';
+import 'package:alist_player/models/database_connection_config.dart';
+import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:alist_player/utils/database_config_manager.dart';
 import 'package:alist_player/utils/db.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DatabasePresetSettingsDialog extends StatefulWidget {
   const DatabasePresetSettingsDialog({super.key});
 
   static Future<void> show(BuildContext context) async {
     final isMobile = MediaQuery.of(context).size.width < 600;
-    
+
     if (isMobile) {
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -38,26 +40,32 @@ class DatabasePresetSettingsDialog extends StatefulWidget {
   }
 
   @override
-  State<DatabasePresetSettingsDialog> createState() => _DatabasePresetSettingsDialogState();
+  State<DatabasePresetSettingsDialog> createState() =>
+      _DatabasePresetSettingsDialogState();
 }
 
-class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDialog>
-    with TickerProviderStateMixin {
+class _DatabasePresetSettingsDialogState
+    extends State<DatabasePresetSettingsDialog> with TickerProviderStateMixin {
   late TabController _tabController;
   final DatabaseConfigManager _configManager = DatabaseConfigManager();
-  
+
   // 预设相关
   List<DatabaseConfigPreset> _presets = [];
   DatabaseConfigPreset? _selectedPreset;
   bool _isLoadingPresets = true;
-  
+
   // 自定义配置控制器
   final TextEditingController _hostController = TextEditingController();
   final TextEditingController _portController = TextEditingController();
   final TextEditingController _databaseController = TextEditingController();
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  
+  final TextEditingController _sqlitePathController = TextEditingController();
+  final TextEditingController _goEndpointController = TextEditingController();
+  final TextEditingController _goTokenController = TextEditingController();
+  DatabasePersistenceType _customDriverType =
+      DatabasePersistenceType.remotePostgres;
+
   bool _isLoading = false;
   bool _obscurePassword = true;
   bool _enableSqlLogging = AppConstants.defaultEnableSqlLogging;
@@ -76,15 +84,27 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       final presets = await _configManager.getAllPresets();
       final currentPreset = await _configManager.getCurrentPreset();
       final isCustom = await _configManager.isCustomDbMode();
-      
+
       // 加载当前设置
       final prefs = await SharedPreferences.getInstance();
-      final host = prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost;
-      final port = prefs.getInt(AppConstants.dbPortKey) ?? AppConstants.defaultDbPort;
-      final database = prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName;
-      final username = prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser;
-      final password = prefs.getString(AppConstants.dbPasswordKey) ?? AppConstants.defaultDbPassword;
-      final enableSqlLogging = prefs.getBool(AppConstants.enableSqlLoggingKey) ?? AppConstants.defaultEnableSqlLogging;
+      final host =
+          prefs.getString(AppConstants.dbHostKey) ?? AppConstants.defaultDbHost;
+      final port =
+          prefs.getInt(AppConstants.dbPortKey) ?? AppConstants.defaultDbPort;
+      final database =
+          prefs.getString(AppConstants.dbNameKey) ?? AppConstants.defaultDbName;
+      final username =
+          prefs.getString(AppConstants.dbUserKey) ?? AppConstants.defaultDbUser;
+      final password = prefs.getString(AppConstants.dbPasswordKey) ??
+          AppConstants.defaultDbPassword;
+      final enableSqlLogging =
+          prefs.getBool(AppConstants.enableSqlLoggingKey) ??
+              AppConstants.defaultEnableSqlLogging;
+      final driverTypeValue = prefs.getString(AppConstants.dbDriverTypeKey) ??
+          AppConstants.defaultDbDriverType;
+      final sqlitePath = prefs.getString(AppConstants.dbSqlitePathKey) ?? '';
+      final goEndpoint = prefs.getString(AppConstants.dbGoBridgeUrlKey) ?? '';
+      final goToken = prefs.getString(AppConstants.dbGoBridgeTokenKey) ?? '';
 
       setState(() {
         _presets = presets;
@@ -94,6 +114,11 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
         _databaseController.text = database;
         _usernameController.text = username;
         _passwordController.text = password;
+        _sqlitePathController.text = sqlitePath;
+        _goEndpointController.text = goEndpoint;
+        _goTokenController.text = goToken;
+        _customDriverType =
+            DatabasePersistenceTypeExtension.fromStorage(driverTypeValue);
         _enableSqlLogging = enableSqlLogging;
         _isLoadingPresets = false;
 
@@ -118,7 +143,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
   /// 保存配置
   Future<void> _saveConfig() async {
     if (_isLoading) return;
-    
+
     setState(() {
       _isLoading = true;
     });
@@ -131,55 +156,32 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
           await _configManager.setCustomDbMode(false);
         }
       } else {
-        // 自定义模式
-        if (_hostController.text.trim().isEmpty || 
-            _portController.text.trim().isEmpty ||
-            _databaseController.text.trim().isEmpty ||
-            _usernameController.text.trim().isEmpty ||
-            _passwordController.text.trim().isEmpty) {
-          throw Exception('请填写完整的数据库配置信息');
-        }
-        
-        final port = int.tryParse(_portController.text.trim());
-        if (port == null || port <= 0 || port > 65535) {
-          throw Exception('请输入有效的端口号 (1-65535)');
-        }
-        
-        // 测试连接
-        final tempPreset = DatabaseConfigPreset.createDefault(
-          name: '临时配置',
-          host: _hostController.text.trim(),
-          port: port,
-          database: _databaseController.text.trim(),
-          username: _usernameController.text.trim(),
-          password: _passwordController.text.trim(),
+        _validateCustomInputs();
+        final preset = _composePreset(
+          id: 'custom_${DateTime.now().millisecondsSinceEpoch}',
+          name: '自定义配置',
+          driverType: _customDriverType,
+          host: _hostController.text,
+          portText: _portController.text,
+          database: _databaseController.text,
+          username: _usernameController.text,
+          password: _passwordController.text,
+          sqlitePath: _sqlitePathController.text,
+          goEndpoint: _goEndpointController.text,
+          goToken: _goTokenController.text,
         );
-        
-        final connectionSuccess = await _configManager.testConnection(tempPreset);
+
+        final connectionSuccess = await _configManager.testConnection(preset);
         if (!connectionSuccess) {
-          throw Exception('数据库连接测试失败，请检查配置信息');
+          throw Exception('持久化连接测试失败，请检查配置');
         }
-        
-        // 保存自定义配置
-        final prefs = await SharedPreferences.getInstance();
-        await Future.wait([
-          prefs.setString(AppConstants.dbHostKey, _hostController.text.trim()),
-          prefs.setInt(AppConstants.dbPortKey, port),
-          prefs.setString(AppConstants.dbNameKey, _databaseController.text.trim()),
-          prefs.setString(AppConstants.dbUserKey, _usernameController.text.trim()),
-          prefs.setString(AppConstants.dbPasswordKey, _passwordController.text.trim()),
-        ]);
-        
+
+        await _persistActiveConfig(preset);
         await _configManager.setCustomDbMode(true);
 
-        // 重新初始化数据库连接
         await DatabaseHelper.instance.close();
-        await DatabaseHelper.instance.init(
-          host: _hostController.text.trim(),
-          port: port,
-          database: _databaseController.text.trim(),
-          username: _usernameController.text.trim(),
-          password: _passwordController.text.trim(),
+        await DatabaseHelper.instance.initWithConfig(
+          preset.toConnectionConfig(),
         );
       }
 
@@ -214,7 +216,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
   Future<void> _saveAsPreset() async {
     final nameController = TextEditingController();
     final descController = TextEditingController();
-    
+
     final result = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -235,32 +237,34 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
           ],
         ),
         content: SizedBox(
-          width: 300,
+          width: 360,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextField(
+              _buildCompactTextField(
                 controller: nameController,
-                decoration: InputDecoration(
-                  labelText: '预设名称',
-                  hintText: '输入预设名称',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  isDense: true,
-                ),
-                autofocus: true,
+                label: '预设名称',
+                icon: Icons.label_rounded,
+                hint: '例如：本地SQLite',
               ),
               const SizedBox(height: 12),
-              TextField(
+              _buildCompactTextField(
                 controller: descController,
-                decoration: InputDecoration(
-                  labelText: '描述（可选）',
-                  hintText: '输入预设描述',
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  isDense: true,
-                ),
+                label: '描述（可选）',
+                icon: Icons.short_text_rounded,
+                hint: '输入预设描述',
                 maxLines: 2,
+              ),
+              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '将复用当前自定义配置 (${_customDriverType.displayName})',
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
               ),
             ],
           ),
@@ -268,68 +272,78 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            style: TextButton.styleFrom(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
             child: const Text('取消'),
           ),
-          ElevatedButton(
+          FilledButton.icon(
             onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Theme.of(context).primaryColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-            child: const Text('保存'),
+            icon: const Icon(Icons.save_outlined, size: 18),
+            label: const Text('保存'),
           ),
         ],
       ),
     );
 
-    if (result == true && nameController.text.trim().isNotEmpty) {
-      try {
-        final port = int.tryParse(_portController.text.trim());
-        if (port == null || port <= 0 || port > 65535) {
-          throw Exception('请输入有效的端口号');
-        }
-        
-        final preset = DatabaseConfigPreset.createDefault(
-          name: nameController.text.trim(),
-          host: _hostController.text.trim(),
-          port: port,
-          database: _databaseController.text.trim(),
-          username: _usernameController.text.trim(),
-          password: _passwordController.text.trim(),
-          description: descController.text.trim().isEmpty ? null : descController.text.trim(),
-        );
-        
-        final success = await _configManager.savePreset(preset);
-        if (success) {
-          await _loadData(); // 重新加载数据
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('预设保存成功'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        }
-      } catch (e) {
+    if (result == true) {
+      final presetName = nameController.text.trim();
+      if (presetName.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('保存预设失败: $e'),
+            const SnackBar(
+              content: Text('请填写预设名称'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        return;
+      }
+
+      final preset = _composePreset(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: presetName,
+        driverType: _customDriverType,
+        host: _hostController.text,
+        portText: _portController.text,
+        database: _databaseController.text,
+        username: _usernameController.text,
+        password: _passwordController.text,
+        sqlitePath: _sqlitePathController.text,
+        goEndpoint: _goEndpointController.text,
+        goToken: _goTokenController.text,
+        description: descController.text.trim().isEmpty
+            ? null
+            : descController.text.trim(),
+      );
+
+      final success = await _configManager.savePreset(preset);
+      if (!success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('保存预设失败，请稍后重试'),
               backgroundColor: Colors.red,
             ),
           );
         }
+        return;
       }
+
+      final connectionOk = await _configManager.testConnection(preset);
+      if (!connectionOk && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('预设保存成功，但连接测试失败'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      } else if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('预设 "$presetName" 保存成功'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      await _loadData();
     }
   }
 
@@ -361,11 +375,271 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     }
   }
 
+  /// 根据不同输入构建通用的数据库预设对象，方便多处复用
+  DatabaseConfigPreset _composePreset({
+    required String id,
+    required String name,
+    required DatabasePersistenceType driverType,
+    required String host,
+    required String portText,
+    required String database,
+    required String username,
+    required String password,
+    required String sqlitePath,
+    required String goEndpoint,
+    required String goToken,
+    DateTime? createdAt,
+    bool isDefault = false,
+    String? description,
+  }) {
+    final parsedPort = int.tryParse(portText.trim());
+    final resolvedPort =
+        parsedPort == null || parsedPort <= 0 || parsedPort > 65535
+            ? AppConstants.defaultDbPort
+            : parsedPort;
+    return DatabaseConfigPreset(
+      id: id,
+      name: name,
+      driverType: driverType,
+      host: host.trim().isEmpty ? AppConstants.defaultDbHost : host.trim(),
+      port: resolvedPort,
+      database: database.trim().isEmpty
+          ? AppConstants.defaultDbName
+          : database.trim(),
+      username: username.trim().isEmpty
+          ? AppConstants.defaultDbUser
+          : username.trim(),
+      password: password.trim().isEmpty
+          ? AppConstants.defaultDbPassword
+          : password.trim(),
+      sqlitePath: sqlitePath.trim().isEmpty ? null : sqlitePath.trim(),
+      goBridgeEndpoint: goEndpoint.trim().isEmpty ? null : goEndpoint.trim(),
+      goBridgeAuthToken: goToken.trim().isEmpty ? null : goToken.trim(),
+      createdAt: createdAt ?? DateTime.now(),
+      isDefault: isDefault,
+      description: description,
+    );
+  }
+
+  /// 将当前自定义配置落地到 SharedPreferences，确保跨端一致
+  Future<void> _persistActiveConfig(DatabaseConfigPreset preset) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      AppConstants.dbDriverTypeKey,
+      preset.driverType.storageValue,
+    );
+    await prefs.setString(AppConstants.dbHostKey, preset.host);
+    await prefs.setInt(AppConstants.dbPortKey, preset.port);
+    await prefs.setString(AppConstants.dbNameKey, preset.database);
+    await prefs.setString(AppConstants.dbUserKey, preset.username);
+    await prefs.setString(AppConstants.dbPasswordKey, preset.password);
+
+    if (preset.sqlitePath != null) {
+      await prefs.setString(AppConstants.dbSqlitePathKey, preset.sqlitePath!);
+    } else {
+      await prefs.remove(AppConstants.dbSqlitePathKey);
+    }
+
+    if (preset.goBridgeEndpoint != null) {
+      await prefs.setString(
+        AppConstants.dbGoBridgeUrlKey,
+        preset.goBridgeEndpoint!,
+      );
+    } else {
+      await prefs.remove(AppConstants.dbGoBridgeUrlKey);
+    }
+
+    if (preset.goBridgeAuthToken != null) {
+      await prefs.setString(
+        AppConstants.dbGoBridgeTokenKey,
+        preset.goBridgeAuthToken!,
+      );
+    } else {
+      await prefs.remove(AppConstants.dbGoBridgeTokenKey);
+    }
+  }
+
+  /// 针对不同驱动做输入合法性校验，提前给出可读错误
+  void _validateCustomInputs() {
+    switch (_customDriverType) {
+      case DatabasePersistenceType.remotePostgres:
+        if (_hostController.text.trim().isEmpty ||
+            _databaseController.text.trim().isEmpty ||
+            _usernameController.text.trim().isEmpty ||
+            _passwordController.text.trim().isEmpty) {
+          throw Exception('请完善远程数据库的主机、数据库、用户名与密码');
+        }
+        final port = int.tryParse(_portController.text.trim());
+        if (port == null || port <= 0 || port > 65535) {
+          throw Exception('请输入有效的端口号 (1-65535)');
+        }
+        break;
+      case DatabasePersistenceType.localSqlite:
+        // SQLite 允许留空路径，驱动会在内部回落到默认目录
+        break;
+      case DatabasePersistenceType.localGoBridge:
+        if (_goEndpointController.text.trim().isEmpty) {
+          throw Exception('请填写本地 Go 服务的访问地址');
+        }
+        break;
+    }
+  }
+
+  /// 自定义模式的持久化方式选择器
+  Widget _buildDriverTypeSelector() {
+    return DropdownButtonFormField<DatabasePersistenceType>(
+      value: _customDriverType,
+      decoration: InputDecoration(
+        labelText: '持久化方式',
+        prefixIcon: Icon(_customDriverType.icon, size: 18),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      ),
+      items: DatabasePersistenceType.values
+          .map(
+            (type) => DropdownMenuItem(
+              value: type,
+              child: Text(type.displayName),
+            ),
+          )
+          .toList(),
+      onChanged: (value) {
+        if (value == null) return;
+        setState(() {
+          _customDriverType = value;
+        });
+      },
+    );
+  }
+
+  /// 远程PostgreSQL专用字段集合
+  Widget _buildRemoteConfigFields() {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              flex: 3,
+              child: _buildCompactTextField(
+                controller: _hostController,
+                label: '主机地址',
+                icon: Icons.dns_rounded,
+                hint: 'localhost',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              flex: 2,
+              child: _buildCompactTextField(
+                controller: _portController,
+                label: '端口',
+                icon: Icons.settings_ethernet_rounded,
+                hint: '5432',
+                keyboardType: TextInputType.number,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _buildCompactTextField(
+                controller: _databaseController,
+                label: '数据库名',
+                icon: Icons.storage_rounded,
+                hint: 'alist_video',
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _buildCompactTextField(
+                controller: _usernameController,
+                label: '用户名',
+                icon: Icons.person_rounded,
+                hint: 'postgres',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _buildCompactTextField(
+          controller: _passwordController,
+          label: '密码',
+          icon: Icons.lock_rounded,
+          hint: '请输入数据库密码',
+          obscureText: _obscurePassword,
+          suffixIcon: IconButton(
+            icon: Icon(
+              _obscurePassword
+                  ? Icons.visibility_outlined
+                  : Icons.visibility_off_outlined,
+              size: 18,
+            ),
+            onPressed: () {
+              setState(() {
+                _obscurePassword = !_obscurePassword;
+              });
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 本地SQLite字段集合
+  Widget _buildSqliteConfigFields() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildCompactTextField(
+          controller: _sqlitePathController,
+          label: 'SQLite 文件路径',
+          icon: Icons.folder_open_rounded,
+          hint: '留空将使用默认应用目录/${AppConstants.defaultSqliteFilename}',
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '跨端会自动创建数据文件，桌面端可指向任意目录便于手动备份。',
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Go 本地服务字段集合
+  Widget _buildGoBridgeConfigFields() {
+    return Column(
+      children: [
+        _buildCompactTextField(
+          controller: _goEndpointController,
+          label: 'Go 服务地址',
+          icon: Icons.http_rounded,
+          hint: 'http://127.0.0.1:7788',
+        ),
+        const SizedBox(height: 12),
+        _buildCompactTextField(
+          controller: _goTokenController,
+          label: '访问令牌 (可选)',
+          icon: Icons.vpn_key_rounded,
+          hint: '用于与本地Go进程安全通信',
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
-    
-    return isMobile ? _buildMobileLayout(context) : _buildDesktopLayout(context);
+
+    return isMobile
+        ? _buildMobileLayout(context)
+        : _buildDesktopLayout(context);
   }
 
   /// 构建移动端布局
@@ -409,12 +683,14 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                 onPressed: _saveConfig,
                 style: TextButton.styleFrom(
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(6),
                   ),
                 ),
-                child: const Text('保存', style: TextStyle(fontWeight: FontWeight.w600)),
+                child: const Text('保存',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
               ),
             ),
         ],
@@ -437,9 +713,12 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
               labelColor: Colors.white,
-              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+              unselectedLabelColor:
+                  Theme.of(context).colorScheme.onSurfaceVariant,
+              labelStyle:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              unselectedLabelStyle:
+                  const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
               padding: const EdgeInsets.all(4),
               tabs: const [
                 Tab(text: '预设配置'),
@@ -479,7 +758,8 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
             ),
             child: Row(
               children: [
-                const Icon(Icons.storage_rounded, color: Colors.white, size: 20),
+                const Icon(Icons.storage_rounded,
+                    color: Colors.white, size: 20),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text(
@@ -495,7 +775,8 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                   onPressed: () => Navigator.pop(context),
                   icon: const Icon(Icons.close, color: Colors.white, size: 20),
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
                 ),
               ],
             ),
@@ -516,9 +797,12 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               indicatorSize: TabBarIndicatorSize.tab,
               dividerColor: Colors.transparent,
               labelColor: Colors.white,
-              unselectedLabelColor: Theme.of(context).colorScheme.onSurfaceVariant,
-              labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+              unselectedLabelColor:
+                  Theme.of(context).colorScheme.onSurfaceVariant,
+              labelStyle:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+              unselectedLabelStyle:
+                  const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
               padding: const EdgeInsets.all(4),
               tabs: const [
                 Tab(text: '预设配置'),
@@ -540,7 +824,10 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              color: Theme.of(context)
+                  .colorScheme
+                  .surfaceContainerHighest
+                  .withValues(alpha: 0.5),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -548,7 +835,8 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                 TextButton(
                   onPressed: () => Navigator.pop(context),
                   style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     minimumSize: const Size(64, 36),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
@@ -563,7 +851,8 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                     backgroundColor: Theme.of(context).primaryColor,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     minimumSize: const Size(64, 36),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
@@ -578,7 +867,8 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                             color: Colors.white,
                           ),
                         )
-                      : const Text('保存', style: TextStyle(fontWeight: FontWeight.w600)),
+                      : const Text('保存',
+                          style: TextStyle(fontWeight: FontWeight.w600)),
                 ),
               ],
             ),
@@ -622,7 +912,10 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                     side: BorderSide(
                       color: isSelected
                           ? Theme.of(context).primaryColor
-                          : Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                          : Theme.of(context)
+                              .colorScheme
+                              .outline
+                              .withValues(alpha: 0.2),
                       width: isSelected ? 2 : 1,
                     ),
                   ),
@@ -678,7 +971,9 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                                         style: TextStyle(
                                           fontWeight: FontWeight.w600,
                                           fontSize: 15,
-                                          color: Theme.of(context).colorScheme.onSurface,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface,
                                         ),
                                       ),
                                     ),
@@ -689,8 +984,10 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                                           vertical: 2,
                                         ),
                                         decoration: BoxDecoration(
-                                          color: Colors.amber.withValues(alpha: 0.2),
-                                          borderRadius: BorderRadius.circular(6),
+                                          color: Colors.amber
+                                              .withValues(alpha: 0.2),
+                                          borderRadius:
+                                              BorderRadius.circular(6),
                                         ),
                                         child: const Row(
                                           mainAxisSize: MainAxisSize.min,
@@ -716,20 +1013,34 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
+                                  preset.driverType.displayName,
+                                  style: TextStyle(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
                                   preset.connectionString,
                                   style: TextStyle(
-                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                                     fontSize: 13,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                 ),
-                                if (preset.description != null && preset.description!.isNotEmpty) ...[
+                                if (preset.description != null &&
+                                    preset.description!.isNotEmpty) ...[
                                   const SizedBox(height: 2),
                                   Text(
                                     preset.description!,
                                     style: TextStyle(
-                                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                       fontSize: 11,
                                     ),
                                     maxLines: 1,
@@ -749,7 +1060,10 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                                 size: 18,
                               ),
                               style: IconButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                                backgroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .primary
+                                    .withValues(alpha: 0.1),
                                 minimumSize: const Size(32, 32),
                                 padding: EdgeInsets.zero,
                                 shape: RoundedRectangleBorder(
@@ -766,7 +1080,10 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                                 size: 18,
                               ),
                               style: IconButton.styleFrom(
-                                backgroundColor: Theme.of(context).colorScheme.error.withValues(alpha: 0.1),
+                                backgroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .error
+                                    .withValues(alpha: 0.1),
                                 minimumSize: const Size(32, 32),
                                 padding: EdgeInsets.zero,
                                 shape: RoundedRectangleBorder(
@@ -816,9 +1133,12 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                   icon: const Icon(Icons.bookmark_add_outlined, size: 16),
                   label: const Text('保存为预设'),
                   style: TextButton.styleFrom(
-                    backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
-                    foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    backgroundColor:
+                        Theme.of(context).colorScheme.secondaryContainer,
+                    foregroundColor:
+                        Theme.of(context).colorScheme.onSecondaryContainer,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     minimumSize: const Size(0, 32),
                     textStyle: const TextStyle(fontSize: 13),
                     shape: RoundedRectangleBorder(
@@ -836,83 +1156,26 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outline
+                      .withValues(alpha: 0.2),
                 ),
               ),
               child: Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   children: [
-                    // 主机地址和端口一行
-                    Row(
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: _buildCompactTextField(
-                            controller: _hostController,
-                            label: '主机地址',
-                            icon: Icons.dns_rounded,
-                            hint: 'localhost',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          flex: 2,
-                          child: _buildCompactTextField(
-                            controller: _portController,
-                            label: '端口',
-                            icon: Icons.settings_ethernet_rounded,
-                            hint: '5432',
-                            keyboardType: TextInputType.number,
-                          ),
-                        ),
-                      ],
-                    ),
+                    _buildDriverTypeSelector(),
                     const SizedBox(height: 12),
-                    // 数据库名和用户名一行
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildCompactTextField(
-                            controller: _databaseController,
-                            label: '数据库名',
-                            icon: Icons.storage_rounded,
-                            hint: 'alist_video',
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: _buildCompactTextField(
-                            controller: _usernameController,
-                            label: '用户名',
-                            icon: Icons.person_rounded,
-                            hint: 'postgres',
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // 密码单独一行
-                    _buildCompactTextField(
-                      controller: _passwordController,
-                      label: '密码',
-                      icon: Icons.lock_rounded,
-                      hint: '请输入数据库密码',
-                      obscureText: _obscurePassword,
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                          size: 18,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _obscurePassword = !_obscurePassword;
-                          });
-                        },
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                      ),
-                    ),
+                    if (_customDriverType ==
+                        DatabasePersistenceType.remotePostgres)
+                      _buildRemoteConfigFields()
+                    else if (_customDriverType ==
+                        DatabasePersistenceType.localSqlite)
+                      _buildSqliteConfigFields()
+                    else
+                      _buildGoBridgeConfigFields(),
                   ],
                 ),
               ),
@@ -922,10 +1185,16 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                color: Theme.of(context)
+                    .colorScheme
+                    .primaryContainer
+                    .withValues(alpha: 0.3),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primary
+                      .withValues(alpha: 0.3),
                 ),
               ),
               child: Row(
@@ -956,11 +1225,15 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
                 side: BorderSide(
-                  color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outline
+                      .withValues(alpha: 0.2),
                 ),
               ),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Row(
                   children: [
                     Icon(
@@ -1006,7 +1279,14 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     final databaseController = TextEditingController(text: preset.database);
     final usernameController = TextEditingController(text: preset.username);
     final passwordController = TextEditingController(text: preset.password);
-    final descController = TextEditingController(text: preset.description ?? '');
+    final sqlitePathController =
+        TextEditingController(text: preset.sqlitePath ?? '');
+    final goEndpointController =
+        TextEditingController(text: preset.goBridgeEndpoint ?? '');
+    final goTokenController =
+        TextEditingController(text: preset.goBridgeAuthToken ?? '');
+    final descController =
+        TextEditingController(text: preset.description ?? '');
     final dialogControllers = <TextEditingController>[
       nameController,
       hostController,
@@ -1014,9 +1294,13 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       databaseController,
       usernameController,
       passwordController,
+      sqlitePathController,
+      goEndpointController,
+      goTokenController,
       descController,
     ];
     bool obscurePassword = true;
+    var dialogDriverType = preset.driverType;
 
     final result = await showDialog<bool>(
       context: context,
@@ -1039,12 +1323,11 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
             ],
           ),
           content: SizedBox(
-            width: 450,
+            width: 500,
             child: SingleChildScrollView(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 预设名称
                   _buildCompactTextField(
                     controller: nameController,
                     label: '预设名称',
@@ -1052,83 +1335,133 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
                     hint: '输入预设名称',
                   ),
                   const SizedBox(height: 12),
-                  // 主机地址和端口一行
-                  Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: _buildCompactTextField(
-                          controller: hostController,
-                          label: '主机地址',
-                          icon: Icons.dns_rounded,
-                          hint: 'localhost',
-                        ),
+                  DropdownButtonFormField<DatabasePersistenceType>(
+                    value: dialogDriverType,
+                    decoration: InputDecoration(
+                      labelText: '持久化方式',
+                      prefixIcon: Icon(dialogDriverType.icon, size: 18),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        flex: 2,
-                        child: _buildCompactTextField(
-                          controller: portController,
-                          label: '端口',
-                          icon: Icons.settings_ethernet_rounded,
-                          hint: '5432',
-                          keyboardType: TextInputType.number,
-                        ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // 数据库名和用户名一行
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _buildCompactTextField(
-                          controller: databaseController,
-                          label: '数据库名',
-                          icon: Icons.storage_rounded,
-                          hint: 'alist_video',
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildCompactTextField(
-                          controller: usernameController,
-                          label: '用户名',
-                          icon: Icons.person_rounded,
-                          hint: 'postgres',
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  // 密码单独一行
-                  _buildCompactTextField(
-                    controller: passwordController,
-                    label: '密码',
-                    icon: Icons.lock_rounded,
-                    hint: '请输入数据库密码',
-                    obscureText: obscurePassword,
-                    suffixIcon: IconButton(
-                      icon: Icon(
-                        obscurePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                        size: 18,
-                      ),
-                      onPressed: () {
-                        setState(() {
-                          obscurePassword = !obscurePassword;
-                        });
-                      },
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                     ),
+                    items: DatabasePersistenceType.values
+                        .map(
+                          (type) => DropdownMenuItem(
+                            value: type,
+                            child: Text(type.displayName),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value == null) return;
+                      setState(() {
+                        dialogDriverType = value;
+                      });
+                    },
                   ),
                   const SizedBox(height: 12),
-                  // 描述
+                  if (dialogDriverType ==
+                      DatabasePersistenceType.remotePostgres) ...[
+                    Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _buildCompactTextField(
+                            controller: hostController,
+                            label: '主机地址',
+                            icon: Icons.dns_rounded,
+                            hint: 'localhost',
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          flex: 2,
+                          child: _buildCompactTextField(
+                            controller: portController,
+                            label: '端口',
+                            icon: Icons.settings_ethernet_rounded,
+                            hint: '5432',
+                            keyboardType: TextInputType.number,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildCompactTextField(
+                            controller: databaseController,
+                            label: '数据库名',
+                            icon: Icons.storage_rounded,
+                            hint: 'alist_video',
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildCompactTextField(
+                            controller: usernameController,
+                            label: '用户名',
+                            icon: Icons.person_rounded,
+                            hint: 'postgres',
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _buildCompactTextField(
+                      controller: passwordController,
+                      label: '密码',
+                      icon: Icons.lock_rounded,
+                      hint: '请输入数据库密码',
+                      obscureText: obscurePassword,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          obscurePassword
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 18,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            obscurePassword = !obscurePassword;
+                          });
+                        },
+                      ),
+                    ),
+                  ] else if (dialogDriverType ==
+                      DatabasePersistenceType.localSqlite) ...[
+                    _buildCompactTextField(
+                      controller: sqlitePathController,
+                      label: 'SQLite 文件路径',
+                      icon: Icons.folder_open_rounded,
+                      hint: '留空使用默认路径',
+                    ),
+                  ] else ...[
+                    _buildCompactTextField(
+                      controller: goEndpointController,
+                      label: 'Go 服务地址',
+                      icon: Icons.http_rounded,
+                      hint: 'http://127.0.0.1:7788',
+                    ),
+                    const SizedBox(height: 12),
+                    _buildCompactTextField(
+                      controller: goTokenController,
+                      label: '访问令牌 (可选)',
+                      icon: Icons.vpn_key_rounded,
+                      hint: '如需鉴权可填写',
+                    ),
+                  ],
+                  const SizedBox(height: 12),
                   _buildCompactTextField(
                     controller: descController,
                     label: '描述（可选）',
-                    icon: Icons.description_outlined,
-                    hint: '输入预设描述',
+                    icon: Icons.short_text_rounded,
+                    hint: '输入描述信息',
                     maxLines: 2,
                   ),
                 ],
@@ -1138,24 +1471,12 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(context, false),
-              style: TextButton.styleFrom(
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
               child: const Text('取消'),
             ),
-            ElevatedButton(
+            FilledButton.icon(
               onPressed: () => Navigator.pop(context, true),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).primaryColor,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-              ),
-              child: const Text('保存'),
+              icon: const Icon(Icons.save_outlined, size: 18),
+              label: const Text('保存变更'),
             ),
           ],
         ),
@@ -1164,35 +1485,36 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
 
     if (result == true && nameController.text.trim().isNotEmpty) {
       try {
-        final port = int.tryParse(portController.text.trim());
-        if (port == null || port <= 0 || port > 65535) {
-          throw Exception('请输入有效的端口号');
-        }
-
-        // 检查名称是否与其他预设重复（排除自己）
         final allPresets = await _configManager.getAllPresets();
-        final nameExists = allPresets.any((p) => p.id != preset.id && p.name == nameController.text.trim());
+        final nameExists = allPresets.any(
+          (p) => p.id != preset.id && p.name == nameController.text.trim(),
+        );
         if (nameExists) {
           throw Exception('已存在同名的配置预设');
         }
 
-        // 创建更新后的预设，保持原有的ID和创建时间
-        final updatedPreset = DatabaseConfigPreset(
+        final updatedPreset = _composePreset(
           id: preset.id,
           name: nameController.text.trim(),
-          host: hostController.text.trim(),
-          port: port,
-          database: databaseController.text.trim(),
-          username: usernameController.text.trim(),
-          password: passwordController.text.trim(),
+          driverType: dialogDriverType,
+          host: hostController.text,
+          portText: portController.text,
+          database: databaseController.text,
+          username: usernameController.text,
+          password: passwordController.text,
+          sqlitePath: sqlitePathController.text,
+          goEndpoint: goEndpointController.text,
+          goToken: goTokenController.text,
           createdAt: preset.createdAt,
           isDefault: preset.isDefault,
-          description: descController.text.trim().isEmpty ? null : descController.text.trim(),
+          description: descController.text.trim().isEmpty
+              ? null
+              : descController.text.trim(),
         );
 
         final success = await _configManager.savePreset(updatedPreset);
         if (success) {
-          await _loadData(); // 重新加载数据
+          await _loadData();
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -1214,9 +1536,7 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
       }
     }
 
-    // 清理控制器
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // 延迟释放控制器，确保对话框在所有平台的关闭动画完成时不再引用已释放的控制器，避免触发 dispose 后使用的异常。
       for (final controller in dialogControllers) {
         controller.dispose();
       }
@@ -1435,13 +1755,19 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                color: Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withValues(alpha: 0.3),
               ),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.3),
+                color: Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withValues(alpha: 0.3),
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -1468,7 +1794,6 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     );
   }
 
-
   @override
   void dispose() {
     _tabController.dispose();
@@ -1477,6 +1802,9 @@ class _DatabasePresetSettingsDialogState extends State<DatabasePresetSettingsDia
     _databaseController.dispose();
     _usernameController.dispose();
     _passwordController.dispose();
+    _sqlitePathController.dispose();
+    _goEndpointController.dispose();
+    _goTokenController.dispose();
     super.dispose();
   }
 }

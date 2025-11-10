@@ -24,12 +24,26 @@ class HistoricalRecord {
   });
 
   factory HistoricalRecord.fromMap(Map<String, dynamic> map) {
+    // SQLite/Go 驱动会返回字符串或时间戳，这里统一转换为 DateTime
+    DateTime parseChangeTime(dynamic value) {
+      if (value is DateTime) {
+        return value;
+      }
+      if (value is String) {
+        return DateTime.tryParse(value) ?? DateTime.now();
+      }
+      if (value is int) {
+        return DateTime.fromMillisecondsSinceEpoch(value);
+      }
+      return DateTime.now();
+    }
+
     return HistoricalRecord(
       videoSha1: map['video_sha1'] as String,
       videoPath: map['video_path'] as String,
       videoSeek: map['video_seek'] as int,
       userId: map['user_id'] as int,
-      changeTime: map['change_time'] as DateTime,
+      changeTime: parseChangeTime(map['change_time']),
       videoName: map['video_name'] as String,
       totalVideoDuration: map['total_video_duration'] as int,
       screenshot: map['screenshot'] as Uint8List?,

@@ -1,9 +1,11 @@
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/models/database_connection_config.dart';
+import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
 import 'package:alist_player/views/settings/database_preset_settings_dialog.dart';
+import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DatabaseSettingsDialog extends StatefulWidget {
   final String host;
@@ -57,13 +59,15 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
     try {
       // 创建一个临时的数据库连接进行测试
       final db = DatabaseHelper.instance;
-      await db.init(
+      final config = DatabaseConnectionConfig(
+        type: DatabasePersistenceType.remotePostgres,
         host: _hostController.text,
         port: int.parse(_portController.text),
         database: _nameController.text,
         username: _userController.text,
         password: _passwordController.text,
       );
+      await db.initWithConfig(config);
 
       // 测试连接
       await db.query('SELECT 1');
@@ -76,17 +80,15 @@ class _DatabaseSettingsDialogState extends State<DatabaseSettingsDialog> {
         prefs.setString(AppConstants.dbUserKey, _userController.text),
         prefs.setString(AppConstants.dbPasswordKey, _passwordController.text),
         prefs.setInt(AppConstants.dbPortKey, int.parse(_portController.text)),
+        prefs.setString(
+          AppConstants.dbDriverTypeKey,
+          DatabasePersistenceType.remotePostgres.storageValue,
+        ),
       ]);
 
       // 使用新的配置重新初始化数据库连接
       await DatabaseHelper.instance.close(); // 先关闭现有连接
-      await DatabaseHelper.instance.init(
-        host: _hostController.text,
-        port: int.parse(_portController.text),
-        database: _nameController.text,
-        username: _userController.text,
-        password: _passwordController.text,
-      );
+      await DatabaseHelper.instance.initWithConfig(config);
 
       if (!mounted) return;
 
@@ -470,11 +472,3 @@ class ApiSettingsDialog {
     await ApiPresetSettingsDialog.show(context);
   }
 }
-
-
-
-
-
-
-
-
