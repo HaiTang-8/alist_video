@@ -1,0 +1,73 @@
+# Go 持久化桥接服务
+
+该服务用于在本地运行一个中间层，将 Flutter 客户端的 SQL 指令转发到任意 `database/sql` 支持的数据库（目前默认包含 MySQL、PostgreSQL、Oracle）。
+
+## 目录结构
+
+```
+go/go_bridge/
+├── config.yaml        # 示例配置
+├── go.mod
+├── go.sum
+└── main.go            # 服务入口
+```
+
+## 配置说明
+
+`config.yaml` 支持以下字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `listen` | 监听地址，默认 `:7788` |
+| `driver` | `mysql` / `postgres` / `oracle`（使用 go-ora 驱动） |
+| `dsn` | 数据源字符串，示例：`user=postgres password=wasd..123 host=127.0.0.1 port=5432 dbname=alist_video sslmode=disable` |
+| `authToken` | 可选，设置后 Flutter 端需要携带 `Authorization: Bearer <token>` |
+| `maxOpenConns` | 最大连接数，默认 5 |
+| `maxIdleConns` | 最大空闲连接，默认 2 |
+| `connMaxLifetime` | 连接最大生命周期，Go duration 字符串，例如 `30m` |
+
+也可以通过环境变量指定配置路径：`GO_BRIDGE_CONFIG=/path/to/config.yaml`。
+
+## 启动
+
+```bash
+cd go/go_bridge
+go run .
+```
+
+首次运行会自动安装所需依赖（gin、sqlx、go-ora 等）。启动后可通过 `http://127.0.0.1:7788/health` 探活。
+
+## 接口契约
+
+| 方法 | 路径 | 说明 | 请求示例 |
+| --- | --- | --- | --- |
+| `GET` | `/health` | DB 探活 | - |
+| `POST` | `/sql/query` | 通用查询 | `{ "sql": "SELECT * FROM t_historical_records WHERE user_id = @id", "parameters": {"id": 1} }` |
+| `POST` | `/sql/insert` | 插入 | `{ "table": "t_favorite_directories", "values": {"path": "/home", "name": "Home", "user_id": 1} }` |
+| `POST` | `/sql/update` | 更新 | `{ "table": "t_historical_records", "values": {"video_seek": 10}, "where": "video_sha1 = @sha1 AND user_id = @uid", "whereArgs": {"sha1": "abc", "uid": 1} }` |
+| `POST` | `/sql/delete` | 删除 | `{ "table": "t_favorite_directories", "where": "user_id = @uid", "whereArgs": {"uid": 1} }` |
+
+注意：Flutter 端沿用 `@param` 占位符，Go 服务会自动转换成指定驱动可识别的命名参数。
+
+## 配合 Flutter 使用
+
+1. 在 `config.yaml` 中配置实际数据库。
+2. 启动 Go 服务后，在 Flutter 应用的数据库设置中选择 “本地 Go 服务” 模式，填入 `http://127.0.0.1:7788` 及 Token。
+3. 即可通过 Go 中间层完成历史记录、收藏等读写。
+
+## 生产构建
+
+使用同目录下的 `build_release.sh` 可生成最小化二进制（`-trimpath -ldflags "-s -w"`），支持交叉编译：
+
+```bash
+# 本机构建
+./build_release.sh
+
+# 构建 Linux/amd64
+GOOS=linux GOARCH=amd64 ./build_release.sh
+
+# 指定输出文件名
+BIN_NAME=go_bridge_linux ./build_release.sh
+```
+
+脚本会将结果输出到仓库根目录的 `dist/` 目录，方便打包发布。

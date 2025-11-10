@@ -1,0 +1,7 @@
+listen: ":7788"
+driver: "postgres"
+dsn: "host=127.0.0.1 port=5432 user=root password=w1234 dbname=postgres sslmode=disable"
+authToken: "zqtt"
+maxOpenConns: 5
+maxIdleConns: 2
+connMaxLifetime: "30m"

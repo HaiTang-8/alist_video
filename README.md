@@ -208,6 +208,38 @@ lib/
 ├── widgets/        # 自定义组件
 └── main.dart       # 应用入口
 
+# 🛠️ 本地 Go 数据库桥
+
+部分场景需要通过本地服务代理 MySQL / PostgreSQL / Oracle 等传统数据库。仓库自带 `go/go_bridge` 工程，可按如下步骤启用：
+
+1. 根据 `go/go_bridge/config.yaml` 调整数据库驱动与 DSN；如需自定义路径，可设置环境变量 `GO_BRIDGE_CONFIG=/path/to/config.yaml`。
+2. 在本机安装 Go 1.21+，执行：
+
+```bash
+cd go/go_bridge
+go run .
+```
+
+3. 启动成功后，访问 `http://127.0.0.1:7788/health` 校验；Flutter 端在数据库设置中选择“本地 Go 服务”并填入地址/Token，即可走该桥接层。
+
+详细接口契约及部署建议见 `go/go_bridge/README.md`。
+
+# 🚀 生产构建脚本
+
+项目提供统一脚本 `scripts/build_release.sh`，可一键构建不同平台的发行包，亦可编译 Go 数据库桥：
+
+```bash
+./scripts/build_release.sh android-apk      # 生成 Android APK
+./scripts/build_release.sh ios             # 构建 iOS Release
+./scripts/build_release.sh macos           # 构建 macOS 桌面端
+./scripts/build_release.sh windows         # 构建 Windows 桌面端
+./scripts/build_release.sh linux           # 构建 Linux 桌面端
+./scripts/build_release.sh web             # 构建 Web 发行版
+cd go/go_bridge && ./build_release.sh      # 编译 Go 本地数据库桥（支持 GOOS/GOARCH）
+```
+
+在运行脚本前请确保已执行 `flutter pub get`，并准备好相应平台的签名/证书环境。
+
 assets/
 ├── config/         # 配置文件
 ├── fonts/          # 字体文件
