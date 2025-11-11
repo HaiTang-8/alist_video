@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -26,6 +27,26 @@ import (
 )
 
 var placeholderPattern = regexp.MustCompile(`@([a-zA-Z0-9_]+)`) // matches @param
+
+// 复用 HTTP Client 与缓冲区，避免频繁握手与重复分配导致的吞吐下降。
+var (
+	proxyHTTPClient = &http.Client{
+		Transport: &http.Transport{
+			Proxy:               http.ProxyFromEnvironment,
+			MaxIdleConns:        256,
+			MaxIdleConnsPerHost: 64,
+			IdleConnTimeout:     90 * time.Second,
+			ForceAttemptHTTP2:   true,
+		},
+		Timeout: 0,
+	}
+	proxyBufferPool = sync.Pool{
+		New: func() interface{} {
+			// 使用 1MB 缓冲提升大码率拉流效率。
+			return make([]byte, 1<<20)
+		},
+	}
+)
 
 // Config describes Go bridge settings.
 type Config struct {
@@ -497,7 +518,7 @@ func newRouter(db *sqlx.DB, cfg Config) *gin.Engine {
 			req.Header.Set("Referer", referer)
 		}
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := proxyHTTPClient.Do(req)
 		if err != nil {
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("proxy request failed: %v", err)})
 			return
@@ -512,9 +533,14 @@ func newRouter(db *sqlx.DB, cfg Config) *gin.Engine {
 		}
 		c.Writer.WriteHeader(resp.StatusCode)
 
-		if _, err := io.Copy(c.Writer, resp.Body); err != nil {
-			// 复制过程中失败时记录日志，避免重复写头。
-			log.Printf("proxy stream interrupted: %v", err)
+		buf := proxyBufferPool.Get().([]byte)
+		defer proxyBufferPool.Put(buf)
+
+		if _, err := io.CopyBuffer(c.Writer, resp.Body, buf); err != nil {
+			// 忽略客户端主动取消/读取完成的场景，仅在真实异常时输出日志。
+			if !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
+				log.Printf("proxy stream interrupted: %v", err)
+			}
 		}
 	})
 
