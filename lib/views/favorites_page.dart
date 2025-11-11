@@ -3,10 +3,11 @@
 import 'package:alist_player/models/favorite_directory.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/views/index.dart';
-import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter/services.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class FavoritesPage extends StatefulWidget {
   const FavoritesPage({super.key});
@@ -465,33 +466,47 @@ class _FavoritesPageState extends State<FavoritesPage>
           );
         }
 
-        return GridView.builder(
-          padding: EdgeInsets.symmetric(
-            horizontal: horizontalPadding,
-            vertical: verticalPadding,
+        // 使用 Wrap 配合自适应卡片宽度，让内容高度自然扩展，避免固定 childAspectRatio
+        // 在桌面和移动端宽度变化时出现 Column 垂直溢出。
+        final totalSpacing = gridSpacing * (crossAxisCount - 1);
+        final availableWidth = width - horizontalPadding * 2;
+        final itemWidth =
+            (availableWidth - totalSpacing) / crossAxisCount;
+
+        return ScrollConfiguration(
+          behavior: const MaterialScrollBehavior().copyWith(
+            // 扩展桌面端与移动端的拖拽设备，确保鼠标/触控板也能流畅滚动。
+            dragDevices: {
+              PointerDeviceKind.touch,
+              PointerDeviceKind.mouse,
+              PointerDeviceKind.stylus,
+              PointerDeviceKind.invertedStylus,
+              PointerDeviceKind.unknown,
+            },
           ),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossAxisCount,
-            crossAxisSpacing: gridSpacing,
-            mainAxisSpacing: gridSpacing,
-            childAspectRatio: () {
-              final availableWidth = width -
-                  horizontalPadding * 2 -
-                  gridSpacing * (crossAxisCount - 1);
-              final itemWidth = availableWidth / crossAxisCount;
-              final targetHeight = width >= 1440
-                  ? 220.0
-                  : width >= 1024
-                      ? 230.0
-                      : 250.0;
-              return itemWidth / targetHeight;
-            }(),
+          child: SingleChildScrollView(
+            padding: EdgeInsets.symmetric(
+              horizontal: horizontalPadding,
+              vertical: verticalPadding,
+            ),
+            physics: const AlwaysScrollableScrollPhysics(),
+            child: Wrap(
+              spacing: gridSpacing,
+              runSpacing: gridSpacing,
+              alignment: WrapAlignment.start,
+              children: List.generate(_favorites.length, (index) {
+                final favorite = _favorites[index];
+                return SizedBox(
+                  width: itemWidth,
+                  child: _buildAnimatedFavoriteCard(
+                    favorite,
+                    index,
+                    false,
+                  ),
+                );
+              }),
+            ),
           ),
-          itemCount: _favorites.length,
-          itemBuilder: (context, index) {
-            final favorite = _favorites[index];
-            return _buildAnimatedFavoriteCard(favorite, index, false);
-          },
         );
       },
     );
