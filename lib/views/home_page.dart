@@ -76,7 +76,15 @@ class _HomePageState extends State<HomePage>
   @override
   bool get wantKeepAlive => true;
 
-  Future<void> _getList({bool refresh = false}) async {
+  // 统一获取目录数据的方法，pathSegments 为空时默认读取当前目录
+  // 通过延迟更新 currentPath，确保地址栏永远与已完成加载的目录保持一致
+  Future<void> _getList({
+    bool refresh = false,
+    List<String>? pathSegments,
+  }) async {
+    final requestPath = _normalizeRequestPath(pathSegments);
+    final requestPathString = requestPath.join('/');
+
     if (mounted) {
       setState(() {
         _isLoading = true;
@@ -90,7 +98,7 @@ class _HomePageState extends State<HomePage>
 
     try {
       var res = await FsApi.list(
-        path: currentPath.join('/'),
+        path: requestPathString,
         password: '',
         page: 1,
         perPage: 0,
@@ -101,6 +109,7 @@ class _HomePageState extends State<HomePage>
         final contents = res.data?.content;
         if (mounted) {
           setState(() {
+            currentPath = requestPath;
             files = contents == null
                 ? []
                 : contents
@@ -112,7 +121,7 @@ class _HomePageState extends State<HomePage>
                           size: data.size ?? 0,
                           modified: DateTime.tryParse(data.modified ?? '') ??
                               DateTime.now(),
-                          parent: data.parent ?? currentPath.join('/'),
+                          parent: data.parent ?? requestPathString,
                         ))
                     .toList();
             _sort((file) => file.modified.millisecondsSinceEpoch, 2, false);
@@ -144,6 +153,21 @@ class _HomePageState extends State<HomePage>
         });
       }
     }
+  }
+
+  // 规范化请求路径，保证至少包含根节点，避免出现空路径或缺少前导 '/'
+  List<String> _normalizeRequestPath(List<String>? pathSegments) {
+    final normalized = pathSegments != null
+        ? List<String>.from(pathSegments)
+        : List<String>.from(currentPath);
+
+    if (normalized.isEmpty) {
+      normalized.add('/');
+    } else if (normalized.first != '/') {
+      normalized.insert(0, '/');
+    }
+
+    return normalized;
   }
 
   // 新增方法：检查哪些文件已下载到本地
@@ -287,20 +311,11 @@ class _HomePageState extends State<HomePage>
 
   void _handleError(
     String message, {
-    bool revertPath = true,
     bool recordErrorState = true,
   }) {
-    if (mounted) {
+    if (mounted && recordErrorState) {
       setState(() {
-        if (recordErrorState) {
-          _errorMessage = message;
-        }
-        if (revertPath && currentPath.isNotEmpty) {
-          currentPath.removeLast();
-        }
-        if (revertPath && currentPath.isEmpty) {
-          currentPath.add('/');
-        }
+        _errorMessage = message;
       });
     }
     toastification.show(
@@ -350,14 +365,10 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _reloadCurrentDirectory({bool jumpToRoot = false}) async {
-    // jumpToRoot=true 时用于一键回到根目录后重试，避免陷入无操作状态
-    if (jumpToRoot && mounted) {
-      setState(() {
-        currentPath = ['/'];
-      });
-    }
+    // jumpToRoot=true 时指定根目录为目标路径，否则沿用当前路径
+    final targetPath = jumpToRoot ? <String>['/'] : null;
     _animationController.reset();
-    await _getList();
+    await _getList(pathSegments: targetPath);
     if (mounted) {
       _animationController.forward();
     }
@@ -466,14 +477,12 @@ class _HomePageState extends State<HomePage>
       } else {
         _handleError(
           res.message ?? '搜索失败',
-          revertPath: false,
           recordErrorState: false,
         );
       }
     } catch (e) {
       _handleError(
         '搜索失败,请检查网络连接',
-        revertPath: false,
         recordErrorState: false,
       );
     }
@@ -659,10 +668,8 @@ class _HomePageState extends State<HomePage>
             }
             newPath.add(file.name);
 
-            setState(() {
-              currentPath = newPath;
-            });
-            _getList();
+            // 搜索跳转同样延迟更新 currentPath，保证地址栏与内容一致
+            _getList(pathSegments: newPath);
           } else if (file.type == 2) {
             // 构建视频路径
             List<String> videoPath = ['/'];
@@ -1406,11 +1413,12 @@ class _HomePageState extends State<HomePage>
                   });
                 } else {
                   if (file.type == 1) {
-                    setState(() {
-                      currentPath.add(file.name);
-                    });
+                    // 先计算目标目录，待数据加载成功后再由 _getList 同步地址栏
+                    final targetPath =
+                        List<String>.from(currentPath)..add(file.name);
                     _animationController.reset();
-                    _getList().then((_) => _animationController.forward());
+                    _getList(pathSegments: targetPath)
+                        .then((_) => _animationController.forward());
                   } else if (file.type == 2) {
                     _gotoVideo(file);
                   }
@@ -1706,11 +1714,10 @@ class _HomePageState extends State<HomePage>
                               // 面包屑项
                               InkWell(
                                 onTap: () {
-                                  setState(() {
-                                    currentPath =
-                                        currentPath.sublist(0, index + 1);
-                                  });
-                                  _getList();
+                                  final targetPath = List<String>.from(
+                                    currentPath.sublist(0, index + 1),
+                                  );
+                                  _getList(pathSegments: targetPath);
                                 },
                                 borderRadius: BorderRadius.circular(6),
                                 child: Container(
@@ -1769,15 +1776,15 @@ class _HomePageState extends State<HomePage>
   }
 
   void loadUrl(String url, String? title) {
-    setState(() {
-      currentPath = url.split('/')..removeWhere((element) => element.isEmpty);
-      if (currentPath.isEmpty) {
-        currentPath = ['/'];
-      } else {
-        currentPath.insert(0, '/');
-      }
-    });
-    _getList();
+    final normalizedPath =
+        url.split('/')..removeWhere((element) => element.isEmpty);
+    if (normalizedPath.isEmpty) {
+      normalizedPath.add('/');
+    } else {
+      normalizedPath.insert(0, '/');
+    }
+    // loadUrl 可能来自外部深链，仍然沿用统一的延迟更新逻辑
+    _getList(pathSegments: normalizedPath);
   }
 
   Widget _buildBatchOperationBar() {
