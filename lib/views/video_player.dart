@@ -1,6 +1,7 @@
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/historical_record.dart';
+import 'package:alist_player/services/go_bridge/history_screenshot_service.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/font_helper.dart';
@@ -461,8 +462,12 @@ class VideoPlayerState extends State<VideoPlayer> {
   }
 
   // Method to take a screenshot
-  // Returns the file path if successful, null otherwise.
-  Future<String?> _takeScreenshot({String? specificVideoName}) async {
+  // Returns 保存结果用于后续上传
+  Future<ScreenshotSaveResult?> _takeScreenshot({
+    String? specificVideoName,
+    String? videoSha1,
+    int? userId,
+  }) async {
     final startTime = DateTime.now();
     try {
       _logDebug('开始截图操作...');
@@ -494,8 +499,19 @@ class VideoPlayerState extends State<VideoPlayer> {
               : 'video');
 
       // 使用优化的主线程处理，但通过Future.microtask避免阻塞当前操作
-      return await _saveScreenshotToFileOptimized(
+      final result = await _saveScreenshotToFileOptimized(
           screenshotBytes, videoNameToUse, widget.path);
+      if (result != null && videoSha1 != null && userId != null) {
+        unawaited(
+          _uploadScreenshotToGoService(
+            screenshot: result,
+            videoSha1: videoSha1,
+            userId: userId,
+            videoName: videoNameToUse,
+          ),
+        );
+      }
+      return result;
     } catch (e) {
       final totalTime = DateTime.now().difference(startTime).inMilliseconds;
       _logDebug('截图操作失败，总耗时: ${totalTime}ms, 错误: $e');
@@ -514,7 +530,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   }
 
   // 优化的截图保存方法，在主线程处理但使用异步优化
-  Future<String?> _saveScreenshotToFileOptimized(
+  Future<ScreenshotSaveResult?> _saveScreenshotToFileOptimized(
       Uint8List screenshotBytes, String videoName, String videoPath) async {
     return await Future.microtask(() async {
       final startTime = DateTime.now();
@@ -559,13 +575,34 @@ class VideoPlayerState extends State<VideoPlayer> {
         _logDebug('优化截图保存完成: $filePath, 耗时: ${totalTime}ms');
         _logDebug('文件存在: $fileExists, 文件大小: $fileSize bytes');
 
-        return filePath;
+        return ScreenshotSaveResult(
+          filePath: filePath,
+          bytes: compressedBytes,
+          isJpeg: isJpeg,
+        );
       } catch (e) {
         final totalTime = DateTime.now().difference(startTime).inMilliseconds;
         _logDebug('优化截图保存失败，耗时: ${totalTime}ms, 错误: $e');
         return null;
       }
     });
+  }
+
+  /// 当底层持久化为 Go 服务时，异步上传截图以便其他端复用
+  Future<void> _uploadScreenshotToGoService({
+    required ScreenshotSaveResult screenshot,
+    required String videoSha1,
+    required int userId,
+    required String videoName,
+  }) async {
+    await GoHistoryScreenshotService.uploadScreenshot(
+      videoSha1: videoSha1,
+      userId: userId,
+      videoName: videoName,
+      videoPath: widget.path,
+      bytes: screenshot.bytes,
+      isJpeg: screenshot.isJpeg,
+    );
   }
 
   // Modified playlist change handler to check for local files
@@ -1376,7 +1413,11 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
 
       // 异步截图，完全不阻塞主流程
-      _takeScreenshotAsync(videoName);
+      _takeScreenshotAsync(
+        videoName: videoName,
+        videoSha1: videoSha1,
+        userId: _currentUsername!.hashCode,
+      );
     } catch (e, stack) {
       _log(
         '数据库保存进度失败',
@@ -1429,11 +1470,14 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 同步截图，等待完成（退出时确保截图也保存）
       try {
-        final screenshotFilePath =
-            await _takeScreenshot(specificVideoName: videoName);
-        if (screenshotFilePath != null) {
+        final screenshotResult = await _takeScreenshot(
+          specificVideoName: videoName,
+          videoSha1: videoSha1,
+          userId: _currentUsername!.hashCode,
+        );
+        if (screenshotResult != null) {
           _log(
-            '退出时截图保存完成: $screenshotFilePath',
+            '退出时截图保存完成: ${screenshotResult.filePath}',
             level: LogLevel.debug,
           );
         } else {
@@ -1462,15 +1506,22 @@ class VideoPlayerState extends State<VideoPlayer> {
   }
 
   // 完全异步的截图方法，不阻塞任何操作
-  void _takeScreenshotAsync(String videoName) {
+  void _takeScreenshotAsync({
+    required String videoName,
+    required String videoSha1,
+    required int userId,
+  }) {
     // 使用 Future.microtask 确保在下一个事件循环中执行
     Future.microtask(() async {
       try {
-        final screenshotFilePath =
-            await _takeScreenshot(specificVideoName: videoName);
-        if (screenshotFilePath != null) {
+        final screenshotResult = await _takeScreenshot(
+          specificVideoName: videoName,
+          videoSha1: videoSha1,
+          userId: userId,
+        );
+        if (screenshotResult != null) {
           _log(
-            '截图保存成功（异步）：$screenshotFilePath',
+            '截图保存成功（异步）：${screenshotResult.filePath}',
             level: LogLevel.debug,
           );
         } else {
@@ -4717,27 +4768,40 @@ class VideoPlayerState extends State<VideoPlayer> {
           );
         }
 
-        final result = await _takeScreenshot();
-        _logDebug('截图结果: $result');
+        final currentVideoName =
+            playList.isNotEmpty && currentPlayingIndex < playList.length
+                ? playList[currentPlayingIndex].extras!['name'] as String
+                : null;
+        final int? userId = _currentUsername?.hashCode;
+        final String? videoSha1 = (userId != null && currentVideoName != null)
+            ? _getVideoSha1(widget.path, currentVideoName)
+            : null;
+
+        final result = await _takeScreenshot(
+          videoSha1: videoSha1,
+          userId: userId,
+        );
+        _logDebug('截图结果: ${result?.filePath}');
 
         if (result != null && mounted) {
           // 获取文件大小信息
           try {
-            final file = File(result);
+            final file = File(result.filePath);
             final fileSize = await file.length();
             final fileSizeKB = (fileSize / 1024).toStringAsFixed(1);
 
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('截图已保存 (${fileSizeKB}KB)\n路径: $result'),
+                  content:
+                      Text('截图已保存 (${fileSizeKB}KB)\n路径: ${result.filePath}'),
                   backgroundColor: Colors.green,
                   duration: const Duration(seconds: 3),
                   action: SnackBarAction(
                     label: '打开文件夹',
                     onPressed: () {
                       // 在macOS上打开文件夹
-                      Process.run('open', [File(result).parent.path]);
+                      Process.run('open', [file.parent.path]);
                     },
                   ),
                 ),
@@ -4905,6 +4969,19 @@ class _SpeedIndicatorOverlayState extends State<_SpeedIndicatorOverlay>
       ),
     );
   }
+}
+
+/// 截图保存结果，统一携带路径与压缩后的二进制，便于上传/缓存
+class ScreenshotSaveResult {
+  final String filePath;
+  final Uint8List bytes;
+  final bool isJpeg;
+
+  const ScreenshotSaveResult({
+    required this.filePath,
+    required this.bytes,
+    required this.isJpeg,
+  });
 }
 
 // 后台线程压缩截图的函数

@@ -560,8 +560,15 @@ class _FavoriteTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final borderRadius = BorderRadius.circular(isCompact ? 16 : 20);
+    final borderRadius = BorderRadius.circular(isCompact ? 14 : 18);
     final highlight = theme.colorScheme.primary;
+    final normalizedPath = favorite.path.replaceAll('\\', '/');
+    final pathSegments = normalizedPath
+        .split('/')
+        .where((segment) => segment.isNotEmpty)
+        .toList();
+    final displayFolderName =
+        pathSegments.isNotEmpty ? pathSegments.last : favorite.path;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 220),
@@ -589,9 +596,9 @@ class _FavoriteTile extends StatelessWidget {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(isSelected ? 0.12 : 0.08),
-            blurRadius: isCompact ? 12 : 18,
-            offset: const Offset(0, 8),
+            color: Colors.black.withOpacity(isSelected ? 0.1 : 0.06),
+            blurRadius: isCompact ? 10 : 14,
+            offset: const Offset(0, 6),
             spreadRadius: 0,
           ),
         ],
@@ -604,7 +611,10 @@ class _FavoriteTile extends StatelessWidget {
           borderRadius: borderRadius,
           splashColor: highlight.withOpacity(0.12),
           child: Padding(
-            padding: EdgeInsets.all(isCompact ? 18 : 22),
+            padding: EdgeInsets.symmetric(
+              horizontal: isCompact ? 16 : 20,
+              vertical: isCompact ? 14 : 18,
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -612,19 +622,43 @@ class _FavoriteTile extends StatelessWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: highlight.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: Icon(
-                        Icons.folder_rounded,
-                        color: highlight,
-                        size: isCompact ? 26 : 28,
+                    // 顶部仅保留名称与末级目录，移除图标后整体更紧凑。
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            favorite.name,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: 0.2,
+                                ) ??
+                                const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            displayFolderName,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.65),
+                                  letterSpacing: 0.3,
+                                ) ??
+                                TextStyle(
+                                  fontSize: 12,
+                                  color: theme.colorScheme.onSurface
+                                      .withOpacity(0.65),
+                                ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
                       ),
                     ),
-                    const Spacer(),
                     AnimatedOpacity(
                       opacity: isSelectMode ? 1 : 0,
                       duration: const Duration(milliseconds: 180),
@@ -644,64 +678,32 @@ class _FavoriteTile extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  favorite.name,
-                  style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.2,
-                      ) ??
-                      const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
                 const SizedBox(height: 10),
-                Tooltip(
-                  message: favorite.path,
-                  waitDuration: const Duration(milliseconds: 400),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: highlight.withOpacity(0.08),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.drive_file_move_rounded,
-                          size: 18,
-                          color: highlight,
+                // 使用 SelectableText 展示完整路径，移动端与桌面端都可滑动复制，避免任何截断。
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 8,
+                  ),
+                  decoration: BoxDecoration(
+                    color: highlight.withOpacity(0.06),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: SelectableText(
+                    favorite.path,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurface.withOpacity(0.82),
+                          height: 1.3,
+                        ) ??
+                        TextStyle(
+                          fontSize: 14,
+                          color: theme.colorScheme.onSurface.withOpacity(0.82),
+                          height: 1.3,
                         ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            favorite.path,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                                  color: theme.colorScheme.onSurface
-                                      .withOpacity(0.74),
-                                ) ??
-                                TextStyle(
-                                  fontSize: 14,
-                                  color: theme.colorScheme.onSurface
-                                      .withOpacity(0.74),
-                                ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
                   ),
                 ),
-                SizedBox(height: isCompact ? 16 : 24),
+                SizedBox(height: isCompact ? 12 : 18),
                 Align(
                   alignment: Alignment.centerRight,
                   child: AnimatedContainer(

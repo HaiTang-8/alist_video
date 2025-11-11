@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,13 +27,14 @@ var placeholderPattern = regexp.MustCompile(`@([a-zA-Z0-9_]+)`) // matches @para
 
 // Config describes Go bridge settings.
 type Config struct {
-	Listen       string `yaml:"listen"`
-	Driver       string `yaml:"driver"`
-	DSN          string `yaml:"dsn"`
-	AuthToken    string `yaml:"authToken"`
-	MaxOpenConns int    `yaml:"maxOpenConns"`
-	MaxIdleConns int    `yaml:"maxIdleConns"`
-	ConnMaxLife  string `yaml:"connMaxLifetime"`
+	Listen        string `yaml:"listen"`
+	Driver        string `yaml:"driver"`
+	DSN           string `yaml:"dsn"`
+	AuthToken     string `yaml:"authToken"`
+	MaxOpenConns  int    `yaml:"maxOpenConns"`
+	MaxIdleConns  int    `yaml:"maxIdleConns"`
+	ConnMaxLife   string `yaml:"connMaxLifetime"`
+	ScreenshotDir string `yaml:"screenshotDir"`
 }
 
 func loadConfig() (Config, error) {
@@ -63,6 +68,10 @@ func loadConfig() (Config, error) {
 	if cfg.MaxIdleConns == 0 {
 		cfg.MaxIdleConns = 2
 	}
+	if cfg.ScreenshotDir == "" {
+		cfg.ScreenshotDir = filepath.Join("data", "screenshots")
+	}
+	cfg.ScreenshotDir = filepath.Clean(cfg.ScreenshotDir)
 	return cfg, nil
 }
 
@@ -317,6 +326,128 @@ func newRouter(db *sqlx.DB, cfg Config) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"affectedRows": rowsAffected})
 	})
 
+	type screenshotUploadRequest struct {
+		VideoSha1   string `json:"videoSha1"`
+		UserID      int64  `json:"userId"`
+		VideoName   string `json:"videoName"`
+		VideoPath   string `json:"videoPath"`
+		IsJpeg      bool   `json:"isJpeg"`
+		ImageBase64 string `json:"imageBase64"`
+	}
+
+	r.POST("/history/screenshot", func(c *gin.Context) {
+		var req screenshotUploadRequest
+		if !bindJSON(c, &req) {
+			return
+		}
+		req.VideoSha1 = strings.TrimSpace(req.VideoSha1)
+		if req.VideoSha1 == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "videoSha1 is required"})
+			return
+		}
+		if strings.TrimSpace(req.ImageBase64) == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "imageBase64 is required"})
+			return
+		}
+		sha1, err := sanitizeIdentifier(req.VideoSha1)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		imageBytes, err := base64.StdEncoding.DecodeString(req.ImageBase64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid imageBase64"})
+			return
+		}
+		if len(imageBytes) == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "image is empty"})
+			return
+		}
+
+		userDir := fmt.Sprintf("%d", req.UserID)
+		targetDir := filepath.Join(cfg.ScreenshotDir, userDir)
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		ext := "png"
+		contentType := "image/png"
+		if req.IsJpeg {
+			ext = "jpg"
+			contentType = "image/jpeg"
+		}
+
+		fileName := fmt.Sprintf("%s_%s.%s", userDir, sha1, ext)
+		fullPath := filepath.Join(targetDir, fileName)
+		if err := os.WriteFile(fullPath, imageBytes, 0o644); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"status":      "ok",
+			"contentType": contentType,
+			"file":        fileName,
+		})
+	})
+
+	r.GET("/history/screenshot", func(c *gin.Context) {
+		videoSha1 := strings.TrimSpace(c.Query("videoSha1"))
+		if videoSha1 == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "videoSha1 is required"})
+			return
+		}
+		sha1, err := sanitizeIdentifier(videoSha1)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		userIDStr := strings.TrimSpace(c.Query("userId"))
+		if userIDStr == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "userId is required"})
+			return
+		}
+		userID, err := strconv.ParseInt(userIDStr, 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid userId"})
+			return
+		}
+		userDir := fmt.Sprintf("%d", userID)
+		targetDir := filepath.Join(cfg.ScreenshotDir, userDir)
+
+		type candidate struct {
+			path        string
+			contentType string
+		}
+
+		candidates := []candidate{
+			{
+				path:        filepath.Join(targetDir, fmt.Sprintf("%s_%s.jpg", userDir, sha1)),
+				contentType: "image/jpeg",
+			},
+			{
+				path:        filepath.Join(targetDir, fmt.Sprintf("%s_%s.png", userDir, sha1)),
+				contentType: "image/png",
+			},
+		}
+
+		for _, cand := range candidates {
+			data, err := os.ReadFile(cand.path)
+			if err == nil {
+				c.Data(http.StatusOK, cand.contentType, data)
+				return
+			}
+			if !errors.Is(err, fs.ErrNotExist) {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+				return
+			}
+		}
+
+		c.JSON(http.StatusNotFound, gin.H{"error": "screenshot not found"})
+	})
+
 	return r
 }
 
@@ -324,6 +455,15 @@ func main() {
 	cfg, err := loadConfig()
 	if err != nil {
 		log.Fatalf("load config: %v", err)
+	}
+
+	absScreenshotDir, err := filepath.Abs(cfg.ScreenshotDir)
+	if err != nil {
+		log.Fatalf("resolve screenshot dir: %v", err)
+	}
+	cfg.ScreenshotDir = absScreenshotDir
+	if err := os.MkdirAll(cfg.ScreenshotDir, 0o755); err != nil {
+		log.Fatalf("create screenshot dir: %v", err)
 	}
 
 	db, err := connectDatabase(cfg)

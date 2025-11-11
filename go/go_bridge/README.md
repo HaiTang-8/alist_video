@@ -25,6 +25,7 @@ go/go_bridge/
 | `maxOpenConns` | 最大连接数，默认 5 |
 | `maxIdleConns` | 最大空闲连接，默认 2 |
 | `connMaxLifetime` | 连接最大生命周期，Go duration 字符串，例如 `30m` |
+| `screenshotDir` | 历史截图落盘目录，默认 `data/screenshots` |
 
 也可以通过环境变量指定配置路径：`GO_BRIDGE_CONFIG=/path/to/config.yaml`。
 
@@ -46,8 +47,12 @@ go run .
 | `POST` | `/sql/insert` | 插入 | `{ "table": "t_favorite_directories", "values": {"path": "/home", "name": "Home", "user_id": 1} }` |
 | `POST` | `/sql/update` | 更新 | `{ "table": "t_historical_records", "values": {"video_seek": 10}, "where": "video_sha1 = @sha1 AND user_id = @uid", "whereArgs": {"sha1": "abc", "uid": 1} }` |
 | `POST` | `/sql/delete` | 删除 | `{ "table": "t_favorite_directories", "where": "user_id = @uid", "whereArgs": {"uid": 1} }` |
+| `POST` | `/history/screenshot` | 上传/覆盖指定用户的历史截图 | `{ "videoSha1": "abc123", "userId": 1, "videoName": "movie.mp4", "videoPath": "/media", "isJpeg": true, "imageBase64": "<...>" }` |
+| `GET` | `/history/screenshot` | 获取用户历史截图二进制 | `?videoSha1=abc123&userId=1` |
 
 注意：Flutter 端沿用 `@param` 占位符，Go 服务会自动转换成指定驱动可识别的命名参数。
+
+截图接口会将文件写入 `screenshotDir` 目录（以 `userId/videoSha1` 做键），Flutter 历史页在本地缺图时会调用 `GET /history/screenshot` 自动补齐并缓存，确保跨端历史记录缩略图一致。
 
 ## 配合 Flutter 使用
 

@@ -15,6 +15,7 @@ import 'package:flutter/services.dart';
 import 'home_page.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:alist_player/services/go_bridge/history_screenshot_service.dart';
 
 // Add this extension to avoid importing additional packages
 extension FutureExtensions<T> on Future<T> {
@@ -818,6 +819,7 @@ class _HistoryPageState extends State<HistoryPage>
 
     try {
       final directory = await getApplicationDocumentsDirectory();
+      final screenshotDir = Directory('${directory.path}/alist_player');
 
       // Sanitize path and name as done in the video player
       final String sanitizedVideoPath =
@@ -828,8 +830,7 @@ class _HistoryPageState extends State<HistoryPage>
       // 首先尝试新的 JPEG 格式（压缩后的格式）
       final String jpegFileName =
           'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.jpg';
-      final String jpegFilePath =
-          '${directory.path}/alist_player/$jpegFileName';
+      final String jpegFilePath = '${screenshotDir.path}/$jpegFileName';
       final jpegFile = File(jpegFilePath);
 
       if (await jpegFile.exists()) {
@@ -840,7 +841,7 @@ class _HistoryPageState extends State<HistoryPage>
       // 如果 JPEG 格式不存在，尝试旧的 PNG 格式（向后兼容）
       final String pngFileName =
           'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png';
-      final String pngFilePath = '${directory.path}/alist_player/$pngFileName';
+      final String pngFilePath = '${screenshotDir.path}/$pngFileName';
       final pngFile = File(pngFilePath);
 
       if (await pngFile.exists()) {
@@ -848,9 +849,15 @@ class _HistoryPageState extends State<HistoryPage>
         return pngFilePath;
       }
 
-      // 如果两种格式都不存在
-      _screenshotPathCache[cacheKey] = null;
-      return null;
+      // 本地缺图时尝试从 Go 服务拉取远端截图并写入缓存
+      final remotePath = await _downloadRemoteScreenshot(
+        record: record,
+        screenshotDir: screenshotDir,
+        sanitizedVideoPath: sanitizedVideoPath,
+        sanitizedVideoName: sanitizedVideoName,
+      );
+      _screenshotPathCache[cacheKey] = remotePath;
+      return remotePath;
     } catch (e, stack) {
       _log(
         '获取历史截图路径失败 video=${record.videoName}',
@@ -880,6 +887,45 @@ class _HistoryPageState extends State<HistoryPage>
         stackTrace: stack,
       );
       return 0;
+    }
+  }
+
+  /// 本地无图时访问 Go 服务补拉截图并落盘，确保跨端历史缩略图一致
+  Future<String?> _downloadRemoteScreenshot({
+    required HistoricalRecord record,
+    required Directory screenshotDir,
+    required String sanitizedVideoPath,
+    required String sanitizedVideoName,
+  }) async {
+    try {
+      final remoteResult = await GoHistoryScreenshotService.downloadScreenshot(
+        videoSha1: record.videoSha1,
+        userId: record.userId,
+      );
+      if (remoteResult == null) {
+        return null;
+      }
+
+      await screenshotDir.create(recursive: true);
+      final extension = remoteResult.isJpeg ? 'jpg' : 'png';
+      final fileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.$extension';
+      final filePath = '${screenshotDir.path}/$fileName';
+      final file = File(filePath);
+      await file.writeAsBytes(remoteResult.bytes);
+      _log(
+        '远端截图拉取成功并写入缓存 video=${record.videoName}',
+        level: LogLevel.debug,
+      );
+      return filePath;
+    } catch (e, stack) {
+      _log(
+        '远端截图缓存失败 video=${record.videoName}',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
+      return null;
     }
   }
 
