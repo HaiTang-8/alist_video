@@ -1,7 +1,7 @@
 # AList Player
 
 <div align="center">
-  <img src="assets/icon/1024_logo.png" alt="AList Player Logo" width="128" height="128">
+  <img src="assets/icon/logo.png" alt="AList Player Logo" width="128" height="128">
 
   <h3>基于 AList 的跨平台视频播放器</h3>
 

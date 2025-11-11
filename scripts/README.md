@@ -280,7 +280,7 @@ dist/
 - **iOS**: `ios/Runner/Info.plist` 中的 `CFBundleDisplayName`
 
 ### 修改应用图标
-替换 `assets/icon/1024_logo.png` 文件，然后重新运行构建脚本。
+替换 `assets/icon/logo.png` 文件，然后重新运行构建脚本。
 
 ### 修改版本号
 编辑 `pubspec.yaml` 中的 `version` 字段。

@@ -67,15 +67,12 @@ flutter_launcher_icons:
   ios: true
   macos:
     generate: true
-    image_path: "assets/icon/1024_logo.png"
+    image_path: "assets/icon/log.png"
   windows:
     generate: true
-    image_path: "assets/icon/1024_logo.png"
     icon_size: 48
-  image_path: "assets/icon/1024_logo.png"
-  adaptive_icon_background: "#ffffff"
-  adaptive_icon_foreground: "assets/icon/1024_logo.png"
-  remove_alpha_ios: true
+  image_path: "assets/icon/logo.png"
+  
 names_launcher:
   name: "AlistPlayer"
   platforms:
