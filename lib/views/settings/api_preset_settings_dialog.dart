@@ -107,8 +107,19 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
           prefs.getString(AppConstants.baseDownloadUrlKey) ??
               AppConstants.defaultBaseDownloadUrl;
 
+      // 需求：与数据库设置保持一致，当前使用的配置需要排在列表第一位方便识别。
+      final orderedPresets = List<ApiConfigPreset>.from(presets);
+      if (currentPreset != null) {
+        final index = orderedPresets
+            .indexWhere((preset) => preset.id == currentPreset.id);
+        if (index > 0) {
+          final activePreset = orderedPresets.removeAt(index);
+          orderedPresets.insert(0, activePreset);
+        }
+      }
+
       setState(() {
-        _presets = presets;
+        _presets = orderedPresets;
         _selectedPreset = currentPreset;
         _baseUrlController.text = baseUrl;
         _baseDownloadUrlController.text = baseDownloadUrl;

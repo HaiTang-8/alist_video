@@ -47,6 +47,7 @@ class _DatabasePresetSettingsDialogState
     extends State<DatabasePresetSettingsDialog> with TickerProviderStateMixin {
   late TabController _tabController;
   final DatabaseConfigManager _configManager = DatabaseConfigManager();
+
   /// 局部化的 ScaffoldMessenger，确保桌面弹窗内也能展示 Snackbar
   final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
       GlobalKey<ScaffoldMessengerState>();
@@ -108,8 +109,19 @@ class _DatabasePresetSettingsDialogState
       final goEndpoint = prefs.getString(AppConstants.dbGoBridgeUrlKey) ?? '';
       final goToken = prefs.getString(AppConstants.dbGoBridgeTokenKey) ?? '';
 
+      // 保持与 API 设置一致：当前使用的预设必须排在列表首位，方便用户快速识别与操作。
+      final orderedPresets = List<DatabaseConfigPreset>.from(presets);
+      if (currentPreset != null) {
+        final index = orderedPresets
+            .indexWhere((preset) => preset.id == currentPreset.id);
+        if (index > 0) {
+          final activePreset = orderedPresets.removeAt(index);
+          orderedPresets.insert(0, activePreset);
+        }
+      }
+
       setState(() {
-        _presets = presets;
+        _presets = orderedPresets;
         _selectedPreset = currentPreset;
         _hostController.text = host;
         _portController.text = port.toString();
@@ -309,8 +321,7 @@ class _DatabasePresetSettingsDialogState
 
       // 本地SQLite配置只能保留一个，先做前置校验避免无意义的持久化操作
       if (_customDriverType == DatabasePersistenceType.localSqlite) {
-        final hasSqlitePreset =
-            await _configManager.hasLocalSqlitePreset();
+        final hasSqlitePreset = await _configManager.hasLocalSqlitePreset();
         if (hasSqlitePreset) {
           if (mounted) {
             _showSnackBar(
@@ -664,9 +675,8 @@ class _DatabasePresetSettingsDialogState
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
 
-    final layout = isMobile
-        ? _buildMobileLayout(context)
-        : _buildDesktopLayout(context);
+    final layout =
+        isMobile ? _buildMobileLayout(context) : _buildDesktopLayout(context);
 
     return ScaffoldMessenger(
       key: _scaffoldMessengerKey,
@@ -807,7 +817,8 @@ class _DatabasePresetSettingsDialogState
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context),
-                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 20),
                     padding: EdgeInsets.zero,
                     constraints:
                         const BoxConstraints(minWidth: 32, minHeight: 32),
