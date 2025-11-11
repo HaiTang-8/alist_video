@@ -88,9 +88,8 @@ fi
 echo -e "${YELLOW}正在获取依赖...${NC}"
 flutter pub get
 
-# 生成图标
-echo -e "${YELLOW}正在生成应用图标...${NC}"
-dart run flutter_launcher_icons:main
+# 图标生成需手动执行，避免脚本自动修改多端共用资源
+echo -e "${YELLOW}跳过应用图标生成，请手动运行: dart run flutter_launcher_icons:main${NC}"
 
 # 构建macOS应用
 echo -e "${YELLOW}正在构建 macOS 应用...${NC}"

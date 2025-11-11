@@ -83,9 +83,8 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM 生成图标
-echo 正在生成应用图标...
-dart run flutter_launcher_icons:main
+REM 图标生成改为手动执行，脚本仅提示用户自行处理
+echo 跳过应用图标生成，请手动运行: dart run flutter_launcher_icons:main
 
 REM 构建Windows应用
 echo 正在构建 Windows 应用...

@@ -172,9 +172,8 @@ cd ios
 pod install --repo-update
 cd ..
 
-# 生成图标
-echo -e "${YELLOW}正在生成应用图标...${NC}"
-dart run flutter_launcher_icons:main
+# 图标生成需手动执行，避免脚本自动影响桌面与移动端资源
+echo -e "${YELLOW}跳过应用图标生成，请手动运行: dart run flutter_launcher_icons:main${NC}"
 
 # 构建iOS应用
 echo -e "${YELLOW}正在构建 iOS 应用...${NC}"

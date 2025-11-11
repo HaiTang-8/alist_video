@@ -147,8 +147,7 @@ pod setup
 pod install --repo-update --verbose
 cd ..
 
-echo -e "${YELLOW}8. 生成应用图标...${NC}"
-dart run flutter_launcher_icons:main
+echo -e "${YELLOW}8. 跳过脚本内的应用图标生成，请手动运行: dart run flutter_launcher_icons:main${NC}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}    iOS构建问题修复完成!${NC}"
