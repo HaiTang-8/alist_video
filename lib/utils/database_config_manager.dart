@@ -34,16 +34,23 @@ class DatabaseConfigManager {
     try {
       final prefs = await SharedPreferences.getInstance();
       final presetsJson = prefs.getString(AppConstants.dbPresetsKey) ?? '[]';
-      final presets = DatabaseConfigPreset.fromJsonList(presetsJson);
+      final loadedPresets = DatabaseConfigPreset.fromJsonList(presetsJson);
 
       // 如果没有预设，创建默认预设
-      if (presets.isEmpty) {
+      if (loadedPresets.isEmpty) {
         final defaultPreset = _createDefaultPreset();
         await _savePresets([defaultPreset]);
         return [defaultPreset];
       }
 
-      return presets;
+      // 运行时兜底，确保本地 SQLite 预设永远只保留一个
+      final sanitizedPresets =
+          _enforceSingleLocalSqlitePreset(loadedPresets.toList());
+      if (sanitizedPresets.length != loadedPresets.length) {
+        await _savePresets(sanitizedPresets);
+      }
+
+      return sanitizedPresets;
     } catch (e, stack) {
       _log(
         '获取数据库配置预设失败',
@@ -55,10 +62,36 @@ class DatabaseConfigManager {
     }
   }
 
+  /// 判断是否存在除指定ID外的本地SQLite预设，方便上层在UI层阻止重复创建
+  Future<bool> hasLocalSqlitePreset({String? excludePresetId}) async {
+    final presets = await getAllPresets();
+    return presets.any(
+      (preset) =>
+          preset.driverType == DatabasePersistenceType.localSqlite &&
+          preset.id != excludePresetId,
+    );
+  }
+
   /// 保存数据库配置预设
   Future<bool> savePreset(DatabaseConfigPreset preset) async {
     try {
       final presets = await getAllPresets();
+
+      // 本地SQLite数据库只能存在一个预设，提前阻止重复写入
+      if (preset.driverType == DatabasePersistenceType.localSqlite) {
+        final hasOtherSqlite = presets.any(
+          (p) =>
+              p.driverType == DatabasePersistenceType.localSqlite &&
+              p.id != preset.id,
+        );
+        if (hasOtherSqlite) {
+          _log(
+            '尝试新增或更新多个本地SQLite预设已被阻止',
+            level: LogLevel.warning,
+          );
+          return false;
+        }
+      }
 
       // 首先根据ID检查是否已存在（用于更新）
       final existingIndexById = presets.indexWhere((p) => p.id == preset.id);
@@ -288,6 +321,35 @@ class DatabaseConfigManager {
         stackTrace: stack,
       );
     }
+  }
+
+  /// 遍历并移除多余的本地SQLite预设，保留最早创建的一个，避免多端状态不一致
+  List<DatabaseConfigPreset> _enforceSingleLocalSqlitePreset(
+    List<DatabaseConfigPreset> presets,
+  ) {
+    final sqlitePresets = presets
+        .where(
+          (preset) => preset.driverType == DatabasePersistenceType.localSqlite,
+        )
+        .toList();
+    if (sqlitePresets.length <= 1) {
+      return presets;
+    }
+
+    sqlitePresets.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    final preservedId = sqlitePresets.first.id;
+    _log(
+      '检测到多个本地SQLite预设，仅保留ID为 $preservedId 的预设，其余将被移除',
+      level: LogLevel.warning,
+    );
+
+    return presets
+        .where(
+          (preset) =>
+              preset.driverType != DatabasePersistenceType.localSqlite ||
+              preset.id == preservedId,
+        )
+        .toList();
   }
 
   /// 保存配置预设列表到本地存储

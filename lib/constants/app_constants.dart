@@ -31,7 +31,8 @@ class AppConstants {
   static const String defaultBaseUrl = 'http://127.0.0.1:5244';
   static const String defaultBaseDownloadUrl = 'http://127.0.0.1:5244/d';
   static const Duration apiConnectTimeout = Duration(seconds: 5);
-  static const Duration apiReceiveTimeout = Duration(seconds: 3);
+  // WebDAV 目录与文件列表在公网及移动网络上响应容易超过 3 秒，因此放宽至 15 秒避免频繁 Dio receiveTimeout。
+  static const Duration apiReceiveTimeout = Duration(seconds: 15);
 
   // HTTP Headers
   static const String contentType = 'content-type';

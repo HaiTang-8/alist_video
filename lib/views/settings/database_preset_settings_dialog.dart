@@ -47,6 +47,9 @@ class _DatabasePresetSettingsDialogState
     extends State<DatabasePresetSettingsDialog> with TickerProviderStateMixin {
   late TabController _tabController;
   final DatabaseConfigManager _configManager = DatabaseConfigManager();
+  /// 局部化的 ScaffoldMessenger，确保桌面弹窗内也能展示 Snackbar
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   // 预设相关
   List<DatabaseConfigPreset> _presets = [];
@@ -128,15 +131,23 @@ class _DatabasePresetSettingsDialogState
       setState(() {
         _isLoadingPresets = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('加载配置失败: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _showSnackBar(
+        SnackBar(
+          content: Text('加载配置失败: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  }
+
+  /// 统一封装 Snackbar 展示，防止桌面弹窗的提示出现在外层 Scaffold
+  void _showSnackBar(SnackBar snackBar) {
+    if (!mounted) return;
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(snackBar);
   }
 
   /// 保存配置
@@ -186,7 +197,7 @@ class _DatabasePresetSettingsDialogState
 
       if (mounted) {
         Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           const SnackBar(
             content: Text('数据库配置已保存'),
             backgroundColor: Colors.green,
@@ -195,7 +206,7 @@ class _DatabasePresetSettingsDialogState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           SnackBar(
             content: Text('保存配置失败: $e'),
             backgroundColor: Colors.red,
@@ -286,7 +297,7 @@ class _DatabasePresetSettingsDialogState
       final presetName = nameController.text.trim();
       if (presetName.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _showSnackBar(
             const SnackBar(
               content: Text('请填写预设名称'),
               backgroundColor: Colors.orange,
@@ -294,6 +305,23 @@ class _DatabasePresetSettingsDialogState
           );
         }
         return;
+      }
+
+      // 本地SQLite配置只能保留一个，先做前置校验避免无意义的持久化操作
+      if (_customDriverType == DatabasePersistenceType.localSqlite) {
+        final hasSqlitePreset =
+            await _configManager.hasLocalSqlitePreset();
+        if (hasSqlitePreset) {
+          if (mounted) {
+            _showSnackBar(
+              const SnackBar(
+                content: Text('已存在本地SQLite预设，请先删除后再创建新的本地SQLite配置'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+          return;
+        }
       }
 
       final preset = _composePreset(
@@ -316,7 +344,7 @@ class _DatabasePresetSettingsDialogState
       final success = await _configManager.savePreset(preset);
       if (!success) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _showSnackBar(
             const SnackBar(
               content: Text('保存预设失败，请稍后重试'),
               backgroundColor: Colors.red,
@@ -328,14 +356,14 @@ class _DatabasePresetSettingsDialogState
 
       final connectionOk = await _configManager.testConnection(preset);
       if (!connectionOk && mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           const SnackBar(
             content: Text('预设保存成功，但连接测试失败'),
             backgroundColor: Colors.orange,
           ),
         );
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           SnackBar(
             content: Text('预设 "$presetName" 保存成功'),
             backgroundColor: Colors.green,
@@ -353,7 +381,7 @@ class _DatabasePresetSettingsDialogState
       await prefs.setBool(AppConstants.enableSqlLoggingKey, _enableSqlLogging);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           SnackBar(
             content: Text(_enableSqlLogging ? 'SQL日志已启用' : 'SQL日志已禁用'),
             backgroundColor: Colors.green,
@@ -363,7 +391,7 @@ class _DatabasePresetSettingsDialogState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           SnackBar(
             content: Text('保存设置失败: $e'),
             backgroundColor: Colors.red,
@@ -636,9 +664,14 @@ class _DatabasePresetSettingsDialogState
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
 
-    return isMobile
+    final layout = isMobile
         ? _buildMobileLayout(context)
         : _buildDesktopLayout(context);
+
+    return ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: layout,
+    );
   }
 
   /// 构建移动端布局
@@ -742,137 +775,146 @@ class _DatabasePresetSettingsDialogState
 
   /// 构建桌面端布局
   Widget _buildDesktopLayout(BuildContext context) {
-    return Card(
-      elevation: 8,
-      shape: const RoundedRectangleBorder(),
-      margin: EdgeInsets.zero,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 紧凑的标题栏
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor,
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.storage_rounded,
-                    color: Colors.white, size: 20),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    '数据库设置',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close, color: Colors.white, size: 20),
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                ),
-              ],
-            ),
-          ),
-          // 紧凑的标签栏
-          Container(
-            margin: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: TabBar(
-              controller: _tabController,
-              indicator: BoxDecoration(
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Card(
+        elevation: 8,
+        shape: const RoundedRectangleBorder(),
+        margin: EdgeInsets.zero,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 紧凑的标题栏
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
                 color: Theme.of(context).primaryColor,
-                borderRadius: BorderRadius.circular(6),
               ),
-              indicatorSize: TabBarIndicatorSize.tab,
-              dividerColor: Colors.transparent,
-              labelColor: Colors.white,
-              unselectedLabelColor:
-                  Theme.of(context).colorScheme.onSurfaceVariant,
-              labelStyle:
-                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-              unselectedLabelStyle:
-                  const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
-              padding: const EdgeInsets.all(4),
-              tabs: const [
-                Tab(text: '预设配置'),
-                Tab(text: '自定义配置'),
-              ],
-            ),
-          ),
-          // 内容区域
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildPresetTab(context, false),
-                _buildCustomTab(context, false),
-              ],
-            ),
-          ),
-          // 紧凑的底部按钮
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-            decoration: BoxDecoration(
-              color: Theme.of(context)
-                  .colorScheme
-                  .surfaceContainerHighest
-                  .withValues(alpha: 0.5),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  style: TextButton.styleFrom(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    minimumSize: const Size(64, 36),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+              child: Row(
+                children: [
+                  const Icon(Icons.storage_rounded,
+                      color: Colors.white, size: 20),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '数据库设置',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
-                  child: const Text('取消'),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
+                    constraints:
+                        const BoxConstraints(minWidth: 32, minHeight: 32),
+                  ),
+                ],
+              ),
+            ),
+            // 紧凑的标签栏
+            Container(
+              margin: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: Theme.of(context).primaryColor,
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _saveConfig,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Theme.of(context).primaryColor,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    minimumSize: const Size(64, 36),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
+                labelColor: Colors.white,
+                unselectedLabelColor:
+                    Theme.of(context).colorScheme.onSurfaceVariant,
+                labelStyle:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                unselectedLabelStyle:
+                    const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
+                padding: const EdgeInsets.all(4),
+                tabs: const [
+                  Tab(text: '预设配置'),
+                  Tab(text: '自定义配置'),
+                ],
+              ),
+            ),
+            // 内容区域
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  _buildPresetTab(context, false),
+                  _buildCustomTab(context, false),
+                ],
+              ),
+            ),
+            // 紧凑的底部按钮
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(
+                color: Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: 0.5),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      minimumSize: const Size(64, 36),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
                     ),
+                    child: const Text('取消'),
                   ),
-                  child: _isLoading
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
+                  const SizedBox(width: 8),
+                  ElevatedButton(
+                    onPressed: _isLoading ? null : _saveConfig,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).primaryColor,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      minimumSize: const Size(64, 36),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    child: _isLoading
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Text(
+                            '保存',
+                            style: TextStyle(fontWeight: FontWeight.w600),
                           ),
-                        )
-                      : const Text('保存',
-                          style: TextStyle(fontWeight: FontWeight.w600)),
-                ),
-              ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1511,11 +1553,29 @@ class _DatabasePresetSettingsDialogState
               : descController.text.trim(),
         );
 
+        // 编辑为本地SQLite时也需要保证全局唯一
+        if (dialogDriverType == DatabasePersistenceType.localSqlite) {
+          final hasOtherSqlite = await _configManager.hasLocalSqlitePreset(
+            excludePresetId: preset.id,
+          );
+          if (hasOtherSqlite) {
+            if (mounted) {
+              _showSnackBar(
+                const SnackBar(
+                  content: Text('本地SQLite预设只能存在一个，请先删除其他本地SQLite配置'),
+                  backgroundColor: Colors.orange,
+                ),
+              );
+            }
+            return;
+          }
+        }
+
         final success = await _configManager.savePreset(updatedPreset);
         if (success) {
           await _loadData();
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
+            _showSnackBar(
               const SnackBar(
                 content: Text('预设更新成功'),
                 backgroundColor: Colors.green,
@@ -1525,7 +1585,7 @@ class _DatabasePresetSettingsDialogState
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _showSnackBar(
             SnackBar(
               content: Text('更新预设失败: $e'),
               backgroundColor: Colors.red,
@@ -1545,7 +1605,7 @@ class _DatabasePresetSettingsDialogState
   /// 删除预设
   Future<void> _deletePreset(DatabaseConfigPreset preset) async {
     if (preset.isDefault) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      _showSnackBar(
         const SnackBar(
           content: Text('默认配置不能删除'),
           backgroundColor: Colors.orange,
@@ -1651,7 +1711,7 @@ class _DatabasePresetSettingsDialogState
       if (success) {
         await _loadData();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _showSnackBar(
             const SnackBar(
               content: Text('预设删除成功'),
               backgroundColor: Colors.green,
@@ -1660,7 +1720,7 @@ class _DatabasePresetSettingsDialogState
         }
       } else {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
+          _showSnackBar(
             const SnackBar(
               content: Text('删除预设失败'),
               backgroundColor: Colors.red,
