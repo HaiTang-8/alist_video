@@ -45,7 +45,8 @@ class ApiPresetSettingsDialog extends StatefulWidget {
   }
 
   @override
-  State<ApiPresetSettingsDialog> createState() => _ApiPresetSettingsDialogState();
+  State<ApiPresetSettingsDialog> createState() =>
+      _ApiPresetSettingsDialogState();
 }
 
 class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
@@ -53,6 +54,10 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
   late TabController _tabController;
   final ApiConfigManager _configManager = ApiConfigManager();
   late final ScrollController _presetsScrollController;
+
+  /// 参照数据库设置弹窗使用局部 ScaffoldMessenger，保证桌面端对话框也能稳定展示 Snackbar。
+  final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   // 预设模式相关
   List<ApiConfigPreset> _presets = [];
@@ -93,19 +98,22 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
       final presets = await _configManager.getAllPresets();
       final currentPreset = await _configManager.getCurrentPreset();
       final isCustom = await _configManager.isCustomApiMode();
-      
+
       // 加载当前设置
       final prefs = await SharedPreferences.getInstance();
-      final baseUrl = prefs.getString(AppConstants.baseUrlKey) ?? AppConstants.defaultBaseUrl;
-      final baseDownloadUrl = prefs.getString(AppConstants.baseDownloadUrlKey) ?? AppConstants.defaultBaseDownloadUrl;
-      
+      final baseUrl = prefs.getString(AppConstants.baseUrlKey) ??
+          AppConstants.defaultBaseUrl;
+      final baseDownloadUrl =
+          prefs.getString(AppConstants.baseDownloadUrlKey) ??
+              AppConstants.defaultBaseDownloadUrl;
+
       setState(() {
         _presets = presets;
         _selectedPreset = currentPreset;
         _baseUrlController.text = baseUrl;
         _baseDownloadUrlController.text = baseDownloadUrl;
         _isLoadingPresets = false;
-        
+
         // 根据模式设置初始标签页
         _tabController.index = isCustom ? 1 : 0;
       });
@@ -113,15 +121,23 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
       setState(() {
         _isLoadingPresets = false;
       });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('加载配置失败: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _showSnackBar(
+        SnackBar(
+          content: Text('加载配置失败: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
+  }
+
+  /// 与数据库设置保持一致，统一入口展示 SnackBar，避免桌面端对话框弹窗场景找不到 Scaffold。
+  void _showSnackBar(SnackBar snackBar) {
+    if (!mounted) return;
+    final messenger = _scaffoldMessengerKey.currentState;
+    if (messenger == null) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(snackBar);
   }
 
   /// 应用配置
@@ -139,17 +155,19 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
         }
       } else {
         // 自定义模式
-        if (_baseUrlController.text.trim().isEmpty || 
+        if (_baseUrlController.text.trim().isEmpty ||
             _baseDownloadUrlController.text.trim().isEmpty) {
           throw Exception('请填写完整的API配置信息');
         }
-        
+
         final prefs = await SharedPreferences.getInstance();
         await Future.wait([
-          prefs.setString(AppConstants.baseUrlKey, _baseUrlController.text.trim()),
-          prefs.setString(AppConstants.baseDownloadUrlKey, _baseDownloadUrlController.text.trim()),
+          prefs.setString(
+              AppConstants.baseUrlKey, _baseUrlController.text.trim()),
+          prefs.setString(AppConstants.baseDownloadUrlKey,
+              _baseDownloadUrlController.text.trim()),
         ]);
-        
+
         await _configManager.setCustomApiMode(true);
 
         // 更新HTTP客户端
@@ -159,7 +177,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
       _hasConfigChanged = true;
       if (mounted) {
         Navigator.pop(context, true);
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           const SnackBar(
             content: Text('API配置已保存并生效'),
             backgroundColor: Colors.green,
@@ -167,14 +185,12 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
         );
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('保存失败: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+      _showSnackBar(
+        SnackBar(
+          content: Text('保存失败: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -200,31 +216,29 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
           name: result['name']!,
           baseUrl: result['baseUrl']!,
           baseDownloadUrl: result['baseDownloadUrl']!,
-          description: result['description']?.isEmpty == true ? null : result['description'],
+          description: result['description']?.isEmpty == true
+              ? null
+              : result['description'],
         );
 
         final success = await _configManager.savePreset(preset);
         if (success) {
           _hasConfigChanged = true;
           await _loadData(); // 重新加载数据
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('预设保存成功'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('保存预设失败: $e'),
-              backgroundColor: Colors.red,
+          _showSnackBar(
+            const SnackBar(
+              content: Text('预设保存成功'),
+              backgroundColor: Colors.green,
             ),
           );
         }
+      } catch (e) {
+        _showSnackBar(
+          SnackBar(
+            content: Text('保存预设失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -255,24 +269,20 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
         if (success) {
           _hasConfigChanged = true;
           await _loadData(); // 重新加载数据
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('预设删除成功'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('删除预设失败: $e'),
-              backgroundColor: Colors.red,
+          _showSnackBar(
+            const SnackBar(
+              content: Text('预设删除成功'),
+              backgroundColor: Colors.green,
             ),
           );
         }
+      } catch (e) {
+        _showSnackBar(
+          SnackBar(
+            content: Text('删除预设失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -315,7 +325,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                           color: colorScheme.primary.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(12),
                         ),
-                        child: Icon(Icons.bookmark_rounded, color: colorScheme.primary),
+                        child: Icon(Icons.bookmark_rounded,
+                            color: colorScheme.primary),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
@@ -329,7 +340,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                         ),
                       ),
                       if (!isMobile && _selectedPreset != null)
-                        _buildTagChip('当前使用', colorScheme.primary, icon: Icons.radio_button_checked),
+                        _buildTagChip('当前使用', colorScheme.primary,
+                            icon: Icons.radio_button_checked),
                     ],
                   ),
                 ),
@@ -459,7 +471,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                       icon: const Icon(Icons.save_rounded, size: 18),
                       label: const Text('保存为预设'),
                       style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 12),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
@@ -472,7 +485,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                 decoration: BoxDecoration(
                   color: colorScheme.surface,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: colorScheme.outline.withValues(alpha: 0.15)),
+                  border: Border.all(
+                      color: colorScheme.outline.withValues(alpha: 0.15)),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.04),
@@ -539,9 +553,11 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: colorScheme.surfaceVariant.withValues(alpha: 0.4),
+                        color:
+                            colorScheme.surfaceVariant.withValues(alpha: 0.4),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+                        border: Border.all(
+                            color: colorScheme.outline.withValues(alpha: 0.1)),
                       ),
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -551,7 +567,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                             height: 28,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              color: colorScheme.primary.withValues(alpha: 0.12),
+                              color:
+                                  colorScheme.primary.withValues(alpha: 0.12),
                             ),
                             child: Icon(
                               Icons.info_outline_rounded,
@@ -592,9 +609,12 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
   }
 
   /// 构建文本输入框
-  Widget _buildTagChip(String label, Color color, {IconData? icon, Color? textColor}) {
+  Widget _buildTagChip(String label, Color color,
+      {IconData? icon, Color? textColor}) {
     final resolvedTextColor = textColor ??
-        (ThemeData.estimateBrightnessForColor(color) == Brightness.dark ? Colors.white : Colors.black87);
+        (ThemeData.estimateBrightnessForColor(color) == Brightness.dark
+            ? Colors.white
+            : Colors.black87);
     return Container(
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -708,7 +728,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
     );
   }
 
-  Widget _buildPresetCard(ApiConfigPreset preset, bool isSelected, bool isMobile) {
+  Widget _buildPresetCard(
+      ApiConfigPreset preset, bool isSelected, bool isMobile) {
     final colorScheme = Theme.of(context).colorScheme;
     final cardRadius = BorderRadius.circular(12);
     final baseColor = colorScheme.surface;
@@ -721,7 +742,9 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
         color: isSelected ? selectedColor : baseColor,
         borderRadius: cardRadius,
         border: Border.all(
-          color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.3),
+          color: isSelected
+              ? colorScheme.primary
+              : colorScheme.outline.withValues(alpha: 0.3),
           width: 1,
         ),
         boxShadow: [
@@ -753,10 +776,13 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: isSelected ? colorScheme.primary : colorScheme.outline.withValues(alpha: 0.6),
+                        color: isSelected
+                            ? colorScheme.primary
+                            : colorScheme.outline.withValues(alpha: 0.6),
                         width: 2,
                       ),
-                      color: isSelected ? colorScheme.primary : Colors.transparent,
+                      color:
+                          isSelected ? colorScheme.primary : Colors.transparent,
                     ),
                     child: isSelected
                         ? Icon(
@@ -790,7 +816,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                               runSpacing: 6,
                               children: [
                                 if (isSelected)
-                                  _buildTagChip('当前使用', colorScheme.primary, icon: Icons.radio_button_checked),
+                                  _buildTagChip('当前使用', colorScheme.primary,
+                                      icon: Icons.radio_button_checked),
                                 if (preset.isDefault)
                                   _buildTagChip(
                                     '默认',
@@ -819,7 +846,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                           Container(
                             padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: colorScheme.surfaceVariant.withValues(alpha: 0.5),
+                              color: colorScheme.surfaceVariant
+                                  .withValues(alpha: 0.5),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Row(
@@ -894,7 +922,8 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
                         value: 'delete',
                         child: Row(
                           children: const [
-                            Icon(Icons.delete_rounded, size: 16, color: Colors.redAccent),
+                            Icon(Icons.delete_rounded,
+                                size: 16, color: Colors.redAccent),
                             SizedBox(width: 8),
                             Text(
                               '删除',
@@ -959,7 +988,10 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: BorderSide(
-                color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+                color: Theme.of(context)
+                    .colorScheme
+                    .outline
+                    .withValues(alpha: 0.5),
               ),
             ),
             focusedBorder: OutlineInputBorder(
@@ -985,90 +1017,74 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < 600;
 
-    if (isMobile) {
-      return _buildMobileLayout(context);
-    } else {
-      return _buildDesktopLayout(context);
-    }
+    final layout =
+        isMobile ? _buildMobileLayout(context) : _buildDesktopLayout(context);
+
+    // 参考数据库设置弹窗，将内容包裹在局部 ScaffoldMessenger 内，确保桌面端对话框也能弹出提示。
+    return ScaffoldMessenger(
+      key: _scaffoldMessengerKey,
+      child: layout,
+    );
   }
 
   /// 构建移动端布局
   Widget _buildMobileLayout(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
     return Scaffold(
       backgroundColor: colorScheme.surface,
       appBar: AppBar(
         elevation: 0,
-        scrolledUnderElevation: 0,
-        backgroundColor: colorScheme.surface,
-        surfaceTintColor: colorScheme.surface,
-        foregroundColor: colorScheme.onSurface,
+        backgroundColor: theme.primaryColor,
+        foregroundColor: Colors.white,
+        toolbarHeight: 56,
         titleSpacing: 0,
-        title: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                'API 配置设置',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w700,
-                  color: colorScheme.onSurface,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '快速切换预设或定制专属 API',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+        // 顶部视觉与数据库设置保持一致，减少用户在不同设置页之间的样式割裂。
+        title: const Text(
+          'API 设置',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: Colors.white,
           ),
         ),
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 12),
-          child: IconButton(
-            tooltip: '关闭',
-            onPressed: () => Navigator.pop(context, _hasConfigChanged),
-            icon: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.close_rounded, size: 20),
-            ),
-          ),
+        leading: IconButton(
+          tooltip: '关闭',
+          onPressed: () => Navigator.pop(context, _hasConfigChanged),
+          icon: const Icon(Icons.close, color: Colors.white, size: 22),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: FilledButton.icon(
-              onPressed: _isSaving ? null : _applyConfiguration,
-              icon: _isSaving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                    )
-                  : const Icon(Icons.check_circle_rounded),
-              label: Text(
-                _isSaving ? '保存中...' : '应用配置',
-                style: const TextStyle(fontWeight: FontWeight.w600),
+          if (_isSaving)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               ),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: TextButton(
+                onPressed: _applyConfiguration,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+                child: const Text(
+                  '保存',
+                  style: TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
             ),
-          ),
         ],
       ),
       body: SafeArea(
@@ -1076,27 +1092,28 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
           color: colorScheme.surface,
           child: Column(
             children: [
-              // 标签页选择器
+              // 复用数据库设置的圆角标签容器，保持跨端视觉一致。
               Container(
-                margin: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                padding: const EdgeInsets.all(4),
+                margin: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
+                  color: colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(12),
                 ),
                 child: TabBar(
                   controller: _tabController,
                   indicator: BoxDecoration(
+                    color: theme.primaryColor,
                     borderRadius: BorderRadius.circular(8),
-                    color: colorScheme.primary,
                   ),
                   indicatorSize: TabBarIndicatorSize.tab,
                   dividerColor: Colors.transparent,
-                  labelColor: colorScheme.onPrimary,
+                  padding: const EdgeInsets.all(4),
+                  labelColor: Colors.white,
                   unselectedLabelColor: colorScheme.onSurfaceVariant,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
+                  labelStyle: const TextStyle(
+                      fontWeight: FontWeight.w600, fontSize: 13),
+                  unselectedLabelStyle: const TextStyle(
+                      fontWeight: FontWeight.w500, fontSize: 13),
                   tabs: const [
                     Tab(
                       icon: Icon(Icons.layers_rounded, size: 18),
@@ -1128,102 +1145,71 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
 
   /// 构建桌面端布局
   Widget _buildDesktopLayout(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
 
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(16),
-      child: Container(
-        width: double.infinity,
-        height: double.infinity,
-        color: colorScheme.surface,
+    // 桌面端完全复用数据库设置使用的卡片式布局，避免不同设置弹窗出现割裂感。
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Card(
+        elevation: 8,
+        shape: const RoundedRectangleBorder(),
+        margin: EdgeInsets.zero,
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-              decoration: BoxDecoration(
-                color: colorScheme.surface,
-                border: Border(
-                  bottom: BorderSide(color: colorScheme.outline.withValues(alpha: 0.08)),
-                ),
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: BoxDecoration(color: theme.primaryColor),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: colorScheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.api_rounded,
-                      color: colorScheme.primary,
-                      size: 20,
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'API 配置设置',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.w600,
-                            color: colorScheme.onSurface,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '集中管理预设并支持快捷切换，适配桌面端操作体验。',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
+                  const Icon(Icons.api_rounded, color: Colors.white, size: 20),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      'API 设置',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
                     ),
                   ),
                   IconButton(
                     onPressed: () => Navigator.pop(context, _hasConfigChanged),
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 20),
+                    padding: EdgeInsets.zero,
                     tooltip: '关闭',
-                    icon: Icon(Icons.close_rounded, color: colorScheme.onSurfaceVariant),
                   ),
                 ],
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(32, 16, 32, 8),
-              child: Container(
+            Container(
+              margin: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                indicator: BoxDecoration(
+                  color: theme.primaryColor,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
+                labelColor: Colors.white,
+                unselectedLabelColor: colorScheme.onSurfaceVariant,
+                labelStyle:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                unselectedLabelStyle:
+                    const TextStyle(fontWeight: FontWeight.w500, fontSize: 13),
                 padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: colorScheme.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: colorScheme.outline.withValues(alpha: 0.1)),
-                ),
-                child: TabBar(
-                  controller: _tabController,
-                  indicator: BoxDecoration(
-                    borderRadius: BorderRadius.circular(6),
-                    color: colorScheme.primary,
-                  ),
-                  indicatorSize: TabBarIndicatorSize.tab,
-                  dividerColor: Colors.transparent,
-                  labelColor: colorScheme.onPrimary,
-                  unselectedLabelColor: colorScheme.onSurfaceVariant,
-                  labelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                  unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500, fontSize: 12),
-                  tabs: const [
-                    Tab(
-                      icon: Icon(Icons.layers_rounded, size: 18),
-                      text: '预设配置',
-                    ),
-                    Tab(
-                      icon: Icon(Icons.tune_rounded, size: 18),
-                      text: '自定义配置',
-                    ),
-                  ],
-                ),
+                tabs: const [
+                  Tab(text: '预设配置'),
+                  Tab(text: '自定义配置'),
+                ],
               ),
             ),
             Expanded(
@@ -1236,49 +1222,44 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
               ),
             ),
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
               decoration: BoxDecoration(
-                color: colorScheme.surface,
-                border: Border(
-                  top: BorderSide(color: colorScheme.outline.withValues(alpha: 0.08)),
-                ),
+                color:
+                    colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  OutlinedButton(
+                  TextButton(
                     onPressed: () => Navigator.pop(context, _hasConfigChanged),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                      side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.4)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6)),
                     ),
-                    child: const Text(
-                      '取消',
-                      style: TextStyle(fontWeight: FontWeight.w600),
-                    ),
+                    child: const Text('取消'),
                   ),
-                  const SizedBox(width: 12),
-                  FilledButton.icon(
+                  const SizedBox(width: 8),
+                  ElevatedButton(
                     onPressed: _isSaving ? null : _applyConfiguration,
-                    icon: _isSaving
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: theme.primaryColor,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6)),
+                    ),
+                    child: _isSaving
                         ? const SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: 14,
+                            height: 14,
                             child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
+                                strokeWidth: 2, color: Colors.white),
                           )
-                        : const Icon(Icons.check_circle_rounded),
-                    label: Text(
-                      _isSaving ? '保存中...' : '应用配置',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 14),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
+                        : const Text('保存'),
                   ),
                 ],
               ),
@@ -1326,7 +1307,7 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
   Future<void> _showAddPresetDialog() async {
     // 这里可以实现添加预设的逻辑
     // 暂时显示一个提示
-    ScaffoldMessenger.of(context).showSnackBar(
+    _showSnackBar(
       const SnackBar(
         content: Text('添加预设功能待实现'),
         backgroundColor: Colors.orange,
@@ -1347,31 +1328,29 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
           name: result['name']!,
           baseUrl: result['baseUrl']!,
           baseDownloadUrl: result['baseDownloadUrl']!,
-          description: result['description']?.isEmpty == true ? null : result['description'],
+          description: result['description']?.isEmpty == true
+              ? null
+              : result['description'],
         );
 
         final success = await _configManager.savePreset(updatedPreset);
         if (success) {
           _hasConfigChanged = true;
           await _loadData(); // 重新加载数据
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('预设更新成功'),
-                backgroundColor: Colors.green,
-              ),
-            );
-          }
-        }
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('更新预设失败: $e'),
-              backgroundColor: Colors.red,
+          _showSnackBar(
+            const SnackBar(
+              content: Text('预设更新成功'),
+              backgroundColor: Colors.green,
             ),
           );
         }
+      } catch (e) {
+        _showSnackBar(
+          SnackBar(
+            content: Text('更新预设失败: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -1383,24 +1362,20 @@ class _ApiPresetSettingsDialogState extends State<ApiPresetSettingsDialog>
       if (success) {
         _hasConfigChanged = true;
         await _loadData(); // 重新加载数据
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('已将 "${preset.name}" 设为默认配置'),
-              backgroundColor: Colors.green,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
+        _showSnackBar(
           SnackBar(
-            content: Text('设置默认配置失败: $e'),
-            backgroundColor: Colors.red,
+            content: Text('已将 "${preset.name}" 设为默认配置'),
+            backgroundColor: Colors.green,
           ),
         );
       }
+    } catch (e) {
+      _showSnackBar(
+        SnackBar(
+          content: Text('设置默认配置失败: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 }
@@ -1430,11 +1405,13 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
       fillColor: colorScheme.surfaceContainerHighest,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+        borderSide:
+            BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+        borderSide:
+            BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -1449,8 +1426,10 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
     super.initState();
     _nameController = TextEditingController(text: widget.preset.name);
     _baseUrlController = TextEditingController(text: widget.preset.baseUrl);
-    _baseDownloadUrlController = TextEditingController(text: widget.preset.baseDownloadUrl);
-    _descController = TextEditingController(text: widget.preset.description ?? '');
+    _baseDownloadUrlController =
+        TextEditingController(text: widget.preset.baseDownloadUrl);
+    _descController =
+        TextEditingController(text: widget.preset.description ?? '');
   }
 
   @override
@@ -1502,7 +1481,8 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
               color: colorScheme.primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(Icons.edit_rounded, color: colorScheme.primary, size: 18),
+            child:
+                Icon(Icons.edit_rounded, color: colorScheme.primary, size: 18),
           ),
           const SizedBox(width: 12),
           const Text(
@@ -1564,7 +1544,8 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
           onPressed: () => Navigator.of(context).pop(),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.4)),
           ),
           child: const Text('取消'),
@@ -1573,7 +1554,8 @@ class _EditPresetDialogState extends State<_EditPresetDialog> {
           onPressed: _save,
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           child: const Text('保存'),
         ),
@@ -1609,11 +1591,13 @@ class _SavePresetDialogState extends State<_SavePresetDialog> {
       fillColor: colorScheme.surfaceContainerHighest,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+        borderSide:
+            BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
+        borderSide:
+            BorderSide(color: colorScheme.outline.withValues(alpha: 0.2)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -1675,7 +1659,8 @@ class _SavePresetDialogState extends State<_SavePresetDialog> {
               color: colorScheme.primary.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(Icons.save_rounded, color: colorScheme.primary, size: 18),
+            child:
+                Icon(Icons.save_rounded, color: colorScheme.primary, size: 18),
           ),
           const SizedBox(width: 12),
           const Text(
@@ -1706,7 +1691,8 @@ class _SavePresetDialogState extends State<_SavePresetDialog> {
               const SizedBox(height: 16),
               TextField(
                 controller: _descController,
-                decoration: _dialogInputDecoration('描述（可选）', hint: '例如: 仅限办公网络访问'),
+                decoration:
+                    _dialogInputDecoration('描述（可选）', hint: '例如: 仅限办公网络访问'),
                 maxLines: 3,
               ),
             ],
@@ -1718,7 +1704,8 @@ class _SavePresetDialogState extends State<_SavePresetDialog> {
           onPressed: () => Navigator.of(context).pop(),
           style: OutlinedButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             side: BorderSide(color: colorScheme.outline.withValues(alpha: 0.4)),
           ),
           child: const Text('取消'),
@@ -1727,7 +1714,8 @@ class _SavePresetDialogState extends State<_SavePresetDialog> {
           onPressed: _save,
           style: FilledButton.styleFrom(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
           child: const Text('保存'),
         ),
