@@ -5,6 +5,7 @@ import 'package:alist_player/services/go_bridge/history_screenshot_service.dart'
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/font_helper.dart';
+import 'package:alist_player/utils/go_proxy_helper.dart';
 import 'package:alist_player/utils/logger.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -168,6 +169,9 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 本地优先播放设置
   bool _preferLocalPlayback = AppConstants.defaultPreferLocalPlayback;
+  // Go 服务代理配置与缓存的鉴权头，在播放/字幕加载阶段统一复用。
+  GoProxyConfig? _goProxyConfig;
+  Map<String, String>? _goProxyHeaders;
 
   /// 视频播放器统一日志封装，方便跨端排查播放/下载/字幕问题
   void _log(
@@ -215,9 +219,34 @@ class VideoPlayerState extends State<VideoPlayer> {
               AppConstants.defaultPreferLocalPlayback;
     });
 
+    final goProxyConfig = await GoProxyHelper.loadConfig();
+    if (mounted) {
+      setState(() {
+        _goProxyConfig = goProxyConfig;
+        final headers = goProxyConfig.buildAuthHeaders();
+        _goProxyHeaders =
+            headers != null ? Map<String, String>.from(headers) : null;
+      });
+    }
+
     // 加载当前文件夹的音轨和字幕记录
     await _loadFolderTrackSettings();
   }
+
+  bool get _shouldUseGoProxy => _goProxyConfig?.shouldUseProxy ?? false;
+
+  /// 根据代理配置将原始 URL 包装为 Go 服务可访问的地址，必要时附加 access_token。
+  String _wrapGoProxyUrl(String url) {
+    final config = _goProxyConfig;
+    if (config == null || !config.shouldUseProxy) {
+      return url;
+    }
+    return config.wrapUrl(url);
+  }
+
+  /// 构建播放器访问代理流时所需的 HTTP 头，例如 Authorization。
+  Map<String, String>? get _currentProxyHeaders =>
+      _shouldUseGoProxy ? _goProxyHeaders : null;
 
   /// 针对移动端高帧率（60FPS）视频出现卡顿问题，通过设置 MPV 属性启用更稳定的渲染与硬解码。
   Future<void> _optimizeMobileMpvPlayback() async {
@@ -806,8 +835,12 @@ class VideoPlayerState extends State<VideoPlayer> {
                     if (basePath != '/') {
                       baseUrl = '$baseUrl$basePath';
                     }
+                    final originalUrl =
+                        '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}';
+                    final proxiedUrl = _wrapGoProxyUrl(originalUrl);
                     return Media(
-                      '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}',
+                      proxiedUrl,
+                      httpHeaders: _currentProxyHeaders,
                       extras: {
                         'name': data.name ?? '',
                         'size': data.size ?? 0,
@@ -850,11 +883,12 @@ class VideoPlayerState extends State<VideoPlayer> {
             if (basePath != '/') {
               baseUrl = '$baseUrl$basePath';
             }
+            final subtitleUrl =
+                '$baseUrl${widget.path.substring(1)}/${subtitle.name}?sign=${subtitle.sign}';
             _availableSubtitles.add(SubtitleInfo(
               name: subtitle.name ?? '',
               path: '${widget.path.substring(1)}/${subtitle.name}',
-              rawUrl:
-                  '$baseUrl${widget.path.substring(1)}/${subtitle.name}?sign=${subtitle.sign}',
+              rawUrl: _wrapGoProxyUrl(subtitleUrl),
             ));
           }
 

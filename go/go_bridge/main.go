@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -146,10 +148,23 @@ func newRouter(db *sqlx.DB, cfg Config) *gin.Engine {
 	if cfg.AuthToken != "" {
 		r.Use(func(c *gin.Context) {
 			auth := c.GetHeader("Authorization")
-			if auth != "Bearer "+cfg.AuthToken {
-				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			tokenQuery := strings.TrimSpace(c.Query("access_token"))
+			expected := "Bearer " + cfg.AuthToken
+
+			// 允许 Authorization 头或 access_token 查询参数两种校验方式，便于播放器、字幕和下载在不同运行时依旧能通过鉴权。
+			if auth == expected || tokenQuery == cfg.AuthToken {
+				if tokenQuery == cfg.AuthToken {
+					// 避免后续 handler 及代理请求继续携带 access_token，将其移除。
+					params := c.Request.URL.Query()
+					params.Del("access_token")
+					c.Request.URL.RawQuery = params.Encode()
+				}
+				c.Next()
 				return
 			}
+
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			return
 		})
 	}
 
@@ -446,6 +461,61 @@ func newRouter(db *sqlx.DB, cfg Config) *gin.Engine {
 		}
 
 		c.JSON(http.StatusNotFound, gin.H{"error": "screenshot not found"})
+	})
+
+	// 通过 Go 桥接服务完成远程媒体代理，Flutter 端只需访问本地可达的 URL，即可透传 Range 请求。
+	r.GET("/proxy/media", func(c *gin.Context) {
+		target := strings.TrimSpace(c.Query("target"))
+		if target == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "target is required"})
+			return
+		}
+
+		parsed, err := url.Parse(target)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid target url"})
+			return
+		}
+
+		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, parsed.String(), nil)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("proxy request build failed: %v", err)})
+			return
+		}
+
+		// 透传 Range、User-Agent 等关键信息，确保播放器可按需拉流。
+		if rangeHeader := c.GetHeader("Range"); rangeHeader != "" {
+			req.Header.Set("Range", rangeHeader)
+		}
+		if ua := c.GetHeader("User-Agent"); ua != "" {
+			req.Header.Set("User-Agent", ua)
+		}
+		if accept := c.GetHeader("Accept"); accept != "" {
+			req.Header.Set("Accept", accept)
+		}
+		if referer := c.GetHeader("Referer"); referer != "" {
+			req.Header.Set("Referer", referer)
+		}
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("proxy request failed: %v", err)})
+			return
+		}
+		defer resp.Body.Close()
+
+		// 将上游响应头原样写回，使播放器能正确识别 Content-Type、Content-Length、Accept-Ranges 等信息。
+		for key, values := range resp.Header {
+			for _, value := range values {
+				c.Writer.Header().Add(key, value)
+			}
+		}
+		c.Writer.WriteHeader(resp.StatusCode)
+
+		if _, err := io.Copy(c.Writer, resp.Body); err != nil {
+			// 复制过程中失败时记录日志，避免重复写头。
+			log.Printf("proxy stream interrupted: %v", err)
+		}
 	})
 
 	return r

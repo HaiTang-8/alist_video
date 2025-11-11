@@ -9,6 +9,9 @@ class AppConstants {
   static const String dbSqlitePathKey = 'db_sqlite_path';
   static const String dbGoBridgeUrlKey = 'db_go_bridge_url';
   static const String dbGoBridgeTokenKey = 'db_go_bridge_token';
+  // 针对 Go 服务代理播放链路的配置键与默认值，允许用户选择性地走本地代理规避被封锁的远端 URL。
+  static const String enableGoProxyKey = 'enable_go_proxy';
+  static const bool defaultEnableGoProxy = false;
 
   // 数据库默认配置
   // static const String defaultDbHost = '81.68.250.223';

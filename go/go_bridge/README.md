@@ -49,10 +49,13 @@ go run .
 | `POST` | `/sql/delete` | 删除 | `{ "table": "t_favorite_directories", "where": "user_id = @uid", "whereArgs": {"uid": 1} }` |
 | `POST` | `/history/screenshot` | 上传/覆盖指定用户的历史截图 | `{ "videoSha1": "abc123", "userId": 1, "videoName": "movie.mp4", "videoPath": "/media", "isJpeg": true, "imageBase64": "<...>" }` |
 | `GET` | `/history/screenshot` | 获取用户历史截图二进制 | `?videoSha1=abc123&userId=1` |
+| `GET` | `/proxy/media` | 代理任意可访问的 HTTP/HTTPS 媒体流，透传 Range 头 | `?target=https://alist.example.com/d/video.mp4&access_token=<token>` |
 
 注意：Flutter 端沿用 `@param` 占位符，Go 服务会自动转换成指定驱动可识别的命名参数。
 
 截图接口会将文件写入 `screenshotDir` 目录（以 `userId/videoSha1` 做键），Flutter 历史页在本地缺图时会调用 `GET /history/screenshot` 自动补齐并缓存，确保跨端历史记录缩略图一致。
+
+媒体代理接口会使用 Go 进程主动拉取目标 URL，并透传 `Range`、`User-Agent` 等头部，播放器只需要访问本地可达的 `/proxy/media` 即可绕过被屏蔽的存储域名。若配置了 `authToken`，可通过 `Authorization: Bearer <token>` 或在查询参数附带 `access_token=<token>` 进行鉴权。
 
 ## 配合 Flutter 使用
 

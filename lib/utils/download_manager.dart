@@ -1,12 +1,13 @@
 import 'dart:io';
-import 'package:path_provider/path_provider.dart';
-import 'package:flutter/foundation.dart';
 import 'package:alist_player/apis/fs.dart';
+import 'package:alist_player/utils/go_proxy_helper.dart';
 import 'package:dio/dio.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart';
 import 'package:alist_player/utils/logger.dart';
 import 'dart:convert';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'download_settings_manager.dart';
 
 class DownloadTask {
@@ -14,6 +15,8 @@ class DownloadTask {
   final String url;
   final String fileName;
   final String filePath;
+  // 记录下载请求需要附带的 HTTP 头（例如 Go 代理的 Authorization），便于任务恢复时保持一致。
+  final Map<String, String>? headers;
   double progress = 0;
   String status = '等待中'; // 等待中、下载中、已完成、已暂停、错误
   String? error;
@@ -27,6 +30,7 @@ class DownloadTask {
     required this.url,
     required this.fileName,
     required this.filePath,
+    this.headers,
   });
 
   Map<String, dynamic> toMap() {
@@ -35,6 +39,7 @@ class DownloadTask {
       'url': url,
       'fileName': fileName,
       'filePath': filePath,
+      'headers': headers,
       'progress': progress,
       'status': status,
       'error': error,
@@ -50,6 +55,8 @@ class DownloadTask {
       url: map['url'],
       fileName: map['fileName'],
       filePath: map['filePath'],
+      headers: (map['headers'] as Map?)
+          ?.map((key, value) => MapEntry(key.toString(), value.toString())),
     );
     task.progress = map['progress'];
     task.status = map['status'];
@@ -229,7 +236,9 @@ class DownloadManager {
         throw Exception('获取下载地址失败: ${response.message}');
       }
 
-      final downloadUrl = response.data!.rawUrl!;
+      final proxyConfig = await GoProxyHelper.loadConfig();
+      final downloadUrl = proxyConfig.wrapUrl(response.data!.rawUrl!);
+      final headerMap = proxyConfig.buildAuthHeaders();
 
       // 获取自定义下载路径
       final downloadDir = await getDownloadPath();
@@ -243,6 +252,7 @@ class DownloadManager {
         url: downloadUrl,
         fileName: fileName,
         filePath: filePath,
+        headers: headerMap != null ? Map<String, String>.from(headerMap) : null,
       );
 
       // 检查是否存在未完成的文件
@@ -272,6 +282,7 @@ class DownloadManager {
         url: path,
         fileName: fileName,
         filePath: '',
+        headers: null,
       );
       task.status = '错误';
       task.error = e.toString();
@@ -293,14 +304,17 @@ class DownloadManager {
         task.receivedBytes = await file.length();
       }
 
+      final requestHeaders = <String, String>{
+        if (task.headers != null) ...task.headers!,
+        if (task.receivedBytes > 0) 'Range': 'bytes=${task.receivedBytes}-',
+      };
+
       final response = await _dio.get(
         task.url,
         cancelToken: task.cancelToken,
         options: Options(
           responseType: ResponseType.stream,
-          headers: {
-            if (task.receivedBytes > 0) 'Range': 'bytes=${task.receivedBytes}-',
-          },
+          headers: requestHeaders.isEmpty ? null : requestHeaders,
           followRedirects: true,
         ),
       );
@@ -503,6 +517,7 @@ class DownloadManager {
           url: task.url,
           fileName: newFileName,
           filePath: newFilePath,
+          headers: task.headers,
         );
         newTask.status = task.status;
         newTask.progress = task.progress;
@@ -787,6 +802,7 @@ class DownloadManager {
                 url: '', // 导入的文件没有URL
                 fileName: fileName,
                 filePath: filePath,
+                headers: null,
               );
               task.status = '已完成';
               task.progress = 1.0;

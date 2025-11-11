@@ -10,8 +10,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:dio/dio.dart';
 import '../apis/fs.dart';
-import 'logger.dart';
 import 'download_settings_manager.dart';
+import 'go_proxy_helper.dart';
+import 'logger.dart';
 
 // 下载任务状态枚举
 enum DownloadStatus {
@@ -30,6 +31,8 @@ class UnifiedDownloadTask {
   final String url;
   final String fileName;
   final String filePath;
+  // 下载所需的额外 HTTP 头（例如 Go 代理的 Authorization），移动端与桌面端共用。
+  final Map<String, String>? headers;
   double progress;
   DownloadStatus status;
   String? error;
@@ -47,6 +50,7 @@ class UnifiedDownloadTask {
     required this.url,
     required this.fileName,
     required this.filePath,
+    this.headers,
     this.progress = 0,
     this.status = DownloadStatus.waiting,
     this.error,
@@ -64,6 +68,7 @@ class UnifiedDownloadTask {
       'url': url,
       'fileName': fileName,
       'filePath': filePath,
+      'headers': headers,
       'progress': progress,
       'status': status.index,
       'error': error,
@@ -81,6 +86,8 @@ class UnifiedDownloadTask {
       url: map['url'],
       fileName: map['fileName'],
       filePath: map['filePath'],
+      headers: (map['headers'] as Map?)
+          ?.map((key, value) => MapEntry(key.toString(), value.toString())),
       progress: map['progress']?.toDouble() ?? 0.0,
       status: DownloadStatus.values[map['status'] ?? 0],
       error: map['error'],
@@ -93,10 +100,12 @@ class UnifiedDownloadTask {
 }
 
 class PlatformDownloadManager {
-  static final PlatformDownloadManager _instance = PlatformDownloadManager._internal();
+  static final PlatformDownloadManager _instance =
+      PlatformDownloadManager._internal();
   factory PlatformDownloadManager() => _instance;
 
-  final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _notifications =
+      FlutterLocalNotificationsPlugin();
   final Map<String, UnifiedDownloadTask> _tasks = {};
   final ValueNotifier<Map<String, UnifiedDownloadTask>> _taskController =
       ValueNotifier<Map<String, UnifiedDownloadTask>>({});
@@ -123,9 +132,12 @@ class PlatformDownloadManager {
   Future<void> initialize() async {
     if (_isInitialized) return;
 
-    await AppLogger().info('DownloadManager', 'Initializing download manager...');
-    await AppLogger().info('DownloadManager', 'Platform: ${Platform.operatingSystem}');
-    await AppLogger().info('DownloadManager', 'Is mobile platform: ${_isMobilePlatform()}');
+    await AppLogger()
+        .info('DownloadManager', 'Initializing download manager...');
+    await AppLogger()
+        .info('DownloadManager', 'Platform: ${Platform.operatingSystem}');
+    await AppLogger()
+        .info('DownloadManager', 'Is mobile platform: ${_isMobilePlatform()}');
 
     try {
       await _initNotifications();
@@ -134,18 +146,23 @@ class PlatformDownloadManager {
       // 根据平台初始化不同的下载器
       if (_isMobilePlatform()) {
         await _initFlutterDownloader();
-        await AppLogger().info('DownloadManager', 'Flutter downloader initialized');
+        await AppLogger()
+            .info('DownloadManager', 'Flutter downloader initialized');
       } else {
-        await AppLogger().info('DownloadManager', 'Using Dio for desktop platform');
+        await AppLogger()
+            .info('DownloadManager', 'Using Dio for desktop platform');
       }
 
       await _loadTasks();
-      await AppLogger().info('DownloadManager', 'Tasks loaded: ${_tasks.length}');
+      await AppLogger()
+          .info('DownloadManager', 'Tasks loaded: ${_tasks.length}');
 
       _isInitialized = true;
-      await AppLogger().info('DownloadManager', 'Download manager initialized successfully');
+      await AppLogger()
+          .info('DownloadManager', 'Download manager initialized successfully');
     } catch (e, stackTrace) {
-      await AppLogger().error('DownloadManager', 'Failed to initialize download manager', e, stackTrace);
+      await AppLogger().error('DownloadManager',
+          'Failed to initialize download manager', e, stackTrace);
       rethrow;
     }
   }
@@ -157,7 +174,8 @@ class PlatformDownloadManager {
 
   // 初始化通知
   Future<void> _initNotifications() async {
-    const initializationSettingsAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
     const initializationSettingsDarwin = DarwinInitializationSettings();
     const initializationSettings = InitializationSettings(
       android: initializationSettingsAndroid,
@@ -171,31 +189,37 @@ class PlatformDownloadManager {
   Future<void> _initFlutterDownloader() async {
     if (!_isMobilePlatform()) return;
 
-    await AppLogger().info('FlutterDownloader', 'Starting flutter_downloader initialization');
+    await AppLogger().info(
+        'FlutterDownloader', 'Starting flutter_downloader initialization');
 
     try {
       // 请求权限
       await _requestPermissions();
 
       // 初始化 flutter_downloader
-      await AppLogger().info('FlutterDownloader', 'Initializing flutter_downloader...');
+      await AppLogger()
+          .info('FlutterDownloader', 'Initializing flutter_downloader...');
       await FlutterDownloader.initialize(debug: kDebugMode);
-      await AppLogger().info('FlutterDownloader', 'Flutter_downloader initialized successfully');
+      await AppLogger().info(
+          'FlutterDownloader', 'Flutter_downloader initialized successfully');
 
       // 注册回调端口
-      await AppLogger().info('FlutterDownloader', 'Setting up callback port...');
+      await AppLogger()
+          .info('FlutterDownloader', 'Setting up callback port...');
       _port = ReceivePort();
-      IsolateNameServer.registerPortWithName(_port!.sendPort, 'downloader_send_port');
+      IsolateNameServer.registerPortWithName(
+          _port!.sendPort, 'downloader_send_port');
       _port!.listen((dynamic data) {
         _handleDownloadCallback(data);
       });
 
       // 注册回调
       FlutterDownloader.registerCallback(downloadCallback);
-      await AppLogger().info('FlutterDownloader', 'Callback registered successfully');
-
+      await AppLogger()
+          .info('FlutterDownloader', 'Callback registered successfully');
     } catch (e, stackTrace) {
-      await AppLogger().error('FlutterDownloader', 'Failed to initialize flutter_downloader', e, stackTrace);
+      await AppLogger().error('FlutterDownloader',
+          'Failed to initialize flutter_downloader', e, stackTrace);
       rethrow;
     }
   }
@@ -206,35 +230,48 @@ class PlatformDownloadManager {
 
     if (Platform.isAndroid) {
       try {
-        await AppLogger().info('Permissions', 'Requesting storage permission...');
+        await AppLogger()
+            .info('Permissions', 'Requesting storage permission...');
         final storageStatus = await Permission.storage.request();
-        await AppLogger().info('Permissions', 'Storage permission status: $storageStatus');
+        await AppLogger()
+            .info('Permissions', 'Storage permission status: $storageStatus');
 
-        await AppLogger().info('Permissions', 'Requesting notification permission...');
+        await AppLogger()
+            .info('Permissions', 'Requesting notification permission...');
         final notificationStatus = await Permission.notification.request();
-        await AppLogger().info('Permissions', 'Notification permission status: $notificationStatus');
+        await AppLogger().info('Permissions',
+            'Notification permission status: $notificationStatus');
 
         // 检查是否需要请求忽略电池优化
-        await AppLogger().info('Permissions', 'Checking battery optimization...');
-        final batteryOptimizationStatus = await Permission.ignoreBatteryOptimizations.status;
-        await AppLogger().info('Permissions', 'Battery optimization status: $batteryOptimizationStatus');
+        await AppLogger()
+            .info('Permissions', 'Checking battery optimization...');
+        final batteryOptimizationStatus =
+            await Permission.ignoreBatteryOptimizations.status;
+        await AppLogger().info('Permissions',
+            'Battery optimization status: $batteryOptimizationStatus');
 
         if (batteryOptimizationStatus != PermissionStatus.granted) {
-          await AppLogger().info('Permissions', 'Requesting ignore battery optimizations...');
-          final batteryResult = await Permission.ignoreBatteryOptimizations.request();
-          await AppLogger().info('Permissions', 'Battery optimization request result: $batteryResult');
+          await AppLogger().info(
+              'Permissions', 'Requesting ignore battery optimizations...');
+          final batteryResult =
+              await Permission.ignoreBatteryOptimizations.request();
+          await AppLogger().info('Permissions',
+              'Battery optimization request result: $batteryResult');
         }
-
       } catch (e, stackTrace) {
-        await AppLogger().error('Permissions', 'Failed to request permissions', e, stackTrace);
+        await AppLogger().error(
+            'Permissions', 'Failed to request permissions', e, stackTrace);
       }
     } else if (Platform.isIOS) {
       try {
-        await AppLogger().info('Permissions', 'Requesting iOS notification permission...');
+        await AppLogger()
+            .info('Permissions', 'Requesting iOS notification permission...');
         final notificationStatus = await Permission.notification.request();
-        await AppLogger().info('Permissions', 'iOS notification permission status: $notificationStatus');
+        await AppLogger().info('Permissions',
+            'iOS notification permission status: $notificationStatus');
       } catch (e, stackTrace) {
-        await AppLogger().error('Permissions', 'Failed to request iOS permissions', e, stackTrace);
+        await AppLogger().error(
+            'Permissions', 'Failed to request iOS permissions', e, stackTrace);
       }
     }
 
@@ -295,7 +332,8 @@ class PlatformDownloadManager {
   // 静态回调函数（flutter_downloader 要求）
   @pragma('vm:entry-point')
   static void downloadCallback(String id, int status, int progress) {
-    final SendPort? send = IsolateNameServer.lookupPortByName('downloader_send_port');
+    final SendPort? send =
+        IsolateNameServer.lookupPortByName('downloader_send_port');
     send?.send([id, status, progress]);
   }
 
@@ -379,7 +417,8 @@ class PlatformDownloadManager {
   // 保存任务
   Future<void> _saveTasks() async {
     final prefs = await SharedPreferences.getInstance();
-    final tasksJson = _tasks.values.map((task) => json.encode(task.toMap())).toList();
+    final tasksJson =
+        _tasks.values.map((task) => json.encode(task.toMap())).toList();
     await prefs.setStringList('unified_download_tasks', tasksJson);
   }
 
@@ -482,7 +521,8 @@ class PlatformDownloadManager {
 
     try {
       if (!_isInitialized) {
-        await AppLogger().info('DownloadTask', 'Download manager not initialized, initializing...');
+        await AppLogger().info('DownloadTask',
+            'Download manager not initialized, initializing...');
         await initialize();
       }
 
@@ -491,13 +531,15 @@ class PlatformDownloadManager {
         await AppLogger().info('DownloadTask', 'Task already exists: $taskId');
         final existingTask = _tasks[taskId]!;
         if (existingTask.status == DownloadStatus.paused) {
-          await AppLogger().info('DownloadTask', 'Resuming existing paused task: $taskId');
+          await AppLogger()
+              .info('DownloadTask', 'Resuming existing paused task: $taskId');
           await resumeTask(taskId);
         }
         return;
       }
 
-      await AppLogger().info('DownloadTask', 'Getting download URL for: $path/$fileName');
+      await AppLogger()
+          .info('DownloadTask', 'Getting download URL for: $path/$fileName');
 
       // 获取真实下载地址
       final response = await FsApi.get(path: '${path.substring(1)}/$fileName');
@@ -505,8 +547,11 @@ class PlatformDownloadManager {
         throw Exception('获取下载地址失败: ${response.message}');
       }
 
-      final downloadUrl = response.data!.rawUrl!;
-      await AppLogger().info('DownloadTask', 'Download URL obtained: $downloadUrl');
+      final proxyConfig = await GoProxyHelper.loadConfig();
+      final downloadUrl = proxyConfig.wrapUrl(response.data!.rawUrl!);
+      final headerMap = proxyConfig.buildAuthHeaders();
+      await AppLogger()
+          .info('DownloadTask', 'Download URL obtained: $downloadUrl');
 
       // 获取下载路径
       final downloadDir = await getDownloadPath();
@@ -515,7 +560,8 @@ class PlatformDownloadManager {
 
       // 创建下载目录
       await Directory(downloadDir).create(recursive: true);
-      await AppLogger().info('DownloadTask', 'Download directory created/verified');
+      await AppLogger()
+          .info('DownloadTask', 'Download directory created/verified');
 
       final task = UnifiedDownloadTask(
         id: taskId,
@@ -523,6 +569,7 @@ class PlatformDownloadManager {
         url: downloadUrl,
         fileName: fileName,
         filePath: filePath,
+        headers: headerMap != null ? Map<String, String>.from(headerMap) : null,
       );
 
       // 检查是否存在未完成的文件
@@ -530,7 +577,8 @@ class PlatformDownloadManager {
       if (await file.exists()) {
         task.receivedBytes = await file.length();
         task.status = DownloadStatus.paused;
-        await AppLogger().info('DownloadTask', 'Found existing partial file: ${task.receivedBytes} bytes');
+        await AppLogger().info('DownloadTask',
+            'Found existing partial file: ${task.receivedBytes} bytes');
       }
 
       _tasks[taskId] = task;
@@ -549,7 +597,8 @@ class PlatformDownloadManager {
         }
       }
     } catch (e, stackTrace) {
-      await AppLogger().error('DownloadTask', 'Failed to add download task: $taskId', e, stackTrace);
+      await AppLogger().error('DownloadTask',
+          'Failed to add download task: $taskId', e, stackTrace);
 
       final task = UnifiedDownloadTask(
         id: taskId,
@@ -559,6 +608,7 @@ class PlatformDownloadManager {
         filePath: '',
         status: DownloadStatus.failed,
         error: e.toString(),
+        headers: null,
       );
       _tasks[taskId] = task;
       _taskController.value = Map.from(_tasks);
@@ -580,13 +630,15 @@ class PlatformDownloadManager {
 
   // 移动端下载（使用 flutter_downloader）
   Future<void> _startMobileDownload(UnifiedDownloadTask task) async {
-    await AppLogger().info('MobileDownload', 'Starting mobile download for: ${task.fileName}');
+    await AppLogger().info(
+        'MobileDownload', 'Starting mobile download for: ${task.fileName}');
     await AppLogger().info('MobileDownload', 'URL: ${task.url}');
     await AppLogger().info('MobileDownload', 'Save path: ${task.filePath}');
 
     try {
       final downloadDir = await getDownloadPath();
-      await AppLogger().info('MobileDownload', 'Download directory: $downloadDir');
+      await AppLogger()
+          .info('MobileDownload', 'Download directory: $downloadDir');
 
       final taskId = await FlutterDownloader.enqueue(
         url: task.url,
@@ -595,17 +647,20 @@ class PlatformDownloadManager {
         showNotification: true,
         openFileFromNotification: false,
         saveInPublicStorage: false,
+        headers: task.headers ?? <String, String>{},
       );
 
       if (taskId != null) {
         task.flutterDownloaderId = taskId;
-        await AppLogger().info('MobileDownload', 'Flutter downloader task created: $taskId');
+        await AppLogger()
+            .info('MobileDownload', 'Flutter downloader task created: $taskId');
         _updateTask(task);
       } else {
         throw Exception('Flutter downloader returned null task ID');
       }
     } catch (e, stackTrace) {
-      await AppLogger().error('MobileDownload', 'Mobile download failed for: ${task.fileName}', e, stackTrace);
+      await AppLogger().error('MobileDownload',
+          'Mobile download failed for: ${task.fileName}', e, stackTrace);
       task.status = DownloadStatus.failed;
       task.error = e.toString();
       _updateTask(task);
@@ -623,14 +678,17 @@ class PlatformDownloadManager {
         task.receivedBytes = await file.length();
       }
 
+      final requestHeaders = <String, String>{
+        if (task.headers != null) ...task.headers!,
+        if (task.receivedBytes > 0) 'Range': 'bytes=${task.receivedBytes}-',
+      };
+
       final response = await _dio.get(
         task.url,
         cancelToken: task.dioToken,
         options: Options(
           responseType: ResponseType.stream,
-          headers: {
-            if (task.receivedBytes > 0) 'Range': 'bytes=${task.receivedBytes}-',
-          },
+          headers: requestHeaders.isEmpty ? null : requestHeaders,
           followRedirects: true,
         ),
       );
@@ -731,7 +789,8 @@ class PlatformDownloadManager {
 
     // 删除 flutter_downloader 任务
     if (_isMobilePlatform() && task.flutterDownloaderId != null) {
-      await FlutterDownloader.remove(taskId: task.flutterDownloaderId!, shouldDeleteContent: deleteFile);
+      await FlutterDownloader.remove(
+          taskId: task.flutterDownloaderId!, shouldDeleteContent: deleteFile);
     }
 
     // 删除文件

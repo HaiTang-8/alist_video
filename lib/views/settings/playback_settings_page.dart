@@ -1,6 +1,7 @@
+import 'package:alist_player/constants/app_constants.dart';
+import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:alist_player/constants/app_constants.dart';
 
 class PlaybackSettingsPage extends StatefulWidget {
   const PlaybackSettingsPage({super.key});
@@ -18,6 +19,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   final _longSeekController = TextEditingController();
   final _speedController = TextEditingController();
   final _customSpeedController = TextEditingController();
+  bool _goProxyEnabled = AppConstants.defaultEnableGoProxy;
+  bool _isGoBridgeDriver = false;
 
   @override
   void initState() {
@@ -35,6 +38,11 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     final longSeek = prefs.getInt(AppConstants.longSeekKey);
     final speedsString = prefs.getStringList(AppConstants.playbackSpeedsKey);
     final customSpeed = prefs.getDouble(AppConstants.customPlaybackSpeedKey);
+    final goProxyPref = prefs.getBool(AppConstants.enableGoProxyKey) ??
+        AppConstants.defaultEnableGoProxy;
+    final driverTypeValue = prefs.getString(AppConstants.dbDriverTypeKey);
+    final driverType =
+        DatabasePersistenceTypeExtension.fromStorage(driverTypeValue);
 
     setState(() {
       if (shortSeek != null) {
@@ -56,7 +64,34 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
         _customPlaybackSpeed = customSpeed;
         _customSpeedController.text = customSpeed.toString();
       }
+      _goProxyEnabled = goProxyPref;
+      _isGoBridgeDriver = driverType == DatabasePersistenceType.localGoBridge;
     });
+  }
+
+  Future<void> _updateGoProxy(bool value) async {
+    if (!_isGoBridgeDriver) {
+      _showErrorMessage('仅在使用本地 Go 服务作为数据库驱动时才能开启代理');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AppConstants.enableGoProxyKey, value);
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _goProxyEnabled = value;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(value ? '已启用 Go 服务代理播放' : '已关闭 Go 服务代理播放'),
+        backgroundColor: Colors.green,
+      ),
+    );
   }
 
   Future<void> _saveSettings() async {
@@ -234,6 +269,27 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
             label: '长按快进/快退时长（秒）',
             controller: _longSeekController,
             onChanged: _updateLongSeekDuration,
+          ),
+          const SizedBox(height: 24),
+          const Text(
+            '网络代理',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          // 通过开关控制是否使用 Go 服务代理播放远程媒体，跨端共享偏好设置。
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('通过 Go 服务代理播放'),
+            subtitle: Text(
+              _isGoBridgeDriver
+                  ? '当远程存储域名在本地被屏蔽时，可借助 Go 服务转发播放链接'
+                  : '切换到“本地 Go 服务”数据库驱动后才可启用此代理',
+            ),
+            value: _goProxyEnabled && _isGoBridgeDriver,
+            onChanged: _isGoBridgeDriver ? _updateGoProxy : null,
+            secondary: const Icon(Icons.shield_outlined),
           ),
           const SizedBox(height: 24),
           const Text(
