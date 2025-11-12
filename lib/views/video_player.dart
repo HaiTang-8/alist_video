@@ -1850,6 +1850,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                         const EdgeInsets.only(bottom: 0, left: 0, right: 0),
                     // 使用更大的 iconSize 配合上方 IconButtonTheme，改善移动端的操控视觉与间距。
                     bottomButtonBar: [
+                      // “上一集/下一集”按钮，确保移动端同样具备完整的集间切换能力。
+                      const MaterialSkipPreviousButton(
+                        iconSize: 20,
+                      ),
                       // 第二行：控制按钮
                       const MaterialPlayOrPauseButton(
                         iconSize: 20,
@@ -1895,6 +1899,10 @@ class VideoPlayerState extends State<VideoPlayer> {
                         const EdgeInsets.only(bottom: 0, left: 0, right: 0),
                     // 全屏下同样提高 iconSize，保持操作一致性。
                     bottomButtonBar: [
+                      // 全屏态同样插入上一集按钮，保证横屏时也能一键回退。
+                      const MaterialSkipPreviousButton(
+                        iconSize: 22,
+                      ),
                       // 第二行：控制按钮
                       const MaterialPlayOrPauseButton(
                         iconSize: 22,
