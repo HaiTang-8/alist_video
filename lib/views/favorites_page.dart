@@ -1,16 +1,22 @@
 // ignore_for_file: unused_element, unused_field
 
+import 'dart:async';
+
 import 'package:alist_player/models/favorite_directory.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/views/index.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class FavoritesPage extends StatefulWidget {
-  const FavoritesPage({super.key});
+  const FavoritesPage({super.key, this.refreshSignal});
+
+  /// 父级通过 ValueListenable 传入刷新信号，数值变化即代表需要重新拉取收藏数据
+  final ValueListenable<int>? refreshSignal;
 
   @override
   State<FavoritesPage> createState() => _FavoritesPageState();
@@ -25,6 +31,7 @@ class _FavoritesPageState extends State<FavoritesPage>
   final Set<FavoriteDirectory> _selectedItems = {};
   late final AnimationController _controller;
   String _debugMessage = '';
+  int? _lastRefreshSignalValue;
 
   /// 统一的收藏页日志出口，确保移动端与桌面端日志一致
   void _log(
@@ -52,13 +59,51 @@ class _FavoritesPageState extends State<FavoritesPage>
       duration: const Duration(milliseconds: 800),
       vsync: this,
     );
+    _setupRefreshSignalListener();
     _loadFavorites();
   }
 
   @override
   void dispose() {
+    widget.refreshSignal?.removeListener(_handleExternalRefreshSignal);
     _controller.dispose();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant FavoritesPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshSignal != widget.refreshSignal) {
+      oldWidget.refreshSignal?.removeListener(_handleExternalRefreshSignal);
+      _setupRefreshSignalListener();
+    }
+  }
+
+  /// 监听外部刷新信号，确保跨端切换 Tab 时能够自动刷新收藏列表
+  void _setupRefreshSignalListener() {
+    final signal = widget.refreshSignal;
+    if (signal == null) {
+      return;
+    }
+    _lastRefreshSignalValue = signal.value;
+    signal.addListener(_handleExternalRefreshSignal);
+  }
+
+  /// 收到外部刷新信号时触发一次刷新，避免用户再手动下拉
+  void _handleExternalRefreshSignal() {
+    final signal = widget.refreshSignal;
+    if (signal == null) {
+      return;
+    }
+    if (_lastRefreshSignalValue == signal.value) {
+      return;
+    }
+    _lastRefreshSignalValue = signal.value;
+    _log(
+      '收到外部刷新信号，开始自动刷新收藏列表',
+      level: LogLevel.debug,
+    );
+    unawaited(_refresh());
   }
 
   // 检查数据库表结构

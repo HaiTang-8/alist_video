@@ -1,5 +1,6 @@
 import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/views/video_player.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,7 +31,10 @@ class HistoryEntry {
 }
 
 class HistoryPage extends StatefulWidget {
-  const HistoryPage({super.key});
+  const HistoryPage({super.key, this.refreshSignal});
+
+  /// 当外部 ValueListenable 数值变化时，需重新加载历史记录以保证数据实时
+  final ValueListenable<int>? refreshSignal;
 
   @override
   State<StatefulWidget> createState() => _HistoryPageState();
@@ -50,6 +54,7 @@ class _HistoryPageState extends State<HistoryPage>
   String? _lastDeletedGroupKey;
   String? _basePath;
   late final AnimationController _controller;
+  int? _lastRefreshSignalValue;
 
   // Cache for screenshot paths to avoid repeated file checks
   final Map<String, String?> _screenshotPathCache = {};
@@ -99,6 +104,7 @@ class _HistoryPageState extends State<HistoryPage>
       vsync: this,
     );
     _scrollController.addListener(_onScroll);
+    _setupRefreshSignalListener();
     _loadHistory();
     _loadBasePath();
 
@@ -110,12 +116,62 @@ class _HistoryPageState extends State<HistoryPage>
 
   @override
   void dispose() {
+    widget.refreshSignal?.removeListener(_handleExternalRefreshSignal);
     _scrollController.dispose();
     _controller.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
     _searchDebounceTimer?.cancel();
     super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant HistoryPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.refreshSignal != widget.refreshSignal) {
+      oldWidget.refreshSignal?.removeListener(_handleExternalRefreshSignal);
+      _setupRefreshSignalListener();
+    }
+  }
+
+  /// 监听由底部导航传入的刷新信号，确保从其他 tab 回来时展示最新历史记录
+  void _setupRefreshSignalListener() {
+    final signal = widget.refreshSignal;
+    if (signal == null) {
+      return;
+    }
+    _lastRefreshSignalValue = signal.value;
+    signal.addListener(_handleExternalRefreshSignal);
+  }
+
+  /// 每当外部信号值变化（意味着切换自其它页面）时执行自动刷新
+  void _handleExternalRefreshSignal() {
+    final signal = widget.refreshSignal;
+    if (signal == null) {
+      return;
+    }
+    if (_lastRefreshSignalValue == signal.value) {
+      return;
+    }
+    _lastRefreshSignalValue = signal.value;
+    _log(
+      '收到外部刷新信号，自动重载历史数据',
+      level: LogLevel.debug,
+    );
+    unawaited(_refreshHistoryFromNavigation());
+  }
+
+  /// 跨端统一的导航刷新逻辑，进入历史页即清理缓存并重新拉取分页数据
+  Future<void> _refreshHistoryFromNavigation() async {
+    if (!mounted) {
+      return;
+    }
+    _clearImageCache();
+    await _loadHistory();
+    if (!mounted) {
+      return;
+    }
+    _controller.forward(from: 0);
   }
 
   // 滚动监听器

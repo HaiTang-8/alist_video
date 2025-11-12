@@ -60,6 +60,8 @@ class _IndexState extends State<IndexPage> {
   // 保存页面实例，避免重复创建
   late final List<Widget> _pages;
   late final GlobalKey<_HomePageWrapperState> _homePageKey;
+  late final ValueNotifier<int> _favoritesRefreshSignal;
+  late final ValueNotifier<int> _historyRefreshSignal;
 
   @override
   void initState() {
@@ -69,12 +71,14 @@ class _IndexState extends State<IndexPage> {
 
     // 初始化页面key
     _homePageKey = GlobalKey<_HomePageWrapperState>();
+    _favoritesRefreshSignal = ValueNotifier<int>(0);
+    _historyRefreshSignal = ValueNotifier<int>(0);
 
     // 初始化页面列表
     _pages = [
       _HomePageWrapper(key: _homePageKey),
-      const FavoritesPage(),
-      const HistoryPage(),
+      FavoritesPage(refreshSignal: _favoritesRefreshSignal),
+      HistoryPage(refreshSignal: _historyRefreshSignal),
       const DownloadsPage(),
       const PersonPage(),
     ];
@@ -86,6 +90,8 @@ class _IndexState extends State<IndexPage> {
     if (IndexPage.currentState == this) {
       IndexPage.currentState = null;
     }
+    _favoritesRefreshSignal.dispose();
+    _historyRefreshSignal.dispose();
     super.dispose();
   }
 
@@ -163,6 +169,13 @@ class _IndexState extends State<IndexPage> {
             selectedItemColor: Colors.blue,
             unselectedItemColor: Colors.grey,
             onTap: (index) {
+              if (index == 1 && _selectedIndex != 1) {
+                // 切换至收藏页时递增信号，让收藏列表自动刷新
+                _favoritesRefreshSignal.value++;
+              } else if (index == 2 && _selectedIndex != 2) {
+                // 切换至历史页时递增信号，确保展示最新的观看记录
+                _historyRefreshSignal.value++;
+              }
               setState(() {
                 _selectedIndex = index;
               });
