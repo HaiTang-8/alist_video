@@ -2782,14 +2782,13 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 修改播放列表标题部分
   Widget _buildPlaylistHeader() {
-    // 计算当前播放索引的文字信息
-    String playingIndexInfo = '';
+    // 计算当前播放索引的文字信息，只保留“正在播放 x/y”提示，去除冗余标题
+    String headerText = '暂无播放';
     if (playList.isNotEmpty &&
         currentPlayingIndex >= 0 &&
         currentPlayingIndex < playList.length) {
       // 显示当前播放索引 (索引+1，从1开始计数更符合用户习惯)
-      playingIndexInfo =
-          ' | 正在播放: ${currentPlayingIndex + 1}/${playList.length}';
+      headerText = '正在播放: ${currentPlayingIndex + 1}/${playList.length}';
     }
 
     return Container(
@@ -2810,7 +2809,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '播放列表 (${playList.length})$playingIndexInfo',
+              headerText,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,

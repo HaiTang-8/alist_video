@@ -941,9 +941,9 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
 
   // 构建播放列表头部
   Widget _buildPlaylistHeader() {
-    final playingIndexInfo = playList.isNotEmpty
-        ? ' (${currentPlayingIndex + 1}/${playList.length})'
-        : '';
+    final headerText = playList.isNotEmpty
+        ? '正在播放: ${currentPlayingIndex + 1}/${playList.length}'
+        : '暂无播放';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -962,7 +962,8 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '本地播放列表 (${playList.length})$playingIndexInfo',
+              // 与云端播放器保持一致，仅展示“正在播放 x/y”提示文案。
+              headerText,
               style: const TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
