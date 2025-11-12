@@ -100,6 +100,14 @@ fi
 echo -e "${YELLOW}正在获取依赖...${NC}"
 flutter pub get
 
+# 为release构建准备额外的Dart编译参数，通过拆分调试符号与树摇图标压缩包体
+BUILD_FLAGS=()
+if [ "$BUILD_MODE" = "release" ]; then
+    DEBUG_INFO_DIR="dist/debug/android"
+    mkdir -p "$DEBUG_INFO_DIR"
+    BUILD_FLAGS+=("--split-debug-info=$DEBUG_INFO_DIR" "--obfuscate" "--tree-shake-icons")
+fi
+
 # 图标生成需手动执行，避免脚本自动更新多端图标资源
 echo -e "${YELLOW}跳过应用图标生成，请手动运行: dart run flutter_launcher_icons:main${NC}"
 
@@ -107,13 +115,13 @@ echo -e "${YELLOW}跳过应用图标生成，请手动运行: dart run flutter_l
 echo -e "${YELLOW}正在构建 Android 应用...${NC}"
 if [ "$BUILD_TYPE" = "aab" ]; then
     if [ "$BUILD_MODE" = "release" ]; then
-        flutter build appbundle --release
+        flutter build appbundle --release "${BUILD_FLAGS[@]}"
     else
         flutter build appbundle --debug
     fi
 else
     if [ "$BUILD_MODE" = "release" ]; then
-        flutter build apk --release
+        flutter build apk --release --split-per-abi "${BUILD_FLAGS[@]}"
     else
         flutter build apk --debug
     fi
@@ -123,52 +131,75 @@ fi
 OUTPUT_DIR="dist/android"
 mkdir -p "$OUTPUT_DIR"
 
-# 设置文件路径和名称
-if [ "$BUILD_TYPE" = "aab" ]; then
-    if [ "$BUILD_MODE" = "release" ]; then
-        SOURCE_FILE="build/app/outputs/bundle/release/app-release.aab"
-        OUTPUT_FILE="${APP_NAME}_${VERSION}_android.aab"
-    else
-        SOURCE_FILE="build/app/outputs/bundle/debug/app-debug.aab"
-        OUTPUT_FILE="${APP_NAME}_${VERSION}_android_debug.aab"
-    fi
+# 记录所有需要输出的产物路径，便于统一展示
+OUTPUT_PATHS=()
+
+if [ "$BUILD_TYPE" = "apk" ] && [ "$BUILD_MODE" = "release" ]; then
+    # 分ABI复制APK，确保用户仅下载所需架构的最小包
+    ABI_LIST=("armeabi-v7a" "arm64-v8a" "x86_64")
+    for abi in "${ABI_LIST[@]}"; do
+        SOURCE_FILE="build/app/outputs/flutter-apk/app-${abi}-release.apk"
+        if [ -f "$SOURCE_FILE" ]; then
+            OUTPUT_FILE="${APP_NAME}_${VERSION}_android_${abi}.apk"
+            OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT_FILE"
+            cp "$SOURCE_FILE" "$OUTPUT_PATH"
+            OUTPUT_PATHS+=("$OUTPUT_PATH")
+        else
+            echo -e "${YELLOW}提示: 未找到 ${abi} 架构的APK，可能该平台未启用${NC}"
+        fi
+    done
 else
-    if [ "$BUILD_MODE" = "release" ]; then
-        SOURCE_FILE="build/app/outputs/flutter-apk/app-release.apk"
-        OUTPUT_FILE="${APP_NAME}_${VERSION}_android.apk"
+    # 非分ABI场景仍保持单文件输出
+    if [ "$BUILD_TYPE" = "aab" ]; then
+        if [ "$BUILD_MODE" = "release" ]; then
+            SOURCE_FILE="build/app/outputs/bundle/release/app-release.aab"
+            OUTPUT_FILE="${APP_NAME}_${VERSION}_android.aab"
+        else
+            SOURCE_FILE="build/app/outputs/bundle/debug/app-debug.aab"
+            OUTPUT_FILE="${APP_NAME}_${VERSION}_android_debug.aab"
+        fi
     else
-        SOURCE_FILE="build/app/outputs/flutter-apk/app-debug.apk"
-        OUTPUT_FILE="${APP_NAME}_${VERSION}_android_debug.apk"
+        if [ "$BUILD_MODE" = "release" ]; then
+            SOURCE_FILE="build/app/outputs/flutter-apk/app-release.apk"
+            OUTPUT_FILE="${APP_NAME}_${VERSION}_android.apk"
+        else
+            SOURCE_FILE="build/app/outputs/flutter-apk/app-debug.apk"
+            OUTPUT_FILE="${APP_NAME}_${VERSION}_android_debug.apk"
+        fi
+    fi
+
+    OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT_FILE"
+    if [ -f "$SOURCE_FILE" ]; then
+        cp "$SOURCE_FILE" "$OUTPUT_PATH"
+        OUTPUT_PATHS+=("$OUTPUT_PATH")
     fi
 fi
 
-OUTPUT_PATH="$OUTPUT_DIR/$OUTPUT_FILE"
-
-if [ -f "$SOURCE_FILE" ]; then
-    echo -e "${YELLOW}正在复制文件到输出目录...${NC}"
-    cp "$SOURCE_FILE" "$OUTPUT_PATH"
-    
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}    构建完成!${NC}"
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}输出文件: $OUTPUT_PATH${NC}"
-    echo -e "${GREEN}文件大小: $(du -h "$OUTPUT_PATH" | cut -f1)${NC}"
-    echo ""
-    
-    # 显示文件信息
-    echo -e "${BLUE}文件信息:${NC}"
-    ls -la "$OUTPUT_DIR"
-    
-    # 如果是APK文件，显示APK信息
-    if [ "$BUILD_TYPE" = "apk" ] && command -v aapt &> /dev/null; then
-        echo ""
-        echo -e "${BLUE}APK 信息:${NC}"
-        aapt dump badging "$OUTPUT_PATH" | grep -E "(package|application-label|versionCode|versionName)"
-    fi
-    
-else
-    echo -e "${RED}错误: 构建失败，找不到输出文件${NC}"
+if [ ${#OUTPUT_PATHS[@]} -eq 0 ]; then
+    echo -e "${RED}错误: 构建失败，未找到任何输出文件${NC}"
     exit 1
+fi
+
+echo -e "${GREEN}========================================${NC}"
+echo -e "${GREEN}    构建完成!${NC}"
+echo -e "${GREEN}========================================${NC}"
+for path in "${OUTPUT_PATHS[@]}"; do
+    echo -e "${GREEN}输出文件: $path${NC}"
+    echo -e "${GREEN}文件大小: $(du -h "$path" | cut -f1)${NC}"
+done
+echo ""
+
+# 显示输出目录下的产物列表
+echo -e "${BLUE}文件信息:${NC}"
+ls -la "$OUTPUT_DIR"
+
+# 如果是APK且本地有aapt，则输出每个APK的包信息
+if [ "$BUILD_TYPE" = "apk" ] && command -v aapt &> /dev/null; then
+    for path in "${OUTPUT_PATHS[@]}"; do
+        echo ""
+        echo -e "${BLUE}APK 信息 (${path}):${NC}"
+        aapt dump badging "$path" | grep -E "(package|application-label|versionCode|versionName)"
+    done
 fi
 
 echo -e "${GREEN}Android 构建打包完成!${NC}"

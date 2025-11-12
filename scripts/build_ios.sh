@@ -89,6 +89,14 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Release 构建需要拆分调试符号与树摇图标来减小包体
+IOS_BUILD_FLAGS=()
+if [ "$BUILD_MODE" = "release" ]; then
+    DEBUG_INFO_DIR="dist/debug/ios"
+    mkdir -p "$DEBUG_INFO_DIR"
+    IOS_BUILD_FLAGS+=("--split-debug-info=$DEBUG_INFO_DIR" "--obfuscate" "--tree-shake-icons")
+fi
+
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}    iOS 编译打包脚本${NC}"
 echo -e "${BLUE}========================================${NC}"
@@ -179,13 +187,13 @@ echo -e "${YELLOW}跳过应用图标生成，请手动运行: dart run flutter_l
 echo -e "${YELLOW}正在构建 iOS 应用...${NC}"
 if [ "$TARGET_PLATFORM" = "simulator" ]; then
     if [ "$BUILD_MODE" = "release" ]; then
-        flutter build ios --release --simulator
+        flutter build ios --release --simulator "${IOS_BUILD_FLAGS[@]}"
     else
         flutter build ios --debug --simulator
     fi
 else
     if [ "$BUILD_MODE" = "release" ]; then
-        flutter build ios --release --no-codesign
+        flutter build ios --release --no-codesign "${IOS_BUILD_FLAGS[@]}"
     else
         flutter build ios --debug --no-codesign
     fi

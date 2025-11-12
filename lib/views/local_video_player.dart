@@ -168,6 +168,7 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
   void initState() {
     super.initState();
     _loadSettings();
+    unawaited(_configurePlaylistErrorPolicy());
     _getCurrentUsername();
     _initializeLocalPlaylist();
   }
@@ -195,6 +196,29 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
             AppConstants.defaultLongSeekDuration.inSeconds,
       );
     });
+  }
+
+  /// 设置 mpv playlist-on-error 行为，避免播放失败时跳到下一条本地视频
+  Future<void> _configurePlaylistErrorPolicy() async {
+    final dynamic mpvPlayer = player.platform;
+    if (mpvPlayer == null) {
+      _logDebug('未获取到 mpv 实例，无法配置 playlist-on-error');
+      return;
+    }
+
+    try {
+      await mpvPlayer.setProperty('playlist-on-error', 'fail');
+      _logDebug('本地播放已设置 playlist-on-error=fail');
+    } catch (e, stack) {
+      _logDebug('配置 playlist-on-error 失败: $e');
+      AppLogger().captureConsoleOutput(
+        'LocalVideoPlayer',
+        '配置 playlist-on-error 失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
+    }
   }
 
   // 获取当前用户名
@@ -450,6 +474,20 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
           if (mounted) {}
         });
         _hasSeekInitialPosition = true;
+      }
+    });
+
+    // 监听错误，提示用户，playlist-on-error=fail 已阻止自动跳播
+    player.stream.error.listen((error) {
+      _logDebug('本地播放器错误: $error');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('播放出错: $error'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
       }
     });
   }

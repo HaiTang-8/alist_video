@@ -296,6 +296,27 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
+  /// 统一设置 mpv 的 playlist-on-error 行为，避免播放失败时自动跳转下一条
+  Future<void> _configurePlaylistErrorPolicy() async {
+    final dynamic mpvPlayer = player.platform;
+    if (mpvPlayer == null) {
+      _logDebug('未获取到 mpv 实例，无法配置 playlist-on-error');
+      return;
+    }
+
+    try {
+      await mpvPlayer.setProperty('playlist-on-error', 'fail');
+      _logDebug('已设置 playlist-on-error=fail，播放失败将停留在当前条目');
+    } catch (e, stack) {
+      _log(
+        '设置 playlist-on-error 失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
+    }
+  }
+
   // 加载文件夹的音轨和字幕记录
   Future<void> _loadFolderTrackSettings() async {
     try {
@@ -667,6 +688,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 移动端在播放60FPS视频时容易掉帧，提前设置 MPV 属性以启用硬件解码与同步优化
     _optimizeMobileMpvPlayback();
+    unawaited(_configurePlaylistErrorPolicy());
 
     // 注册硬件键盘事件处理，统一管理长按与短按逻辑
     HardwareKeyboard.instance.addHandler(_handleHardwareKeyEvent);
@@ -757,7 +779,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
 
-    // 修改错误监听处理
+    // 错误监听统一提示，playlist-on-error=fail 已确保不会跳播
     player.stream.error.listen((error) {
       if (mounted) {
         _showErrorMessage(error.toString());
