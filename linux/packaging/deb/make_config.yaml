@@ -20,7 +20,7 @@ dependencies:
   - libglib2.0-0
   - libmpv1
   - libstdc++6
-icon: ../../../assets/icon/logo.png
+icon: icon.png
 keywords:
   - WebDAV
   - Video
@@ -34,5 +34,5 @@ startup_notify: true
 files:
   - source: linux/packaging/deb/alist-player.desktop
     destination: /usr/share/applications/alist-player.desktop
-  - source: ../../../assets/icon/logo.png
+  - source: icon.png
     destination: /usr/share/icons/hicolor/512x512/apps/alist-player.png
