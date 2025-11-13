@@ -10,6 +10,7 @@ import 'package:alist_player/utils/logger.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:alist_player/widgets/batch_rename_dialog.dart';
 import 'package:alist_player/widgets/quick_regex_rename_dialog.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
@@ -50,6 +51,10 @@ class _HomePageState extends State<HomePage>
 
   // 添加一个映射来跟踪哪些文件已下载
   final Set<String> _localFiles = {};
+
+  // 仅在原生移动端（Android/iOS）标记为移动设备，桌面和 Web 平台默认展示完整工具栏
+  bool get _isMobilePlatform =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   /// HomePage 的统一日志出口，确保不同平台的行为记录一致
   void _log(
@@ -1007,18 +1012,19 @@ class _HomePageState extends State<HomePage>
               onPressed: _showSearchDialog,
             ),
             if (files.isNotEmpty) ...[
-              // 快捷正则重命名按钮
-              IconButton(
-                icon: const Icon(Icons.find_replace),
-                tooltip: '快捷正则重命名',
-                onPressed: () => _showQuickRegexRenameDialog(),
-              ),
-              // 批量重命名按钮
-              IconButton(
-                icon: const Icon(Icons.drive_file_rename_outline),
-                tooltip: '批量重命名',
-                onPressed: () => _showBatchRenameDialog(),
-              ),
+              if (!_isMobilePlatform) ...[
+                // 桌面端保留重命名功能，移动端隐藏避免移动交互干扰
+                IconButton(
+                  icon: const Icon(Icons.find_replace),
+                  tooltip: '快捷正则重命名',
+                  onPressed: () => _showQuickRegexRenameDialog(),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.drive_file_rename_outline),
+                  tooltip: '批量重命名',
+                  onPressed: () => _showBatchRenameDialog(),
+                ),
+              ],
               IconButton(
                 icon: Icon(_isSelectMode ? Icons.close : Icons.checklist),
                 onPressed: () {
@@ -1414,8 +1420,8 @@ class _HomePageState extends State<HomePage>
                 } else {
                   if (file.type == 1) {
                     // 先计算目标目录，待数据加载成功后再由 _getList 同步地址栏
-                    final targetPath =
-                        List<String>.from(currentPath)..add(file.name);
+                    final targetPath = List<String>.from(currentPath)
+                      ..add(file.name);
                     _animationController.reset();
                     _getList(pathSegments: targetPath)
                         .then((_) => _animationController.forward());
@@ -1776,8 +1782,8 @@ class _HomePageState extends State<HomePage>
   }
 
   void loadUrl(String url, String? title) {
-    final normalizedPath =
-        url.split('/')..removeWhere((element) => element.isEmpty);
+    final normalizedPath = url.split('/')
+      ..removeWhere((element) => element.isEmpty);
     if (normalizedPath.isEmpty) {
       normalizedPath.add('/');
     } else {
