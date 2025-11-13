@@ -22,41 +22,61 @@ on:
         description: 'Build iOS IPA'
         type: boolean
         default: true
+      build_linux:
+        description: 'Build Linux'
+        type: boolean
+        default: true
+
+env:
+  FLUTTER_VERSION: '3.22.x'
+  FLUTTER_CHANNEL: stable
 
 jobs:
   build-android:
-    if: ${{ github.event_name == 'push' || github.event.inputs.build_android == 'true' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_android == 'true' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - uses: actions/checkout@v4
 
-      # Setup Java environment
-      - uses: actions/setup-java@v4
+      - name: Download Android keystore
+        id: android_keystore
+        uses: timheuer/base64-to-file@v1.2
+        with:
+          fileName: keystore.jks
+          encodedString: ${{ secrets.KEYSTORE_BASE64 }}
+
+      - name: Create key.properties
+        run: |
+          cat <<EOF2 > android/key.properties
+          storeFile=${{ steps.android_keystore.outputs.filePath }}
+          storePassword=${{ secrets.STORE_PASSWORD }}
+          keyPassword=${{ secrets.KEY_PASSWORD }}
+          keyAlias=${{ secrets.KEY_ALIAS }}
+          EOF2
+
+      - name: Setup Java environment
+        uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
-          java-version: "17"
-          cache: 'gradle'
+          java-version: '17'
+          cache: gradle
 
-      # Setup Flutter environment
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.3'
-          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
 
-      # Get dependencies
       - name: Get dependencies
         run: flutter pub get
 
-      # Build APK
       - name: Build APK
-        run: flutter build apk --target-platform android-arm,android-arm64,android-x64 --split-per-abi
+        run: flutter build apk --release --split-per-abi
 
-      # Upload build artifacts
       - name: Upload APK artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -67,7 +87,7 @@ jobs:
             build/app/outputs/flutter-apk/app-x86_64-release.apk
 
   build-windows:
-    if: ${{ github.event_name == 'push' || github.event.inputs.build_windows == 'true' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_windows == 'true' }}
     runs-on: windows-latest
     permissions:
       contents: write
@@ -75,35 +95,38 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Setup Flutter environment
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.3'
-          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
 
-      # Enable Windows desktop support
       - name: Enable Windows Desktop
         run: flutter config --enable-windows-desktop
 
-      # Get dependencies
       - name: Get dependencies
         run: flutter pub get
 
-      # Build Windows application
-      - name: Build Windows
-        run: flutter build windows --release
+      - name: Install flutter_distributor
+        shell: pwsh
+        run: |
+          dart pub global activate flutter_distributor
+          "$Env:USERPROFILE\.pub-cache\bin" | Out-File -FilePath $Env:GITHUB_PATH -Encoding utf8 -Append
 
-      # Upload build artifacts
+      - name: Build Windows packages
+        run: flutter_distributor package --platform windows --targets msix,zip --skip-clean
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows
-          path: build/windows/x64/runner/Release
+          path: |
+            build/dist/*/*.msix
+            build/dist/*/*.zip
 
   build-macos:
-    if: ${{ github.event_name == 'push' || github.event.inputs.build_macos == 'true' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_macos == 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -111,35 +134,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Setup Flutter environment
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.3'
-          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
 
-      # Enable macOS desktop support
       - name: Enable macOS Desktop
         run: flutter config --enable-macos-desktop
 
-      # Get dependencies
       - name: Get dependencies
         run: flutter pub get
 
-      # Build macOS application
-      - name: Build macOS
-        run: flutter build macos --release
+      - name: Install appdmg
+        run: npm install -g appdmg
 
-      # Upload build artifacts
+      - name: Install flutter_distributor
+        run: |
+          dart pub global activate flutter_distributor
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+
+      - name: Build macOS packages
+        run: flutter_distributor package --platform macos --targets dmg,zip --skip-clean
+
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: build/macos/Build/Products/Release/*.app
+          path: |
+            build/dist/*/*.dmg
+            build/dist/*/*.zip
 
   build-ios:
-    if: ${{ github.event_name == 'push' || github.event.inputs.build_ios == 'true' }}
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_ios == 'true' }}
     runs-on: macos-latest
     permissions:
       contents: write
@@ -147,54 +175,106 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # Setup Flutter environment for iOS IPA 构建
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.29.3'
-          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
           cache: true
 
-      # 获取依赖，确保生成 Runner.app 所需的 Flutter 包齐全
       - name: Get dependencies
         run: flutter pub get
 
-      # 构建无签名 release Runner.app，避免 CI 环境缺失证书导致失败
       - name: Build iOS (no codesign)
         run: flutter build ios --release --no-codesign
 
-      # 复用脚本做法手动封装 Payload, 输出通用 ipa 包
       - name: Create unsigned IPA artifact
         run: |
+          rm -rf build/ios/iphoneos/Payload
           mkdir -p build/ios/iphoneos/Payload
           cp -R build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/Runner.app
           cd build/ios/iphoneos
           zip -q -r runner-ios.ipa Payload
 
-      # 上传 ipa，方便后续 Release 或者手动下载
       - name: Upload IPA artifacts
         uses: actions/upload-artifact@v4
         with:
           name: ios-ipa
           path: build/ios/iphoneos/runner-ios.ipa
 
+  build-linux:
+    if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_linux == 'true' }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: ${{ env.FLUTTER_CHANNEL }}
+          cache: true
+
+      - name: Update apt cache
+        run: sudo apt-get update
+
+      - name: Install Linux dependencies
+        run: sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libmpv-dev mpv
+
+      - name: Enable Linux Desktop
+        run: flutter config --enable-linux-desktop
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Install flutter_distributor
+        run: |
+          dart pub global activate flutter_distributor
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+
+      - name: Build Linux packages
+        run: flutter_distributor package --platform linux --targets deb,zip --skip-clean
+
+      - name: Upload Linux artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            build/dist/*/*.deb
+            build/dist/*/*.zip
+
   create-release:
-    needs: [build-android, build-windows, build-macos, build-ios]
+    needs:
+      - build-android
+      - build-windows
+      - build-macos
+      - build-ios
+      - build-linux
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release_artifacts
+
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            android-apk/app-armeabi-v7a-release.apk
-            android-apk/app-arm64-v8a-release.apk
-            android-apk/app-x86_64-release.apk
-            windows/**/*
-            macos/**/*
-            ios-ipa/runner-ios.ipa
+            release_artifacts/android-apk/*.apk
+            release_artifacts/windows/**/*.zip
+            release_artifacts/windows/**/*.msix
+            release_artifacts/macos/**/*.dmg
+            release_artifacts/macos/**/*.zip
+            release_artifacts/ios-ipa/runner-ios.ipa
+            release_artifacts/linux/**/*.deb
+            release_artifacts/linux/**/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
