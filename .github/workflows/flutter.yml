@@ -171,8 +171,8 @@ jobs:
         with:
           name: macos
           path: |
-            build/dist/*/*.dmg
-            build/dist/*/*.zip
+            dist/**/*.dmg
+            dist/**/*.zip
 
   build-ios:
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_ios == 'true' }}
