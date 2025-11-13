@@ -251,8 +251,8 @@ jobs:
         with:
           name: linux
           path: |
-            build/dist/*/*.deb
-            build/dist/*/*.zip
+            dist/**/*.deb
+            dist/**/*.zip
 
   create-release:
     needs:
