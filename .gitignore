@@ -47,3 +47,4 @@ app.*.map.json
 /android/app/release
 /android/app/.cxx/*
 go/go_bridge/data/*
+.dart-tool/

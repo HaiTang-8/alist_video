@@ -1120,6 +1120,18 @@ class _HistoryPageState extends State<HistoryPage>
                       await _loadHistory();
                     },
             ),
+            // 所有平台都提供显式刷新入口，移动端避免隐藏在二级菜单
+            IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: () async {
+                _clearImageCache();
+                if (_searchQuery.isNotEmpty) {
+                  await _searchHistory(_searchQuery);
+                } else {
+                  await _loadHistory();
+                }
+              },
+            ),
             if (!isMobile) // 桌面端显示清空按钮
               IconButton(
                 icon: const Icon(Icons.delete_sweep),
@@ -1185,10 +1197,6 @@ class _HistoryPageState extends State<HistoryPage>
                         );
                       }
                       break;
-                    case 'refresh':
-                      _clearImageCache();
-                      _loadHistory();
-                      break;
                   }
                 },
                 itemBuilder: (context) => [
@@ -1213,25 +1221,7 @@ class _HistoryPageState extends State<HistoryPage>
                         ],
                       ),
                     ),
-                  const PopupMenuItem(
-                    value: 'refresh',
-                    child: Row(
-                      children: [
-                        Icon(Icons.refresh),
-                        SizedBox(width: 8),
-                        Text('刷新'),
-                      ],
-                    ),
-                  ),
                 ],
-              )
-            else
-              IconButton(
-                icon: const Icon(Icons.refresh),
-                onPressed: () async {
-                  _clearImageCache();
-                  await _loadHistory();
-                },
               ),
           ],
         ],
