@@ -1,0 +1,30 @@
+# Flutter Distributor packaging config for Debian/Ubuntu 系列
+name: alist-player
+version: 1.0.0
+revision: 1
+summary: "AlistPlayer 跨端 WebDAV 媒体播放器"
+description: |
+  AlistPlayer 是一个基于 WebDAV 的多端播放器，支持播放历史、
+  进度同步与批量管理，适配桌面端与移动端的统一体验。
+architecture: x64
+maintainer:
+  name: HaiTang-8
+  email: haitang-8@users.noreply.github.com
+homepage: https://github.com/HaiTang-8/alist_video
+license: MIT
+section: video
+priority: optional
+categories:
+  - AudioVideo
+  - Utility
+depends:
+  - libgtk-3-0
+  - libglib2.0-0
+  - libmpv1
+  - libstdc++6
+icon: ../../assets/icon/logo.png
+files:
+  - source: linux/packaging/deb/alist-player.desktop
+    destination: /usr/share/applications/alist-player.desktop
+  - source: ../../assets/icon/logo.png
+    destination: /usr/share/icons/hicolor/512x512/apps/alist-player.png

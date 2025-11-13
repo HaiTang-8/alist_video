@@ -1,0 +1,16 @@
+# DMG 配置文件，供 flutter_distributor -> appdmg 使用。
+# 字段参照 https://docs.fastforge.dev/flutter-distributor/packaging/macos/dmg/ 中的约定。
+title: "AlistPlayer"
+format: UDZO                                   # 使用压缩 UDZO，体积更小
+window:
+  position: { x: 200, y: 120 }
+  size: { width: 600, height: 400 }
+contents:
+  - type: file
+    path: AlistPlayer.app
+    x: 150
+    y: 170
+  - type: link
+    path: /Applications
+    x: 450
+    y: 170

@@ -1,0 +1,5 @@
+# ZIP 打包配置：保持 bundle 结构不变，方便直接解压运行。
+name: alist-player
+output_name: AlistPlayer-linux
+include:
+  - build/linux/x64/release/bundle
