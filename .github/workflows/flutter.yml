@@ -18,6 +18,10 @@ on:
         description: 'Build macOS'
         type: boolean
         default: true
+      build_ios:
+        description: 'Build iOS IPA'
+        type: boolean
+        default: true
 
 jobs:
   build-android:
@@ -134,8 +138,48 @@ jobs:
           name: macos
           path: build/macos/Build/Products/Release/*.app
 
+  build-ios:
+    if: ${{ github.event_name == 'push' || github.event.inputs.build_ios == 'true' }}
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup Flutter environment for iOS IPA 构建
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.3'
+          channel: stable
+          cache: true
+
+      # 获取依赖，确保生成 Runner.app 所需的 Flutter 包齐全
+      - name: Get dependencies
+        run: flutter pub get
+
+      # 构建无签名 release Runner.app，避免 CI 环境缺失证书导致失败
+      - name: Build iOS (no codesign)
+        run: flutter build ios --release --no-codesign
+
+      # 复用脚本做法手动封装 Payload, 输出通用 ipa 包
+      - name: Create unsigned IPA artifact
+        run: |
+          mkdir -p build/ios/iphoneos/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios/iphoneos/Payload/Runner.app
+          cd build/ios/iphoneos
+          zip -q -r runner-ios.ipa Payload
+
+      # 上传 ipa，方便后续 Release 或者手动下载
+      - name: Upload IPA artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: build/ios/iphoneos/runner-ios.ipa
+
   create-release:
-    needs: [build-android, build-windows, build-macos]
+    needs: [build-android, build-windows, build-macos, build-ios]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -151,5 +195,6 @@ jobs:
             android-apk/app-x86_64-release.apk
             windows/**/*
             macos/**/*
+            ios-ipa/runner-ios.ipa
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
