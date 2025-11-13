@@ -37,12 +37,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+    env:
+      HAS_ANDROID_KEYSTORE: ${{ secrets.KEYSTORE_BASE64 != '' }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Download Android keystore
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_ANDROID_KEYSTORE == 'true' }}
         id: android_keystore
         uses: timheuer/base64-to-file@v1.2
         with:
@@ -50,7 +52,7 @@ jobs:
           encodedString: ${{ secrets.KEYSTORE_BASE64 }}
 
       - name: Create key.properties
-        if: ${{ secrets.KEYSTORE_BASE64 != '' }}
+        if: ${{ env.HAS_ANDROID_KEYSTORE == 'true' }}
         run: |
           cat <<EOF2 > android/key.properties
           storeFile=${{ steps.android_keystore.outputs.filePath }}
@@ -60,7 +62,7 @@ jobs:
           EOF2
 
       - name: Use debug keystore (fallback)
-        if: ${{ secrets.KEYSTORE_BASE64 == '' }}
+        if: ${{ env.HAS_ANDROID_KEYSTORE != 'true' }}
         run: echo "KEYSTORE_BASE64 未配置，Android release 将沿用 debug 签名。"
 
       - name: Setup Java environment
