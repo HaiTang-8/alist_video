@@ -6,57 +6,50 @@ environment:
   sdk: '>=3.4.1 <4.0.0'
 
 dependencies:
-  flutter:
+  flutter: # Flutter 框架核心，提供跨平台 UI 与插件能力
     sdk: flutter
 
-  cupertino_icons: ^1.0.6
-  media_kit: 1.1.11                             # Primary package.
-  media_kit_video: 1.2.5                        # For video rendering.
-  media_kit_libs_video: 1.0.5                   # Native video dependencies.
-  dio: ^5.7.0
-  pretty_dio_logger: ^1.4.0
-  flutter_svg: ^2.0.14
-  toastification: ^2.3.0
-  flutter_easyloading: ^3.0.5
-  shared_preferences: ^2.3.3
-  flutter_breadcrumb: ^1.0.1
-  postgres: ^3.4.3
-  image: ^4.3.0
-  timeago: ^3.7.0
-  path: ^1.9.0
-  flutter_staggered_animations: ^1.1.1
-  names_launcher: ^0.0.1
-  url_launcher: ^6.3.1
-  path_provider: ^2.1.2
-  flutter_local_notifications: ^17.2.4
-  file_picker: ^10.1.5
-  network_info_plus: ^4.1.0
-  intl: ^0.19.0
-  encrypt: ^5.0.3
-  convert: ^3.1.1
-  flutter_downloader: ^1.11.8
-  permission_handler: ^11.3.1
-  share_plus: ^7.2.2
-  scrollable_positioned_list: ^0.3.8
-  volume_controller: ^2.0.7 #音量控制
-  screen_brightness: ^2.1.2 #亮度控制
-  sqflite: ^2.3.3+1
-  sqflite_common_ffi: ^2.3.3
-  sqflite_common_ffi_web: ^0.4.2
-  sqflite_common: ^2.5.5
-  universal_io: ^2.2.2
+  media_kit: 1.1.11 # 跨平台播放器核心，统一使用 MediaKit API 播放音视频
+  media_kit_video: 1.2.5 # MediaKit 视频渲染组件，支撑移动端与桌面端画面输出
+  media_kit_libs_video: 1.0.5 # MediaKit 对应原生编解码库，确保 Android/桌面平台播放稳定
+  dio: ^5.7.0 # WebDAV/alist 等 HTTP 请求客户端
+  toastification: ^2.3.0 # 跨平台 Toast 组件，展示播放/下载提示
+  flutter_easyloading: ^3.0.5 # 全局加载指示器 HUD
+  shared_preferences: ^2.3.3 # 本地 KV 缓存用户偏好，兼顾移动与桌面
+  postgres: ^3.4.3 # 直连 PostgreSQL 同步播放记录
+  image: ^4.3.0 # 纯 Dart 图像处理与缩略图生成
+  timeago: ^3.7.0 # 人性化相对时间格式化
+  path: ^1.9.0 # 跨端路径拼接与解析
+  url_launcher: ^6.3.1 # 打开系统浏览器/外部应用
+  path_provider: ^2.1.2 # 访问本地文档、缓存目录（Android/iOS/桌面）
+  flutter_local_notifications: ^17.2.4 # 本地通知提醒下载/任务状态
+  file_picker: ^10.1.5 # 系统文件选择器支持（桌面与移动）
+  network_info_plus: ^4.1.0 # 读取网络信息，定位局域网设备
+  intl: ^0.19.0 # 国际化与日期数值格式化
+  encrypt: ^5.0.3 # AES/IV 加密 WebDAV 凭证
+  flutter_downloader: ^1.11.8 # 原生后台下载任务管理
+  permission_handler: ^11.3.1 # 统一申请系统权限（存储、通知等）
+  share_plus: ^7.2.2 # 调用系统分享面板
+  scrollable_positioned_list: ^0.3.8 # 可定位的长列表展示
+  volume_controller: ^2.0.7 # 多平台音量控制
+  screen_brightness: ^2.1.2 # 调整设备亮度
+  sqflite: ^2.3.3+1 # 移动端 SQLite 持久化
+  sqflite_common_ffi: ^2.3.3 # 桌面端通过 FFI 访问 SQLite
+  sqflite_common_ffi_web: ^0.4.2 # Web 端 SQLite 兼容
+  sqflite_common: ^2.5.5 # SQLite 抽象层供多端共享
+  universal_io: ^2.2.2 # 提供 io/http polyfill 以统一多端 API
   
 dependency_overrides:
-  screen_brightness: ^2.1.2
-  screen_brightness_android: 2.1.2
-  screen_brightness_ios: 2.1.2
+  screen_brightness: ^2.1.2 # 锁定亮度控制主包版本，避免平台差异
+  screen_brightness_android: 2.1.2 # Android 亮度实现强制版本
+  screen_brightness_ios: 2.1.2 # iOS 亮度实现强制版本
 
 dev_dependencies:
-  flutter_test:
+  flutter_test: # Flutter 官方测试框架
     sdk: flutter
 
-  flutter_lints: ^3.0.0
-  flutter_launcher_icons: ^0.13.1
+  flutter_lints: ^3.0.0 # 静态分析规则
+  flutter_launcher_icons: ^0.13.1 # 多平台应用图标生成工具
 
 flutter:
   uses-material-design: true
@@ -72,25 +65,3 @@ flutter_launcher_icons:
     generate: true
     icon_size: 48
   image_path: "assets/icon/logo.png"
-  
-names_launcher:
-  name: "AlistPlayer"
-  platforms:
-    android:
-      enable: true
-      name: "AlistPlayer"
-    ios:
-      enable: true
-      name: "AlistPlayer"
-    web:
-      enable: true
-      name: "AlistPlayer"
-    macos:
-      enable: true
-      name: "AlistPlayer"
-    windows:
-      enable: true
-      name: "AlistPlayer"
-    linux:
-      enable: true
-      name: "AlistPlayer"
