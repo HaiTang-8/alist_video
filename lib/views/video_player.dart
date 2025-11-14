@@ -2,6 +2,7 @@ import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/services/go_bridge/history_screenshot_service.dart';
+import 'package:alist_player/services/player/aggressive_cache_service.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/font_helper.dart';
@@ -45,8 +46,12 @@ class SubtitleInfo {
 }
 
 class VideoPlayerState extends State<VideoPlayer> {
-  // Create a [Player] to control playback.
-  late final player = Player();
+  // Player 使用激进缓存配置，ready 回调中写入拉流命令。
+  late final player = Player(
+    configuration: AggressiveCacheService.configuration(
+      onReady: _handlePlayerReady,
+    ),
+  );
   late bool initover = false;
   // Create a [VideoController] to handle video output from [Player].
   late final controller = VideoController(player);
@@ -172,6 +177,26 @@ class VideoPlayerState extends State<VideoPlayer> {
   // Go 服务代理配置与缓存的鉴权头，在播放/字幕加载阶段统一复用。
   GoProxyConfig? _goProxyConfig;
   Map<String, String>? _goProxyHeaders;
+
+  /// Player 初始化完成后立刻推送缓存/连接命令，保证跨端都能拉满带宽。
+  void _handlePlayerReady() {
+    if (_isPlayerDisposed) {
+      return;
+    }
+    unawaited(
+      AggressiveCacheService.apply(
+        player,
+        onError: (error, stackTrace) {
+          _log(
+            '激进缓冲命令执行失败: $error',
+            level: LogLevel.error,
+            error: error,
+            stackTrace: stackTrace,
+          );
+        },
+      ),
+    );
+  }
 
   /// 视频播放器统一日志封装，方便跨端排查播放/下载/字幕问题
   void _log(

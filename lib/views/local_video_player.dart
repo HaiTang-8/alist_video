@@ -1,5 +1,6 @@
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/historical_record.dart';
+import 'package:alist_player/services/player/aggressive_cache_service.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:flutter/material.dart';
@@ -72,8 +73,12 @@ class LocalVideoPlayer extends StatefulWidget {
 }
 
 class LocalVideoPlayerState extends State<LocalVideoPlayer> {
-  // Create a [Player] to control playback.
-  late final player = Player();
+  // Player 注入激进缓存配置，保障本地/远端列表都提前装载数据。
+  late final player = Player(
+    configuration: AggressiveCacheService.configuration(
+      onReady: _handlePlayerReady,
+    ),
+  );
   late bool initover = false;
   // Create a [VideoController] to handle video output from [Player].
   late final controller = VideoController(player);
@@ -161,6 +166,24 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
       level: level,
       error: error,
       stackTrace: stackTrace,
+    );
+  }
+
+  /// Player ready 后立刻注入激进缓存命令，确保桌面/移动端都能持续拉流。
+  void _handlePlayerReady() {
+    if (!mounted) {
+      return;
+    }
+    unawaited(
+      AggressiveCacheService.apply(
+        player,
+        onError: (error, stackTrace) => _logDebug(
+          '本地播放器激进缓存配置失败: $error',
+          level: LogLevel.error,
+          error: error,
+          stackTrace: stackTrace,
+        ),
+      ),
     );
   }
 

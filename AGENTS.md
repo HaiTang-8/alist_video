@@ -1,7 +1,7 @@
 # Repository Guidelines
 
 ## mcp
-回答思考前优先去mcp中获取context7,使用context7聚合各类问题的最新资讯文档等
+回答思考前优先去mcp中获取mcp-router的context7,使用context7聚合各类问题的最新资讯文档等
 
 ## You are an expert in Flutter, Dart, Riverpod, Freezed, Flutter Hooks, and Supabase.
 
