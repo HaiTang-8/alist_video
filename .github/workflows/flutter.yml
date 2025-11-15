@@ -151,8 +151,8 @@ jobs:
         with:
           name: windows
           path: |
-            dist/windows/**/*.msix
-            dist/windows/**/*.zip
+            dist/**/*.msix
+            dist/**/*.zip
 
   build-macos:
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_macos == 'true' }}
