@@ -11,11 +11,8 @@ msix_version: 1.0.0.0
 logo_path: assets/icon/logo.png
 logo_background_color: "#0F172A"
 architecture: x64
-languages:
-  - zh-cn
-  - en-us
-capabilities:
-  - internetClient
+languages: zh-cn,en-us
+capabilities: internetClient
 # certificate_path 由 CI 动态生成的临时证书写入，密码需与工作流一致。
 certificate_path: windows/packaging/msix/AlistPlayer_TempCert.pfx
 certificate_password: alistplayer
