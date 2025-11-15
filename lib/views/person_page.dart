@@ -5,6 +5,7 @@ import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/main.dart';
 import 'package:alist_player/utils/woo_http.dart';
 import 'package:alist_player/views/disk_usage_page.dart';
+import 'package:alist_player/views/admin/admin_dashboard_page.dart';
 import 'package:alist_player/views/settings/api_preset_settings_dialog.dart';
 import 'package:alist_player/views/settings/database_api_settings.dart';
 import 'package:alist_player/views/settings/playback_settings_page.dart';
@@ -22,6 +23,7 @@ class PersonPage extends StatefulWidget {
 class _PersonPageState extends State<PersonPage>
     with AutomaticKeepAliveClientMixin {
   String _username = '';
+  bool _isAdmin = false;
 
   @override
   bool get wantKeepAlive => true;
@@ -36,6 +38,8 @@ class _PersonPageState extends State<PersonPage>
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _username = prefs.getString('current_username') ?? '';
+      final role = prefs.getInt(AppConstants.userRoleKey) ?? 0;
+      _isAdmin = role == AppConstants.adminRoleValue;
     });
   }
 
@@ -189,9 +193,9 @@ class _PersonPageState extends State<PersonPage>
                                       color: Colors.white.withOpacity(0.2),
                                       borderRadius: BorderRadius.circular(20),
                                     ),
-                                    child: const Text(
-                                      '普通用户',
-                                      style: TextStyle(
+                                    child: Text(
+                                      _isAdmin ? '管理员' : '普通用户',
+                                      style: const TextStyle(
                                         fontSize: 12,
                                         color: Colors.white,
                                       ),
@@ -213,6 +217,19 @@ class _PersonPageState extends State<PersonPage>
             child: Column(
               children: [
                 _buildSectionTitle('设置'),
+                if (_isAdmin)
+                  _buildMenuItem(
+                    icon: Icons.dashboard_customize,
+                    title: '全局运营面板',
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const AdminDashboardPage(),
+                        ),
+                      );
+                    },
+                  ),
                 _buildMenuItem(
                   icon: Icons.pie_chart_outline,
                   title: '磁盘使用统计',

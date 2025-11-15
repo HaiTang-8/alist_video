@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 // ignore: depend_on_referenced_packages
 import 'package:intl/intl.dart';
@@ -268,6 +269,11 @@ class RequestInterceptors extends Interceptor {
           DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
       await logFile.writeAsString('[$timestamp] $content\n',
           mode: FileMode.append);
+
+      if (kDebugMode) {
+        // 调试模式额外输出到控制台，方便桌面端与移动端同步追踪 API 日志
+        debugPrint('[API] $content');
+      }
     } catch (e, stack) {
       _log('写入日志失败', level: LogLevel.error, error: e, stackTrace: stack);
     }
