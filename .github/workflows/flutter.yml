@@ -122,6 +122,27 @@ jobs:
           dart pub global activate flutter_distributor
           "$Env:USERPROFILE\.pub-cache\bin" | Out-File -FilePath $Env:GITHUB_PATH -Encoding utf8 -Append
 
+      - name: Generate MSIX signing certificate
+        shell: pwsh
+        run: |
+          # 生成临时代码签名证书供 flutter_distributor 打包 msix 使用。
+          $certDir = Join-Path $Env:GITHUB_WORKSPACE "windows/packaging/msix"
+          New-Item -ItemType Directory -Force -Path $certDir | Out-Null
+          $certPath = Join-Path $certDir "AlistPlayer_TempCert.pfx"
+          if (Test-Path $certPath) {
+            Remove-Item $certPath -Force
+          }
+          $securePassword = ConvertTo-SecureString -String "alistplayer" -Force -AsPlainText
+          $cert = New-SelfSignedCertificate `
+            -Type CodeSigningCert `
+            -Subject "CN=AlistPlayer" `
+            -DnsName "AlistPlayer" `
+            -CertStoreLocation "Cert:\\CurrentUser\\My"
+          Export-PfxCertificate `
+            -Cert $cert `
+            -FilePath $certPath `
+            -Password $securePassword | Out-Null
+
       - name: Build Windows packages
         run: flutter_distributor package --platform windows --targets msix,zip --skip-clean
 
@@ -130,8 +151,8 @@ jobs:
         with:
           name: windows
           path: |
-            build/dist/*/*.msix
-            build/dist/*/*.zip
+            dist/windows/**/*.msix
+            dist/windows/**/*.zip
 
   build-macos:
     if: ${{ github.event_name != 'workflow_dispatch' || github.event.inputs.build_macos == 'true' }}

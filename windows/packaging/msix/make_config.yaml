@@ -1,0 +1,21 @@
+# Windows MSIX 打包配置，供 flutter_distributor 在 CI 中读取。
+# display_name/identity_name 应与应用包信息保持一致，避免安装冲突。
+display_name: AlistPlayer
+publisher_display_name: AlistPlayer
+identity_name: com.alist.player
+# publisher 与 MSIX 证书的 CN 保持一致，可在后续替换为正式签名。
+publisher: CN=AlistPlayer
+# MSIX 需要四段版本号，通常与 pubspec version 对齐。
+msix_version: 1.0.0.0
+# Windows 端 Logo 直接复用项目中的主图标。
+logo_path: assets/icon/logo.png
+logo_background_color: "#0F172A"
+architecture: x64
+languages:
+  - zh-cn
+  - en-us
+capabilities:
+  - internetClient
+# certificate_path 由 CI 动态生成的临时证书写入，密码需与工作流一致。
+certificate_path: windows/packaging/msix/AlistPlayer_TempCert.pfx
+certificate_password: alistplayer

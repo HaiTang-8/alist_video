@@ -1,0 +1,5 @@
+# Windows ZIP 打包配置：保持 Flutter Release Runner 目录结构，方便解压即用。
+name: alist-player
+output_name: AlistPlayer-windows
+include:
+  - build/windows/x64/runner/Release

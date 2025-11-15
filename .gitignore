@@ -48,3 +48,6 @@ app.*.map.json
 /android/app/.cxx/*
 go/go_bridge/data/*
 .dart-tool/
+
+# Windows 打包临时证书文件，CI 会动态生成不需要提交。
+windows/packaging/msix/*.pfx
