@@ -1304,6 +1304,8 @@ class _HistoryPageState extends State<HistoryPage>
     final isMobile = MediaQuery.of(context).size.width < 600;
     final isGoBridgeDriver = _isUsingGoBridge;
     final canSyncScreenshots = isGoBridgeDriver && _isAdminUser;
+    final hasHistoryData = _groupedRecords.isNotEmpty;
+    // 没有历史记录时隐藏依赖记录的操作入口，避免在空态下出现同步截图按钮
 
     return Scaffold(
       appBar: AppBar(
@@ -1414,8 +1416,8 @@ class _HistoryPageState extends State<HistoryPage>
                 }
               },
             ),
-            // 管理员在使用 Go 服务驱动时可显式执行截图同步
-            if (canSyncScreenshots)
+            // 管理员在使用 Go 服务驱动并且存在历史记录时才可显式执行截图同步
+            if (canSyncScreenshots && hasHistoryData)
               IconButton(
                 tooltip: _isSyncingScreenshots ? '正在同步截图...' : '比对并同步 Go 服务截图',
                 icon: _isSyncingScreenshots

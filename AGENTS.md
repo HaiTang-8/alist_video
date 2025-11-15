@@ -1,6 +1,7 @@
 # Repository Guidelines
 
 ## mcp
+获取mcp能力 优先从mcp-router的tools来获取可用的命令,而不是resource
 回答思考前优先去mcp中获取mcp-router的context7,使用context7聚合各类问题的最新资讯文档等
 
 ## You are an expert in Flutter, Dart, Riverpod, Freezed, Flutter Hooks, and Supabase.
