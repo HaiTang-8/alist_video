@@ -144,6 +144,41 @@ class GoHistoryScreenshotService {
       return null;
     }
   }
+
+  /// 触发 Go 服务执行截图目录同步，可选择 dryRun 以获取删除预览结果。
+  static Future<GoScreenshotSyncStats?> syncScreenshots({
+    bool dryRun = true,
+    int previewLimit = 200,
+  }) async {
+    final client = _ensureClient();
+    if (client == null) {
+      return null;
+    }
+
+    try {
+      final response = await client.post<Map<String, dynamic>>(
+        '/history/screenshot/sync',
+        data: {
+          'dryRun': dryRun,
+          'previewLimit': previewLimit,
+        },
+      );
+      final data = response.data;
+      if (data == null) {
+        throw const FormatException('Go 服务未返回同步结果');
+      }
+      return GoScreenshotSyncStats.fromJson(data);
+    } on DioException catch (e) {
+      AppLogger().captureConsoleOutput(
+        'GoHistoryScreenshotService',
+        '截图目录同步失败，dryRun=$dryRun',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: e.stackTrace,
+      );
+      rethrow;
+    }
+  }
 }
 
 /// 远端截图下载结果，携带图片格式方便选择本地缓存扩展名
@@ -155,4 +190,112 @@ class RemoteScreenshotResult {
     required this.bytes,
     required this.isJpeg,
   });
+}
+
+/// 对齐截图目录后的统计数据，供前端展示执行细节。
+class GoScreenshotSyncStats {
+  final bool dryRun;
+  final int totalCandidates;
+  final int orphanCandidates;
+  final int deletedFiles;
+  final int skippedEntries;
+  final int durationMillis;
+  final List<String> orphanFiles;
+  final List<GoScreenshotOrphanDetail> orphanDetails;
+  final int orphanPreviewLimit;
+  final int orphanOverflow;
+  final List<String> errors;
+
+  const GoScreenshotSyncStats({
+    required this.dryRun,
+    required this.totalCandidates,
+    required this.orphanCandidates,
+    required this.deletedFiles,
+    required this.skippedEntries,
+    required this.durationMillis,
+    required this.orphanFiles,
+    required this.orphanDetails,
+    required this.orphanPreviewLimit,
+    required this.orphanOverflow,
+    required this.errors,
+  });
+
+  factory GoScreenshotSyncStats.fromJson(Map<String, dynamic> json) {
+    List<String> coerceList(dynamic value) {
+      if (value == null) return const [];
+      if (value is List) {
+        return value.map((e) => e.toString()).toList(growable: false);
+      }
+      return [value.toString()];
+    }
+
+    Map<String, dynamic> coerceMap(dynamic value) {
+      if (value is Map<String, dynamic>) {
+        return value;
+      }
+      if (value is Map) {
+        return value.map((k, v) => MapEntry(k.toString(), v));
+      }
+      return const {};
+    }
+
+    final details = <GoScreenshotOrphanDetail>[];
+    final detailList = json['orphanDetails'];
+    if (detailList is List) {
+      for (final item in detailList) {
+        details.add(GoScreenshotOrphanDetail.fromJson(coerceMap(item)));
+      }
+    }
+
+    return GoScreenshotSyncStats(
+      dryRun: json['dryRun'] as bool? ?? true,
+      totalCandidates: json['totalCandidates'] as int? ?? 0,
+      orphanCandidates: json['orphanCandidates'] as int? ?? 0,
+      deletedFiles: json['deletedFiles'] as int? ?? 0,
+      skippedEntries: json['skippedEntries'] as int? ?? 0,
+      durationMillis: json['durationMillis'] as int? ?? 0,
+      orphanFiles: coerceList(json['orphanFiles']),
+      orphanDetails: details,
+      orphanPreviewLimit: json['orphanPreviewLimit'] as int? ?? 0,
+      orphanOverflow: json['orphanOverflow'] as int? ?? 0,
+      errors: coerceList(json['errors']),
+    );
+  }
+}
+
+class GoScreenshotOrphanDetail {
+  final int userId;
+  final String videoSha1;
+  final String relativePath;
+  final int sizeBytes;
+  final DateTime? modTime;
+
+  const GoScreenshotOrphanDetail({
+    required this.userId,
+    required this.videoSha1,
+    required this.relativePath,
+    required this.sizeBytes,
+    required this.modTime,
+  });
+
+  factory GoScreenshotOrphanDetail.fromJson(Map<String, dynamic> json) {
+    DateTime? parseTime(dynamic value) {
+      if (value is String && value.isNotEmpty) {
+        return DateTime.tryParse(value)?.toLocal();
+      }
+      return null;
+    }
+
+    return GoScreenshotOrphanDetail(
+      userId: json['userId'] is int
+          ? json['userId'] as int
+          : int.tryParse(json['userId']?.toString() ?? '') ?? 0,
+      videoSha1: json['videoSha1']?.toString() ?? '',
+      relativePath: json['relativePath']?.toString() ?? '',
+      sizeBytes: json['sizeBytes'] is int
+          ? json['sizeBytes'] as int
+          : int.tryParse(json['sizeBytes']?.toString() ?? '') ?? 0,
+      modTime: parseTime(json['modTime']),
+    );
+  }
 }

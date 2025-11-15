@@ -371,6 +371,11 @@ func newRouter(db *sqlx.DB, cfg Config) *gin.Engine {
 		ImageBase64 string `json:"imageBase64"`
 	}
 
+	type screenshotSyncRequest struct {
+		DryRun       bool `json:"dryRun"`
+		PreviewLimit int  `json:"previewLimit"`
+	}
+
 	r.POST("/history/screenshot", func(c *gin.Context) {
 		var req screenshotUploadRequest
 		if !bindJSON(c, &req) {
@@ -482,6 +487,60 @@ func newRouter(db *sqlx.DB, cfg Config) *gin.Engine {
 		}
 
 		c.JSON(http.StatusNotFound, gin.H{"error": "screenshot not found"})
+	})
+
+	// 支持通过 HTTP 触发截图目录与数据库记录的同步，便于运维定期清理
+	// 已失效的缩略图，防止磁盘被历史文件占满。
+	r.POST("/history/screenshot/sync", func(c *gin.Context) {
+		var bodyReq screenshotSyncRequest
+		hasBody := c.Request.ContentLength != 0
+		if hasBody {
+			if !bindJSON(c, &bodyReq) {
+				return
+			}
+		}
+
+		dryRun := true
+		queryDryRun := strings.TrimSpace(c.Query("dryRun"))
+		if queryDryRun != "" {
+			parsed, err := strconv.ParseBool(queryDryRun)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid dryRun"})
+				return
+			}
+			dryRun = parsed
+		} else if hasBody {
+			dryRun = bodyReq.DryRun
+		}
+
+		previewLimit := 0
+		if rawLimit := strings.TrimSpace(c.Query("previewLimit")); rawLimit != "" {
+			val, err := strconv.Atoi(rawLimit)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid previewLimit"})
+				return
+			}
+			previewLimit = val
+		} else if hasBody {
+			previewLimit = bodyReq.PreviewLimit
+		}
+		previewLimit = normalizePreviewLimit(previewLimit)
+
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Minute)
+		defer cancel()
+
+		result, err := syncScreenshotsAndPrune(
+			ctx,
+			db,
+			cfg.ScreenshotDir,
+			dryRun,
+			previewLimit,
+		)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, result)
 	})
 
 	// 通过 Go 桥接服务完成远程媒体代理，Flutter 端只需访问本地可达的 URL，即可透传 Range 请求。

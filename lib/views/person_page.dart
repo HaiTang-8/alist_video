@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/main.dart';
 import 'package:alist_player/utils/woo_http.dart';
 import 'package:alist_player/views/disk_usage_page.dart';
@@ -63,6 +64,9 @@ class _PersonPageState extends State<PersonPage>
         prefs.remove('current_username'),
         prefs.remove('remember_me'),
         prefs.remove('token'),
+        prefs.remove('base_path'),
+        prefs.remove(AppConstants.userRoleKey),
+        prefs.remove(AppConstants.userPermissionKey),
       ]);
       if (!context.mounted) return;
       Navigator.of(context).pushAndRemoveUntil(

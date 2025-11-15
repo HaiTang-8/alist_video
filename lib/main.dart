@@ -384,6 +384,11 @@ class _LoginPageState extends State<LoginPage> {
         try {
           final userInfo = await LoginApi.me();
           await prefs.setString('base_path', userInfo.basePath);
+          await prefs.setInt(AppConstants.userRoleKey, userInfo.role);
+          await prefs.setInt(
+            AppConstants.userPermissionKey,
+            userInfo.permission,
+          );
         } catch (e, stack) {
           // 统一记录用户信息获取异常，方便排障
           await AppLogger().error(
@@ -392,6 +397,9 @@ class _LoginPageState extends State<LoginPage> {
             e,
             stack,
           );
+          await prefs.remove('base_path');
+          await prefs.remove(AppConstants.userRoleKey);
+          await prefs.remove(AppConstants.userPermissionKey);
         }
 
         if (!mounted) return;

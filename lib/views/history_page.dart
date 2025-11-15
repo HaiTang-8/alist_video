@@ -1,3 +1,4 @@
+import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:flutter/foundation.dart';
@@ -79,6 +80,12 @@ class _HistoryPageState extends State<HistoryPage>
   List<HistoricalRecord> _searchResults = [];
   int _searchTotalRecords = 0;
   Timer? _searchDebounceTimer;
+  // Go 服务截图同步按钮状态，避免重复触发网络请求。
+  bool _isSyncingScreenshots = false;
+  // 后台自动清理任务锁，防止在频繁删除时多次打满 Go 服务。
+  bool _isBackgroundScreenshotCleanupRunning = false;
+  static const int _goScreenshotPreviewLimit = 500;
+  bool _isAdminUser = false;
 
   /// 历史页统一日志输出，方便定位分页/搜索异常
   void _log(
@@ -94,6 +101,275 @@ class _HistoryPageState extends State<HistoryPage>
       error: error,
       stackTrace: stackTrace,
     );
+  }
+
+  String _formatFileSize(int bytes) {
+    if (bytes <= 0) {
+      return '0 B';
+    }
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    double size = bytes.toDouble();
+    var unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+    final formatted =
+        unitIndex == 0 ? size.toStringAsFixed(0) : size.toStringAsFixed(1);
+    return '$formatted ${units[unitIndex]}';
+  }
+
+  String _formatModTime(DateTime? value) {
+    if (value == null) {
+      return '未知';
+    }
+    final local = value.toLocal();
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
+        '${twoDigits(local.hour)}:${twoDigits(local.minute)}:${twoDigits(local.second)}';
+  }
+
+  /// 当前是否使用本地 Go 服务作为数据库驱动
+  bool get _isUsingGoBridge =>
+      DatabaseHelper.instance.currentDriverType ==
+      DatabasePersistenceType.localGoBridge;
+
+  /// 由用户主动触发截图目录同步，可选择 dryRun 获取删除预览
+  Future<void> _handleScreenshotSync({required bool dryRun}) async {
+    if (!_isAdminUser) {
+      await _showSyncErrorDialog('当前账户无权执行截图同步');
+      return;
+    }
+    if (!_isUsingGoBridge) {
+      await _showSyncErrorDialog('当前未启用本地 Go 服务，无法触发截图同步');
+      return;
+    }
+    if (_isSyncingScreenshots) {
+      return;
+    }
+    setState(() {
+      _isSyncingScreenshots = true;
+    });
+    try {
+      final stats = await GoHistoryScreenshotService.syncScreenshots(
+        dryRun: dryRun,
+        previewLimit: _goScreenshotPreviewLimit,
+      );
+      if (!mounted) return;
+      if (stats == null) {
+        await _showSyncErrorDialog('Go 服务未返回任何统计信息');
+        return;
+      }
+      await _showSyncSummaryDialog(stats);
+    } catch (e, stack) {
+      _log(
+        '截图目录同步失败',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
+      if (mounted) {
+        await _showSyncErrorDialog(e.toString());
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSyncingScreenshots = false;
+        });
+      }
+    }
+  }
+
+  /// 将 Go 服务返回的统计信息友好地展示在弹窗中
+  Future<void> _showSyncSummaryDialog(GoScreenshotSyncStats stats) async {
+    final theme = Theme.of(context);
+    final labelStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontWeight: FontWeight.w600,
+    );
+    final normalStyle = theme.textTheme.bodyMedium;
+    final secondaryStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    final warningStyle = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.error,
+    );
+
+    TextSpan buildLine(String label, String value) => TextSpan(
+          text: '$label：',
+          style: labelStyle,
+          children: [TextSpan(text: '$value\n', style: normalStyle)],
+        );
+
+    final summaryLines = <TextSpan>[
+      buildLine('执行模式', stats.dryRun ? '预览（dryRun）' : '已删除无效截图'),
+      buildLine('扫描图片总数', '${stats.totalCandidates}'),
+      buildLine('发现孤儿图片', '${stats.orphanCandidates}'),
+      buildLine('实际删除数量', '${stats.deletedFiles}'),
+      buildLine('耗时', '${stats.durationMillis} ms'),
+    ];
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(stats.dryRun ? '截图清理预览' : '截图清理完成'),
+        content: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SelectableText.rich(
+                  TextSpan(style: normalStyle, children: summaryLines),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  stats.orphanDetails.isEmpty
+                      ? '未发现孤儿截图'
+                      : '孤儿截图列表（${stats.orphanDetails.length}${stats.orphanOverflow > 0 ? '+${stats.orphanOverflow}' : ''}）',
+                  style: labelStyle,
+                ),
+                if (stats.orphanDetails.isNotEmpty)
+                  ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: stats.orphanDetails.length,
+                    padding: const EdgeInsets.only(top: 8),
+                    separatorBuilder: (_, __) => const Divider(height: 12),
+                    itemBuilder: (_, index) => _buildOrphanDetailTile(
+                      stats.orphanDetails[index],
+                      normalStyle,
+                      secondaryStyle,
+                    ),
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'Go 服务未检测到额外图片，与数据库记录保持一致。',
+                      style: secondaryStyle,
+                    ),
+                  ),
+                if (stats.orphanOverflow > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '还有 ${stats.orphanOverflow} 条记录未展示，可通过调大 previewLimit 或查看 Go 服务日志获取。',
+                      style: secondaryStyle,
+                    ),
+                  ),
+                if (stats.errors.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  Text('异常条目', style: labelStyle),
+                  const SizedBox(height: 8),
+                  ...stats.errors.map(
+                    (error) => Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: SelectableText.rich(
+                        TextSpan(text: '• $error', style: warningStyle),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+          if (stats.dryRun && stats.orphanCandidates > 0)
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _handleScreenshotSync(dryRun: false);
+              },
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('立即删除孤儿截图'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrphanDetailTile(
+    GoScreenshotOrphanDetail detail,
+    TextStyle? primary,
+    TextStyle? secondary,
+  ) {
+    final infoBuffer = StringBuffer()
+      ..write('用户ID: ${detail.userId} · SHA1: ${detail.videoSha1}\n')
+      ..write(
+          '大小: ${_formatFileSize(detail.sizeBytes)} · 修改时间: ${_formatModTime(detail.modTime)}');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SelectableText.rich(
+        TextSpan(
+          text: '${detail.relativePath}\n',
+          style: primary,
+          children: [
+            TextSpan(text: '$infoBuffer\n', style: secondary),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 统一的错误弹窗，使用 SelectableText.rich 便于复制日志
+  Future<void> _showSyncErrorDialog(String message) async {
+    final theme = Theme.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.error_outline, color: theme.colorScheme.error),
+            const SizedBox(width: 8),
+            const Text('截图同步失败'),
+          ],
+        ),
+        content: SelectableText.rich(
+          TextSpan(
+            text: message,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: theme.colorScheme.error,
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 删除历史记录后异步通知 Go 服务回收孤儿截图
+  Future<void> _runBackgroundScreenshotCleanup() async {
+    if (!_isUsingGoBridge || _isBackgroundScreenshotCleanupRunning) {
+      return;
+    }
+    _isBackgroundScreenshotCleanupRunning = true;
+    try {
+      await GoHistoryScreenshotService.syncScreenshots(
+        dryRun: false,
+        previewLimit: 50,
+      );
+    } catch (e, stack) {
+      _log(
+        '后台截图清理失败',
+        level: LogLevel.warning,
+        error: e,
+        stackTrace: stack,
+      );
+    } finally {
+      _isBackgroundScreenshotCleanupRunning = false;
+    }
   }
 
   @override
@@ -465,6 +741,8 @@ class _HistoryPageState extends State<HistoryPage>
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       _basePath = prefs.getString('base_path') ?? '/';
+      final role = prefs.getInt(AppConstants.userRoleKey) ?? 0;
+      _isAdminUser = role == AppConstants.adminRoleValue;
     });
   }
 
@@ -765,6 +1043,7 @@ class _HistoryPageState extends State<HistoryPage>
         await DatabaseHelper.instance.deleteHistoricalRecord(record.videoSha1);
         _lastDeletedRecord = null;
         _lastDeletedGroupKey = null;
+        unawaited(_runBackgroundScreenshotCleanup());
       }
     } catch (e) {
       if (mounted) {
@@ -834,6 +1113,7 @@ class _HistoryPageState extends State<HistoryPage>
         });
 
         await _loadHistory();
+        unawaited(_runBackgroundScreenshotCleanup());
 
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -1022,6 +1302,8 @@ class _HistoryPageState extends State<HistoryPage>
   Widget build(BuildContext context) {
     super.build(context); // 必须调用以保持状态
     final isMobile = MediaQuery.of(context).size.width < 600;
+    final isGoBridgeDriver = _isUsingGoBridge;
+    final canSyncScreenshots = isGoBridgeDriver && _isAdminUser;
 
     return Scaffold(
       appBar: AppBar(
@@ -1132,6 +1414,21 @@ class _HistoryPageState extends State<HistoryPage>
                 }
               },
             ),
+            // 管理员在使用 Go 服务驱动时可显式执行截图同步
+            if (canSyncScreenshots)
+              IconButton(
+                tooltip: _isSyncingScreenshots ? '正在同步截图...' : '比对并同步 Go 服务截图',
+                icon: _isSyncingScreenshots
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.photo_library_outlined),
+                onPressed: _isSyncingScreenshots
+                    ? null
+                    : () => _handleScreenshotSync(dryRun: true),
+              ),
             if (!isMobile) // 桌面端显示清空按钮
               IconButton(
                 icon: const Icon(Icons.delete_sweep),
@@ -1860,6 +2157,7 @@ class _HistoryPageState extends State<HistoryPage>
           _currentUsername!.hashCode,
         );
         await _loadHistory();
+        unawaited(_runBackgroundScreenshotCleanup());
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('已清空所有记录')),

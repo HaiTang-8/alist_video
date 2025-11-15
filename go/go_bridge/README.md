@@ -49,11 +49,21 @@ go run .
 | `POST` | `/sql/delete` | 删除 | `{ "table": "t_favorite_directories", "where": "user_id = @uid", "whereArgs": {"uid": 1} }` |
 | `POST` | `/history/screenshot` | 上传/覆盖指定用户的历史截图 | `{ "videoSha1": "abc123", "userId": 1, "videoName": "movie.mp4", "videoPath": "/media", "isJpeg": true, "imageBase64": "<...>" }` |
 | `GET` | `/history/screenshot` | 获取用户历史截图二进制 | `?videoSha1=abc123&userId=1` |
+| `POST` | `/history/screenshot/sync` | 默认 `dryRun=true` 仅做预览，可配合 `previewLimit` 查询参数/JSON 提前拉取全部孤儿截图，显式传 `dryRun=false` 才会物理删除 | `{"dryRun": false, "previewLimit": 500}` |
 | `GET` | `/proxy/media` | 代理任意可访问的 HTTP/HTTPS 媒体流，透传 Range 头 | `?target=https://alist.example.com/d/video.mp4&access_token=<token>` |
 
 注意：Flutter 端沿用 `@param` 占位符，Go 服务会自动转换成指定驱动可识别的命名参数。
 
 截图接口会将文件写入 `screenshotDir` 目录（以 `userId/videoSha1` 做键），Flutter 历史页在本地缺图时会调用 `GET /history/screenshot` 自动补齐并缓存，确保跨端历史记录缩略图一致。
+
+若数据库删除了某条历史记录，可通过 `POST /history/screenshot/sync` 在 Go 服务侧触发一次同步：
+
+1. 针对每个用户子目录比对 `userId_videoSha1` 命名规则的文件；
+2. 查询数据库中是否仍存在对应的历史记录；
+3. 对不存在的记录执行物理删除，并尝试移除已经空掉的子目录；
+4. 返回统计信息（已扫描数量、删除数量、耗时、预览被删除的文件列表等）。
+
+若未携带任何参数，请求会默认启用 `dryRun=true` 并返回预览；可以通过 `previewLimit`（范围 1-2000）控制返回多少条 `orphanDetails` 供前端展示确认。只有在确认无误后，通过 query/body 传 `dryRun=false` 才会实际删除并回收磁盘空间。
 
 媒体代理接口会使用 Go 进程主动拉取目标 URL，并透传 `Range`、`User-Agent` 等头部，播放器只需要访问本地可达的 `/proxy/media` 即可绕过被屏蔽的存储域名。若配置了 `authToken`，可通过 `Authorization: Bearer <token>` 或在查询参数附带 `access_token=<token>` 进行鉴权。
 
