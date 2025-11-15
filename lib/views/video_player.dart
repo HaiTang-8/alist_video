@@ -8,6 +8,7 @@ import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/font_helper.dart';
 import 'package:alist_player/utils/go_proxy_helper.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:alist_player/utils/user_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // Add this for compute
@@ -73,6 +74,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       ItemPositionsListener.create();
 
   String? _currentUsername;
+  int? _currentUserId;
   bool _hasSeekInitialPosition = false;
   bool _isLoading = true;
 
@@ -454,18 +456,30 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
-  // 获取当前登录用户名
-  Future<void> _getCurrentUsername() async {
-    final prefs = await SharedPreferences.getInstance();
+  // 获取当前登录信息，优先使用真实 userId，兼容历史 hash 行为
+  Future<void> _loadCurrentUserIdentity() async {
+    final identity = await UserSession.loadIdentity();
     setState(() {
-      _currentUsername = prefs.getString('current_username');
+      _currentUsername = identity.username;
+      _currentUserId = identity.effectiveUserId;
     });
-    if (_currentUsername == null) {
+    if (_currentUserId == null) {
       _log(
-        '未获取到当前登录用户，后续操作可能失败',
+        '未获取到当前登录用户 ID，后续操作可能失败',
         level: LogLevel.warning,
       );
     }
+  }
+
+  int? _requireUserId(String contextLabel) {
+    final resolvedUserId = _currentUserId ?? _currentUsername?.hashCode;
+    if (resolvedUserId == null) {
+      _log(
+        '缺少用户ID，已跳过 $contextLabel',
+        level: LogLevel.warning,
+      );
+    }
+    return resolvedUserId;
   }
 
   // 添加日志方法来统一记录视频播放器相关日志
@@ -727,7 +741,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       });
     });
 
-    _getCurrentUsername();
+    _loadCurrentUserIdentity();
     _openAndSeekVideo();
 
     player.stream.buffer.listen((event) {
@@ -1182,7 +1196,10 @@ class VideoPlayerState extends State<VideoPlayer> {
       // 无论是本地文件还是在线文件，都使用相同的标识符和路径
       // 这样确保本地播放和在线播放的进度记录是同一条
       final videoSha1 = _getVideoSha1(widget.path, videoName);
-      final userId = (_currentUsername ?? 'unknown').hashCode;
+      final userId = _requireUserId('保存播放进度');
+      if (userId == null) {
+        return;
+      }
 
       // 使用DatabaseHelper的upsertHistoricalRecord方法保存到数据库
       // 始终使用widget.path作为videoPath，确保本地和在线播放的记录一致
@@ -1286,14 +1303,19 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 加载播放列表中所有视频的历史记录
   Future<void> _loadPlaylistHistoryRecords() async {
-    if (_currentUsername == null || playList.isEmpty) return;
+    if (playList.isEmpty) return;
+
+    final userId = _requireUserId('加载播放列表历史记录');
+    if (userId == null) {
+      return;
+    }
 
     try {
       // 获取当前目录下所有视频文件的历史记录
       final historyRecords =
           await DatabaseHelper.instance.getHistoricalRecordsByPath(
         path: widget.path,
-        userId: _currentUsername!.hashCode,
+        userId: userId,
       );
 
       if (historyRecords.isEmpty) return;
@@ -1368,14 +1390,16 @@ class VideoPlayerState extends State<VideoPlayer> {
       return;
     }
 
-    if (!mounted ||
-        _currentUsername == null ||
-        playList.isEmpty ||
-        _isLoading) {
+    if (!mounted || playList.isEmpty || _isLoading) {
       _log(
         '跳过进度保存：mounted=$mounted, username=$_currentUsername, isEmpty=${playList.isEmpty}, isLoading=$_isLoading',
         level: LogLevel.debug,
       );
+      return;
+    }
+
+    final userId = _requireUserId('视频进度保存');
+    if (userId == null) {
       return;
     }
 
@@ -1403,7 +1427,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       final existingRecord =
           await DatabaseHelper.instance.getHistoricalRecordByName(
         name: videoName,
-        userId: _currentUsername!.hashCode,
+        userId: userId,
       );
 
       final videoSha1 =
@@ -1414,7 +1438,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         setState(() {
           _videoHistoryRecords[videoName] = HistoricalRecord(
             videoSha1: videoSha1,
-            userId: _currentUsername!.hashCode,
+            userId: userId,
             videoName: videoName,
             videoPath: widget.path,
             videoSeek: currentPosition.inSeconds,
@@ -1461,13 +1485,17 @@ class VideoPlayerState extends State<VideoPlayer> {
     required Duration duration,
     required bool updateUIImmediately,
   }) async {
+    final userId = _requireUserId('异步保存进度');
+    if (userId == null) {
+      return;
+    }
     try {
       // 先保存到数据库，不等待截图完成
       await DatabaseHelper.instance.upsertHistoricalRecord(
         videoSha1: videoSha1,
         videoPath: widget.path,
         videoSeek: currentPosition.inSeconds,
-        userId: _currentUsername!.hashCode,
+        userId: userId,
         videoName: videoName,
         totalVideoDuration: duration.inSeconds,
       );
@@ -1483,7 +1511,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         setState(() {
           _videoHistoryRecords[videoName] = HistoricalRecord(
             videoSha1: videoSha1,
-            userId: _currentUsername!.hashCode,
+            userId: userId,
             videoName: videoName,
             videoPath: widget.path,
             videoSeek: currentPosition.inSeconds,
@@ -1497,7 +1525,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       _takeScreenshotAsync(
         videoName: videoName,
         videoSha1: videoSha1,
-        userId: _currentUsername!.hashCode,
+        userId: userId,
       );
     } catch (e, stack) {
       _log(
@@ -1517,13 +1545,17 @@ class VideoPlayerState extends State<VideoPlayer> {
     required Duration duration,
     required bool updateUIImmediately,
   }) async {
+    final userId = _requireUserId('同步保存进度');
+    if (userId == null) {
+      return;
+    }
     try {
       // 先保存到数据库
       await DatabaseHelper.instance.upsertHistoricalRecord(
         videoSha1: videoSha1,
         videoPath: widget.path,
         videoSeek: currentPosition.inSeconds,
-        userId: _currentUsername!.hashCode,
+        userId: userId,
         videoName: videoName,
         totalVideoDuration: duration.inSeconds,
       );
@@ -1539,7 +1571,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         setState(() {
           _videoHistoryRecords[videoName] = HistoricalRecord(
             videoSha1: videoSha1,
-            userId: _currentUsername!.hashCode,
+            userId: userId,
             videoName: videoName,
             videoPath: widget.path,
             videoSeek: currentPosition.inSeconds,
@@ -1554,7 +1586,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         final screenshotResult = await _takeScreenshot(
           specificVideoName: videoName,
           videoSha1: videoSha1,
-          userId: _currentUsername!.hashCode,
+          userId: userId,
         );
         if (screenshotResult != null) {
           _log(
@@ -1625,12 +1657,15 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 查询并跳转到上次播放位
   Future<void> _seekToLastPosition(String videoName) async {
-    if (_currentUsername == null) return;
+    final userId = _requireUserId('恢复播放进度');
+    if (userId == null) {
+      return;
+    }
 
     try {
       final record = await DatabaseHelper.instance.getHistoricalRecordByName(
         name: videoName,
-        userId: _currentUsername!.hashCode, // 使用用户名的希值作为userId
+        userId: userId,
       );
 
       if (record != null && mounted) {
@@ -4860,8 +4895,11 @@ class VideoPlayerState extends State<VideoPlayer> {
             playList.isNotEmpty && currentPlayingIndex < playList.length
                 ? playList[currentPlayingIndex].extras!['name'] as String
                 : null;
-        final int? userId = _currentUsername?.hashCode;
-        final String? videoSha1 = (userId != null && currentVideoName != null)
+        final userId = _requireUserId('手动截图');
+        if (userId == null) {
+          return;
+        }
+        final String? videoSha1 = currentVideoName != null
             ? _getVideoSha1(widget.path, currentVideoName)
             : null;
 

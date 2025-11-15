@@ -7,6 +7,7 @@ import 'package:alist_player/models/historical_record.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:alist_player/utils/user_session.dart';
 import 'package:alist_player/views/video_player.dart';
 import 'package:alist_player/widgets/batch_rename_dialog.dart';
 import 'package:alist_player/widgets/quick_regex_rename_dialog.dart';
@@ -45,6 +46,7 @@ class _HomePageState extends State<HomePage>
   String _searchKeyword = '';
   int _searchScope = 0;
   String? _currentUsername;
+  int? _currentUserId;
   bool _isFavorite = false;
   bool _isLoading = false; // 控制列表在初次加载或重试时的全屏加载状态，避免出现空白页
   String? _errorMessage; // 记录最近一次加载失败的原因，用于在空页面展示错误提示与重试操作
@@ -205,7 +207,10 @@ class _HomePageState extends State<HomePage>
 
   // 新增方法：加载视频文件的播放历史记录
   Future<void> _loadVideoHistoryRecords() async {
-    if (_currentUsername == null) return;
+    final userId = _requireUserId('当前目录历史记录加载');
+    if (userId == null) {
+      return;
+    }
 
     try {
       // 获取当前目录下所有视频文件的历史记录
@@ -213,7 +218,7 @@ class _HomePageState extends State<HomePage>
       final historyRecords =
           await DatabaseHelper.instance.getHistoricalRecordsByPath(
         path: currentDirectory,
-        userId: _currentUsername!.hashCode,
+        userId: userId,
       );
 
       if (historyRecords.isEmpty) return;
@@ -251,13 +256,16 @@ class _HomePageState extends State<HomePage>
 
   // 检查当前目录是否已收藏
   Future<void> _checkFavoriteStatus() async {
-    if (_currentUsername == null) return;
+    final userId = _requireUserId('收藏状态查询');
+    if (userId == null) {
+      return;
+    }
 
     try {
       final currentDirectory = currentPath.join('/');
       final isFavorite = await DatabaseHelper.instance.isFavoriteDirectory(
         path: currentDirectory,
-        userId: _currentUsername!.hashCode,
+        userId: userId,
       );
 
       setState(() {
@@ -275,7 +283,10 @@ class _HomePageState extends State<HomePage>
 
   // 收藏/取消收藏当前目录
   Future<void> _toggleFavorite() async {
-    if (_currentUsername == null) return;
+    final userId = _requireUserId('收藏状态切换');
+    if (userId == null) {
+      return;
+    }
 
     final currentDirectory = currentPath.join('/');
     final directoryName = currentPath.last == '/' ? '主目录' : currentPath.last;
@@ -285,7 +296,7 @@ class _HomePageState extends State<HomePage>
         // 取消收藏
         await DatabaseHelper.instance.removeFavoriteDirectory(
           path: currentDirectory,
-          userId: _currentUsername!.hashCode,
+          userId: userId,
         );
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -296,7 +307,7 @@ class _HomePageState extends State<HomePage>
         await DatabaseHelper.instance.addFavoriteDirectory(
           path: currentDirectory,
           name: directoryName,
-          userId: _currentUsername!.hashCode,
+          userId: userId,
         );
 
         ScaffoldMessenger.of(context).showSnackBar(
@@ -948,10 +959,23 @@ class _HomePageState extends State<HomePage>
   }
 
   Future<void> _loadCurrentUser() async {
-    final prefs = await SharedPreferences.getInstance();
+    final identity = await UserSession.loadIdentity();
     setState(() {
-      _currentUsername = prefs.getString('current_username');
+      _currentUsername = identity.username;
+      _currentUserId = identity.effectiveUserId;
     });
+    if (_currentUserId == null) {
+      _log('未找到当前用户ID，收藏与历史功能可能不可用', level: LogLevel.warning);
+    }
+  }
+
+  // 所有数据库操作都依赖 userId，缺失时直接跳过并输出日志。
+  int? _requireUserId(String contextLabel) {
+    final resolvedId = _currentUserId ?? _currentUsername?.hashCode;
+    if (resolvedId == null) {
+      _log('缺少用户ID，跳过$contextLabel', level: LogLevel.warning);
+    }
+    return resolvedId;
   }
 
   @override
@@ -2285,10 +2309,12 @@ class _HomePageState extends State<HomePage>
     required int fileType,
   }) async {
     try {
-      // 获取当前用户名
-      final prefs = await SharedPreferences.getInstance();
-      final currentUsername = prefs.getString('current_username') ?? 'unknown';
-      final userId = currentUsername.hashCode;
+      final identity = await UserSession.loadIdentity();
+      final userId = identity.effectiveUserId;
+      if (userId == null) {
+        debugPrint('用户ID 缺失，跳过单文件重命名的数据库更新');
+        return;
+      }
 
       // 使用现有的批量更新方法，传入单个重命名项
       final renameMap = [

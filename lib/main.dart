@@ -389,6 +389,11 @@ class _LoginPageState extends State<LoginPage> {
             AppConstants.userPermissionKey,
             userInfo.permission,
           );
+          await prefs.setInt(AppConstants.currentUserIdKey, userInfo.id);
+          await DatabaseHelper.instance.migrateUserIdIfNeeded(
+            legacyUserId: _usernameController.text.hashCode,
+            actualUserId: userInfo.id,
+          );
         } catch (e, stack) {
           // 统一记录用户信息获取异常，方便排障
           await AppLogger().error(
@@ -400,6 +405,7 @@ class _LoginPageState extends State<LoginPage> {
           await prefs.remove('base_path');
           await prefs.remove(AppConstants.userRoleKey);
           await prefs.remove(AppConstants.userPermissionKey);
+          await prefs.remove(AppConstants.currentUserIdKey);
         }
 
         if (!mounted) return;

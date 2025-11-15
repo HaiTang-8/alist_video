@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:alist_player/models/file_item.dart';
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/utils/db.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:alist_player/utils/user_session.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
@@ -51,7 +51,7 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
 
   // 预览结果
   List<RenamePreview> _previewList = [];
-  
+
   @override
   void initState() {
     super.initState();
@@ -155,7 +155,7 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
     try {
       final directory = await getApplicationDocumentsDirectory();
       final screenshotDir = Directory('${directory.path}/alist_player');
-      
+
       if (!await screenshotDir.exists()) {
         return; // 截图目录不存在，无需处理
       }
@@ -177,7 +177,6 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
           videoPath: basePath,
         );
       }
-
     } catch (e) {
       debugPrint('重命名截图文件失败: $oldName -> $newName, 错误: $e');
       // 截图文件重命名失败不影响主要的重命名流程
@@ -195,18 +194,20 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
       // 构建旧的和新的文件夹路径
       final String oldFolderPath = '$basePath/$oldFolderName';
       final String newFolderPath = '$basePath/$newFolderName';
-      
+
       // 清理路径中的非法字符
-      final String sanitizedOldFolderPath = oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedNewFolderPath = newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedOldFolderPath =
+          oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewFolderPath =
+          newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
       // 遍历截图目录中的所有文件
       final List<FileSystemEntity> files = screenshotDir.listSync();
-      
+
       for (final file in files) {
         if (file is File) {
           final String fileName = file.path.split('/').last;
-          
+
           // 检查文件名是否包含旧的文件夹路径
           if (fileName.startsWith('screenshot_$sanitizedOldFolderPath')) {
             // 构建新的文件名
@@ -214,9 +215,9 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
               'screenshot_$sanitizedOldFolderPath',
               'screenshot_$sanitizedNewFolderPath',
             );
-            
+
             final String newFilePath = '${screenshotDir.path}/$newFileName';
-            
+
             // 重命名文件
             await file.rename(newFilePath);
             debugPrint('文件夹截图重命名成功: $fileName -> $newFileName');
@@ -237,13 +238,18 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
   }) async {
     try {
       // 清理文件名中的非法字符，与视频播放器中的逻辑保持一致
-      final String sanitizedVideoPath = videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedOldVideoName = oldVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedNewVideoName = newVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedVideoPath =
+          videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedOldVideoName =
+          oldVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewVideoName =
+          newVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
       // 尝试重命名 JPEG 格式的截图文件
-      final String oldJpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.jpg';
-      final String newJpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.jpg';
+      final String oldJpegFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.jpg';
+      final String newJpegFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.jpg';
       final File oldJpegFile = File('${screenshotDir.path}/$oldJpegFileName');
       final File newJpegFile = File('${screenshotDir.path}/$newJpegFileName');
 
@@ -253,8 +259,10 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
       }
 
       // 尝试重命名 PNG 格式的截图文件（向后兼容）
-      final String oldPngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.png';
-      final String newPngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.png';
+      final String oldPngFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.png';
+      final String newPngFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.png';
       final File oldPngFile = File('${screenshotDir.path}/$oldPngFileName');
       final File newPngFile = File('${screenshotDir.path}/$newPngFileName');
 
@@ -316,11 +324,13 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
               );
             } else {
               failCount++;
-              debugPrint('重命名失败: ${preview.originalName} -> ${preview.newName}, 错误: ${response.message}');
+              debugPrint(
+                  '重命名失败: ${preview.originalName} -> ${preview.newName}, 错误: ${response.message}');
             }
           } catch (e) {
             failCount++;
-            debugPrint('重命名异常: ${preview.originalName} -> ${preview.newName}, 错误: $e');
+            debugPrint(
+                '重命名异常: ${preview.originalName} -> ${preview.newName}, 错误: $e');
           }
         }
       }
@@ -329,16 +339,18 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
       if (successfulRenames.isNotEmpty) {
         try {
           // 获取当前用户名
-          final prefs = await SharedPreferences.getInstance();
-          final currentUsername = prefs.getString('current_username') ?? 'unknown';
-          final userId = currentUsername.hashCode;
-
-          // 批量更新数据库中的历史记录路径
-          await DatabaseHelper.instance.batchUpdateHistoricalRecordPaths(
-            renameMap: successfulRenames,
-            basePath: widget.currentPath,
-            userId: userId,
-          );
+          final identity = await UserSession.loadIdentity();
+          final userId = identity.effectiveUserId;
+          if (userId == null) {
+            debugPrint('缺少用户ID，快捷重命名后无法更新历史记录');
+          } else {
+            // 批量更新数据库中的历史记录路径
+            await DatabaseHelper.instance.batchUpdateHistoricalRecordPaths(
+              renameMap: successfulRenames,
+              basePath: widget.currentPath,
+              userId: userId,
+            );
+          }
 
           debugPrint('数据库历史记录更新完成');
         } catch (e) {
@@ -365,7 +377,6 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
 
       // 刷新文件列表
       widget.onRenameComplete();
-
     } catch (e) {
       // 关闭进度对话框
       if (mounted) {
@@ -562,7 +573,8 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
                                 _showOnlyChanged = value!;
                               });
                             },
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            materialTapTargetSize:
+                                MaterialTapTargetSize.shrinkWrap,
                           ),
                           const Text(
                             '只显示有修改的',
@@ -572,7 +584,8 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
                       ),
                       const SizedBox(width: 12),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: Colors.blue[50],
                           borderRadius: BorderRadius.circular(12),
@@ -590,7 +603,6 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
                     ],
                   ),
                   const SizedBox(height: 12),
-
                   Expanded(
                     child: Container(
                       decoration: BoxDecoration(
@@ -625,12 +637,16 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
                               return Container(
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: preview.hasChanged ? Colors.blue[25] : Colors.white,
+                                  color: preview.hasChanged
+                                      ? Colors.blue[25]
+                                      : Colors.white,
                                   border: Border(
-                                    bottom: isLast ? BorderSide.none : BorderSide(
-                                      color: Colors.grey[200]!,
-                                      width: 0.5,
-                                    ),
+                                    bottom: isLast
+                                        ? BorderSide.none
+                                        : BorderSide(
+                                            color: Colors.grey[200]!,
+                                            width: 0.5,
+                                          ),
                                   ),
                                 ),
                                 child: Column(
@@ -639,8 +655,12 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
                                     Text(
                                       preview.originalName,
                                       style: TextStyle(
-                                        color: preview.hasChanged ? Colors.grey[600] : Colors.black87,
-                                        decoration: preview.hasChanged ? TextDecoration.lineThrough : null,
+                                        color: preview.hasChanged
+                                            ? Colors.grey[600]
+                                            : Colors.black87,
+                                        decoration: preview.hasChanged
+                                            ? TextDecoration.lineThrough
+                                            : null,
                                         fontSize: 13,
                                       ),
                                     ),
@@ -692,10 +712,11 @@ class _QuickRegexRenameDialogState extends State<QuickRegexRenameDialog> {
                 const SizedBox(width: 16),
                 ElevatedButton(
                   onPressed: _previewList.any((p) => p.hasChanged)
-                    ? _performQuickRename
-                    : null,
+                      ? _performQuickRename
+                      : null,
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                   ),
                   child: const Text('执行重命名'),
                 ),

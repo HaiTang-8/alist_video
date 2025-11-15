@@ -71,6 +71,7 @@ class _PersonPageState extends State<PersonPage>
         prefs.remove('base_path'),
         prefs.remove(AppConstants.userRoleKey),
         prefs.remove(AppConstants.userPermissionKey),
+        prefs.remove(AppConstants.currentUserIdKey),
       ]);
       if (!context.mounted) return;
       Navigator.of(context).pushAndRemoveUntil(

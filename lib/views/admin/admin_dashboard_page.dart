@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:alist_player/apis/admin_user_api.dart';
 import 'package:alist_player/models/admin_dashboard_metrics.dart';
 import 'package:alist_player/models/historical_record.dart';
@@ -17,8 +19,12 @@ class AdminDashboardPage extends StatefulWidget {
 class _AdminDashboardPageState extends State<AdminDashboardPage>
     with AutomaticKeepAliveClientMixin {
   final AdminAnalyticsService _analyticsService = AdminAnalyticsService();
+  final AdminUserApi _adminUserApi = AdminUserApi();
   final NumberFormat _numberFormat = NumberFormat.compact(locale: 'zh_CN');
+  // 记录 userId -> 用户名 的映射，避免重复请求远端用户列表。
+  final Map<int, String> _userNameCache = {};
   bool _isLoading = false;
+  bool _isResolvingUsernames = false;
   AdminDashboardData? _data;
   String? _errorMessage;
 
@@ -47,6 +53,8 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
       setState(() {
         _data = data;
       });
+      // 异步反查用户名，确保榜单展示人类可读的昵称而非 hash 编号。
+      unawaited(_resolveUsernamesForTopUsers(data.topUsers));
     } catch (e, stack) {
       await AppLogger().error(
         'AdminDashboardPage',
@@ -122,6 +130,142 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
         ),
       ),
     );
+  }
+
+  /// 根据 hash(userName) 反查实际用户名，以免榜单只显示用户编号。
+  Future<void> _resolveUsernamesForTopUsers(
+    List<UserActivitySummary> users,
+  ) async {
+    final unresolvedIds = users
+        .map((user) => user.userId)
+        .where((id) => !_userNameCache.containsKey(id))
+        .toSet();
+    if (unresolvedIds.isEmpty) {
+      _applyUserNameOverrides();
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _isResolvingUsernames = true);
+    }
+
+    try {
+      const perPage = 100;
+      var page = 1;
+      var totalPages = 1;
+
+      while (unresolvedIds.isNotEmpty && page <= totalPages) {
+        final response = await _adminUserApi.listUsers(
+          page: page,
+          perPage: perPage,
+        );
+        final profiles = response.content;
+        if (profiles.isEmpty) {
+          break;
+        }
+
+        totalPages = (response.total / perPage).ceil();
+        if (totalPages <= 0) {
+          totalPages = 1;
+        }
+
+        for (final profile in profiles) {
+          final profileId = profile.id;
+          if (unresolvedIds.remove(profileId)) {
+            _userNameCache[profileId] = profile.username;
+          }
+        }
+
+        if (page >= totalPages) {
+          break;
+        }
+        page++;
+      }
+    } catch (e, stack) {
+      await AppLogger().error(
+        'AdminDashboardPage',
+        'resolve usernames failed',
+        e,
+        stack,
+      );
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _isResolvingUsernames = false);
+    }
+
+    if (mounted) {
+      _applyUserNameOverrides();
+    }
+  }
+
+  /// 将查到的用户名写回 _data，触发 UI 重建。
+  void _applyUserNameOverrides() {
+    if (!mounted || _data == null) {
+      return;
+    }
+
+    var hasChanges = false;
+    final updatedUsers = _data!.topUsers.map((user) {
+      final alias = _userNameCache[user.userId];
+      if (alias == null || alias == user.displayName) {
+        return user;
+      }
+      hasChanges = true;
+      return UserActivitySummary(
+        userId: user.userId,
+        displayName: alias,
+        sessionCount: user.sessionCount,
+        uniqueVideos: user.uniqueVideos,
+        totalWatchDuration: user.totalWatchDuration,
+        averageCompletion: user.averageCompletion,
+        lastActiveAt: user.lastActiveAt,
+      );
+    }).toList();
+
+    if (!hasChanges) {
+      return;
+    }
+
+    setState(() {
+      _data = AdminDashboardData(
+        summary: _data!.summary,
+        topUsers: updatedUsers,
+        directoryHeat: _data!.directoryHeat,
+        dailyActivity: _data!.dailyActivity,
+        favoriteSummary: _data!.favoriteSummary,
+      );
+    });
+  }
+
+  /// 当用户名尚未写回 _data 时，运行时兜底返回带昵称的复本。
+  UserActivitySummary _withResolvedDisplayName(
+    UserActivitySummary user,
+  ) {
+    final alias = _userNameCache[user.userId];
+    if (alias == null || alias == user.displayName) {
+      return user;
+    }
+    return UserActivitySummary(
+      userId: user.userId,
+      displayName: alias,
+      sessionCount: user.sessionCount,
+      uniqueVideos: user.uniqueVideos,
+      totalWatchDuration: user.totalWatchDuration,
+      averageCompletion: user.averageCompletion,
+      lastActiveAt: user.lastActiveAt,
+    );
+  }
+
+  /// 头像上展示用户名首字符，回退到 hash ID，兼顾桌面/移动端可读性。
+  String _avatarLabelFor(String displayName, int fallbackId) {
+    final trimmed = displayName.trim();
+    if (trimmed.isEmpty) {
+      return fallbackId.toString();
+    }
+    final firstRune = trimmed.runes.first;
+    return String.fromCharCode(firstRune).toUpperCase();
   }
 
   Widget _buildErrorPlaceholder(String message) {
@@ -290,11 +434,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
   }
 
   void _openUserDetail(UserActivitySummary user) {
+    final resolvedUser = _withResolvedDisplayName(user);
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       builder: (context) => _UserDetailSheet(
-        userSummary: user,
+        userSummary: resolvedUser,
         analyticsService: _analyticsService,
       ),
     );
@@ -316,37 +461,60 @@ class _AdminDashboardPageState extends State<AdminDashboardPage>
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 16),
+            if (_isResolvingUsernames)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '正在匹配用户昵称...',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
             ...users.map((user) {
+              final resolvedUser = _withResolvedDisplayName(user);
+              final avatarLabel = _avatarLabelFor(
+                resolvedUser.displayName,
+                resolvedUser.userId,
+              );
               return ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: CircleAvatar(
                   backgroundColor: AdminDashboardPalette
-                      .kpiCardColors[user.userId % 5]
+                      .kpiCardColors[resolvedUser.userId % 5]
                       .withOpacity(0.15),
                   child: Text(
-                    user.userId.toString(),
+                    avatarLabel,
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),
-                title: Text(user.displayName),
+                title: Text(resolvedUser.displayName),
                 subtitle: Text(
-                  '会话 ${user.sessionCount} · 覆盖 ${user.uniqueVideos} · 完成度 ${(user.averageCompletion * 100).toStringAsFixed(1)}%',
+                  '会话 ${resolvedUser.sessionCount} · 覆盖 ${resolvedUser.uniqueVideos} · 完成度 ${(resolvedUser.averageCompletion * 100).toStringAsFixed(1)}%',
                 ),
                 trailing: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      _formatDuration(user.totalWatchDuration),
+                      _formatDuration(resolvedUser.totalWatchDuration),
                       style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     Text(
-                      '最近 ${_formatDate(user.lastActiveAt)}',
+                      '最近 ${_formatDate(resolvedUser.lastActiveAt)}',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ],
                 ),
-                onTap: () => _openUserDetail(user),
+                onTap: () => _openUserDetail(resolvedUser),
               );
             }),
           ],
@@ -602,7 +770,7 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
                 child: Row(
                   children: [
                     Text(
-                      '用户 #${widget.userSummary.userId} 详情',
+                      '${widget.userSummary.displayName} 详情',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const Spacer(),
@@ -664,7 +832,10 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
       children: [
         _buildUserProfileSection(),
         const SizedBox(height: 16),
-        _buildOverviewSection(detail.overview),
+        _buildOverviewSection(
+          detail.overview,
+          resolvedDisplayName: widget.userSummary.displayName,
+        ),
         const SizedBox(height: 16),
         _buildDirectorySection(detail.topDirectories),
         const SizedBox(height: 16),
@@ -675,7 +846,13 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
     );
   }
 
-  Widget _buildOverviewSection(UserDetailOverview overview) {
+  Widget _buildOverviewSection(
+    UserDetailOverview overview, {
+    String? resolvedDisplayName,
+  }) {
+    final title = (resolvedDisplayName?.trim().isNotEmpty ?? false)
+        ? resolvedDisplayName!.trim()
+        : overview.displayName;
     final tiles = <Widget>[
       _buildStatTile('会话数', overview.sessionCount.toString()),
       _buildStatTile('覆盖视频', overview.uniqueVideos.toString()),
@@ -695,7 +872,7 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              overview.displayName,
+              title,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 12),
@@ -943,7 +1120,8 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
                 _buildProfileTile('角色', info.role.toString()),
                 _buildProfileTile('基础路径', info.basePath),
                 _buildProfileTile('权限值', info.permission.toString()),
-                _buildProfileTile('SSO ID', info.ssoId.isEmpty ? '-' : info.ssoId),
+                _buildProfileTile(
+                    'SSO ID', info.ssoId.isEmpty ? '-' : info.ssoId),
               ],
             ),
             const SizedBox(height: 12),
@@ -987,5 +1165,4 @@ class _UserDetailSheetState extends State<_UserDetailSheet> {
       ),
     );
   }
-
 }

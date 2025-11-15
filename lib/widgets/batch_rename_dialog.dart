@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:alist_player/models/file_item.dart';
 import 'package:alist_player/apis/fs.dart';
 import 'package:alist_player/utils/db.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:alist_player/utils/user_session.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:io';
 
@@ -50,11 +50,12 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
   bool _onlyFirstMatch = false;
 
   // 内置正则模式
-  int _builtInRegexPattern = -1; // -1: 自定义, 0: 删除[]内容, 1: 删除()内容, 2: 删除【】内容, 3: 删除所有括号内容
-  
+  int _builtInRegexPattern =
+      -1; // -1: 自定义, 0: 删除[]内容, 1: 删除()内容, 2: 删除【】内容, 3: 删除所有括号内容
+
   // 预览结果
   List<RenamePreview> _previewList = [];
-  
+
   @override
   void initState() {
     super.initState();
@@ -99,9 +100,13 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
         }
       } else {
         if (_onlyFirstMatch) {
-          result = result.replaceFirst(RegExp(RegExp.escape(findText), caseSensitive: false), replaceText);
+          result = result.replaceFirst(
+              RegExp(RegExp.escape(findText), caseSensitive: false),
+              replaceText);
         } else {
-          result = result.replaceAll(RegExp(RegExp.escape(findText), caseSensitive: false), replaceText);
+          result = result.replaceAll(
+              RegExp(RegExp.escape(findText), caseSensitive: false),
+              replaceText);
         }
       }
       return result;
@@ -139,7 +144,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
 
       // 获取文件扩展名
       int lastDotIndex = originalName.lastIndexOf('.');
-      String extension = lastDotIndex != -1 ? originalName.substring(lastDotIndex) : '';
+      String extension =
+          lastDotIndex != -1 ? originalName.substring(lastDotIndex) : '';
 
       return replaceText + extension;
     }
@@ -215,7 +221,6 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
           videoPath: basePath,
         );
       }
-
     } catch (e) {
       debugPrint('重命名截图文件失败: $oldName -> $newName, 错误: $e');
       // 截图文件重命名失败不影响主要的重命名流程
@@ -235,8 +240,10 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
       final String newFolderPath = '$basePath/$newFolderName';
 
       // 清理路径中的非法字符
-      final String sanitizedOldFolderPath = oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedNewFolderPath = newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedOldFolderPath =
+          oldFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewFolderPath =
+          newFolderPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
       // 遍历截图目录中的所有文件
       final List<FileSystemEntity> files = screenshotDir.listSync();
@@ -275,13 +282,18 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
   }) async {
     try {
       // 清理文件名中的非法字符，与视频播放器中的逻辑保持一致
-      final String sanitizedVideoPath = videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedOldVideoName = oldVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedNewVideoName = newVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedVideoPath =
+          videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedOldVideoName =
+          oldVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedNewVideoName =
+          newVideoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
 
       // 尝试重命名 JPEG 格式的截图文件
-      final String oldJpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.jpg';
-      final String newJpegFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.jpg';
+      final String oldJpegFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.jpg';
+      final String newJpegFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.jpg';
       final File oldJpegFile = File('${screenshotDir.path}/$oldJpegFileName');
       final File newJpegFile = File('${screenshotDir.path}/$newJpegFileName');
 
@@ -291,8 +303,10 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
       }
 
       // 尝试重命名 PNG 格式的截图文件（向后兼容）
-      final String oldPngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.png';
-      final String newPngFileName = 'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.png';
+      final String oldPngFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedOldVideoName.png';
+      final String newPngFileName =
+          'screenshot_${sanitizedVideoPath}_$sanitizedNewVideoName.png';
       final File oldPngFile = File('${screenshotDir.path}/$oldPngFileName');
       final File newPngFile = File('${screenshotDir.path}/$newPngFileName');
 
@@ -355,11 +369,13 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
               );
             } else {
               failCount++;
-              debugPrint('重命名失败: ${preview.originalName} -> ${preview.newName}, 错误: ${response.message}');
+              debugPrint(
+                  '重命名失败: ${preview.originalName} -> ${preview.newName}, 错误: ${response.message}');
             }
           } catch (e) {
             failCount++;
-            debugPrint('重命名异常: ${preview.originalName} -> ${preview.newName}, 错误: $e');
+            debugPrint(
+                '重命名异常: ${preview.originalName} -> ${preview.newName}, 错误: $e');
           }
         }
       }
@@ -368,16 +384,18 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
       if (successfulRenames.isNotEmpty) {
         try {
           // 获取当前用户名
-          final prefs = await SharedPreferences.getInstance();
-          final currentUsername = prefs.getString('current_username') ?? 'unknown';
-          final userId = currentUsername.hashCode;
-
-          // 批量更新数据库中的历史记录路径
-          await DatabaseHelper.instance.batchUpdateHistoricalRecordPaths(
-            renameMap: successfulRenames,
-            basePath: widget.currentPath,
-            userId: userId,
-          );
+          final identity = await UserSession.loadIdentity();
+          final userId = identity.effectiveUserId;
+          if (userId == null) {
+            debugPrint('缺少用户ID，批量重命名后无法更新历史记录');
+          } else {
+            // 批量更新数据库中的历史记录路径
+            await DatabaseHelper.instance.batchUpdateHistoricalRecordPaths(
+              renameMap: successfulRenames,
+              basePath: widget.currentPath,
+              userId: userId,
+            );
+          }
 
           debugPrint('数据库历史记录更新完成');
         } catch (e) {
@@ -404,7 +422,6 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
 
       // 刷新文件列表
       widget.onRenameComplete();
-
     } catch (e) {
       // 关闭进度对话框
       if (mounted) {
@@ -424,7 +441,7 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 800;
-    
+
     return Dialog(
       child: Container(
         width: isSmallScreen ? screenWidth * 0.95 : 1000,
@@ -453,12 +470,13 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
               ],
             ),
             const SizedBox(height: 16),
-            
+
             // 主要内容区域
             Expanded(
-              child: isSmallScreen ? _buildMobileLayout() : _buildDesktopLayout(),
+              child:
+                  isSmallScreen ? _buildMobileLayout() : _buildDesktopLayout(),
             ),
-            
+
             // 底部按钮
             const Divider(),
             const SizedBox(height: 16),
@@ -471,11 +489,12 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                 ),
                 const SizedBox(width: 16),
                 ElevatedButton(
-                  onPressed: _previewList.any((p) => p.hasChanged) 
-                    ? _performBatchRename 
-                    : null,
+                  onPressed: _previewList.any((p) => p.hasChanged)
+                      ? _performBatchRename
+                      : null,
                   style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 12),
                   ),
                   child: const Text('确定'),
                 ),
@@ -578,7 +597,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
               labelText: '查找字符',
               border: OutlineInputBorder(),
               hintText: '最多输入255个字符',
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             maxLength: 255,
             onChanged: (_) => _updatePreview(),
@@ -590,7 +610,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
               labelText: '替换为',
               border: OutlineInputBorder(),
               hintText: '最多输入255个字符',
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             maxLength: 255,
             onChanged: (_) => _updatePreview(),
@@ -603,7 +624,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
             decoration: const InputDecoration(
               labelText: '内置正则模式',
               border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             items: const [
               DropdownMenuItem(value: -1, child: Text('自定义正则')),
@@ -636,7 +658,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                 labelText: '正则表达式',
                 border: OutlineInputBorder(),
                 hintText: '例如: \\[.*?\\] 匹配方括号内容',
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 helperText: '支持标准正则表达式语法',
               ),
               maxLength: 255,
@@ -649,7 +672,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                 labelText: '替换为',
                 border: OutlineInputBorder(),
                 hintText: '留空表示删除匹配内容',
-                contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                contentPadding:
+                    EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               ),
               maxLength: 255,
               onChanged: (_) => _updatePreview(),
@@ -688,7 +712,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
               labelText: '替换为',
               border: OutlineInputBorder(),
               hintText: '最多输入255个字符',
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             ),
             maxLength: 255,
             onChanged: (_) => _updatePreview(),
@@ -721,7 +746,8 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16),
                 ),
                 CheckboxListTile(
-                  title: Text(_renameRuleType == 1 ? '仅替换第一个匹配项' : '仅匹配第一个文件名中的多个'),
+                  title: Text(
+                      _renameRuleType == 1 ? '仅替换第一个匹配项' : '仅匹配第一个文件名中的多个'),
                   value: _onlyFirstMatch,
                   onChanged: (value) {
                     setState(() {
@@ -786,7 +812,6 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
           ],
         ),
         const SizedBox(height: 16),
-
         Expanded(
           child: Container(
             margin: const EdgeInsets.only(bottom: 16),
@@ -805,12 +830,15 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                   return Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: preview.hasChanged ? Colors.blue[25] : Colors.white,
+                      color:
+                          preview.hasChanged ? Colors.blue[25] : Colors.white,
                       border: Border(
-                        bottom: isLast ? BorderSide.none : BorderSide(
-                          color: Colors.grey[200]!,
-                          width: 0.5,
-                        ),
+                        bottom: isLast
+                            ? BorderSide.none
+                            : BorderSide(
+                                color: Colors.grey[200]!,
+                                width: 0.5,
+                              ),
                       ),
                     ),
                     child: Column(
@@ -822,7 +850,9 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                               width: 10,
                               height: 10,
                               decoration: BoxDecoration(
-                                color: preview.hasChanged ? Colors.blue : Colors.grey[400],
+                                color: preview.hasChanged
+                                    ? Colors.blue
+                                    : Colors.grey[400],
                                 shape: BoxShape.circle,
                               ),
                             ),
@@ -831,8 +861,12 @@ class _BatchRenameDialogState extends State<BatchRenameDialog> {
                               child: Text(
                                 preview.originalName,
                                 style: TextStyle(
-                                  color: preview.hasChanged ? Colors.grey[600] : Colors.black87,
-                                  decoration: preview.hasChanged ? TextDecoration.lineThrough : null,
+                                  color: preview.hasChanged
+                                      ? Colors.grey[600]
+                                      : Colors.black87,
+                                  decoration: preview.hasChanged
+                                      ? TextDecoration.lineThrough
+                                      : null,
                                   fontSize: 14,
                                 ),
                               ),

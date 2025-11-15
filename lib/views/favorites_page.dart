@@ -6,6 +6,7 @@ import 'package:alist_player/models/favorite_directory.dart';
 import 'package:alist_player/utils/db.dart';
 import 'package:alist_player/views/index.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:alist_player/utils/user_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +28,7 @@ class _FavoritesPageState extends State<FavoritesPage>
   List<FavoriteDirectory> _favorites = [];
   bool _isLoading = true;
   String? _currentUsername;
+  int? _currentUserId;
   bool _isSelectMode = false;
   final Set<FavoriteDirectory> _selectedItems = {};
   late final AnimationController _controller;
@@ -106,6 +108,20 @@ class _FavoritesPageState extends State<FavoritesPage>
     unawaited(_refresh());
   }
 
+  // 收藏模块里所有增删改都依赖 userId，缺失时追加 Debug 提示。
+  int? _requireUserId(String contextLabel) {
+    final resolved = _currentUserId ?? _currentUsername?.hashCode;
+    if (resolved == null) {
+      _log('缺少用户ID，无法执行$contextLabel', level: LogLevel.warning);
+      if (mounted) {
+        setState(() {
+          _debugMessage += '\n缺少用户ID: $contextLabel 未执行';
+        });
+      }
+    }
+    return resolved;
+  }
+
   // 检查数据库表结构
   Future<void> _checkDatabaseSchema() async {
     try {
@@ -163,14 +179,10 @@ class _FavoritesPageState extends State<FavoritesPage>
   // 添加测试数据
   Future<void> _addTestData() async {
     try {
-      if (_currentUsername == null) {
-        setState(() {
-          _debugMessage += '\n无法添加测试数据: 未找到当前用户';
-        });
+      final userId = _requireUserId('添加收藏测试数据');
+      if (userId == null) {
         return;
       }
-
-      final userId = _currentUsername!.hashCode;
       final id = await DatabaseHelper.instance.addFavoriteDirectory(
         path: '/测试目录',
         name: '测试收藏',
@@ -195,22 +207,21 @@ class _FavoritesPageState extends State<FavoritesPage>
 
     try {
       setState(() => _isLoading = true);
-      final prefs = await SharedPreferences.getInstance();
-      _currentUsername = prefs.getString('current_username');
+      final identity = await UserSession.loadIdentity();
+      _currentUsername = identity.username;
+      _currentUserId = identity.effectiveUserId;
 
       setState(() {
         _debugMessage = '用户名: ${_currentUsername ?? "未找到"}';
       });
 
-      if (_currentUsername == null) {
+      final userId = _requireUserId('加载收藏列表');
+      if (userId == null) {
         setState(() {
           _isLoading = false;
-          _debugMessage = '错误: 未找到当前用户信息';
         });
         return;
       }
-
-      final userId = _currentUsername!.hashCode;
       setState(() {
         _debugMessage += '\n用户ID: $userId';
       });
@@ -313,7 +324,10 @@ class _FavoritesPageState extends State<FavoritesPage>
 
   Future<void> _deleteSelected() async {
     try {
-      final userId = _currentUsername!.hashCode;
+      final userId = _requireUserId('批量删除收藏');
+      if (userId == null) {
+        return;
+      }
 
       for (var item in _selectedItems) {
         await DatabaseHelper.instance.removeFavoriteDirectory(
@@ -515,8 +529,7 @@ class _FavoritesPageState extends State<FavoritesPage>
         // 在桌面和移动端宽度变化时出现 Column 垂直溢出。
         final totalSpacing = gridSpacing * (crossAxisCount - 1);
         final availableWidth = width - horizontalPadding * 2;
-        final itemWidth =
-            (availableWidth - totalSpacing) / crossAxisCount;
+        final itemWidth = (availableWidth - totalSpacing) / crossAxisCount;
 
         return ScrollConfiguration(
           behavior: const MaterialScrollBehavior().copyWith(

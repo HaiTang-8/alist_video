@@ -273,6 +273,47 @@ class DatabaseHelper {
     }
   }
 
+  /// 迁移旧版 hash(userName) 形式的 userId，统一写入真实 userId。
+  Future<void> migrateUserIdIfNeeded({
+    required int? legacyUserId,
+    required int actualUserId,
+  }) async {
+    if (legacyUserId == null || legacyUserId == actualUserId) {
+      return;
+    }
+    try {
+      await query('''
+        UPDATE t_historical_records
+        SET user_id = @actualUserId
+        WHERE user_id = @legacyUserId
+      ''', {
+        'actualUserId': actualUserId,
+        'legacyUserId': legacyUserId,
+      });
+
+      await query('''
+        UPDATE t_favorite_directories
+        SET user_id = @actualUserId
+        WHERE user_id = @legacyUserId
+      ''', {
+        'actualUserId': actualUserId,
+        'legacyUserId': legacyUserId,
+      });
+
+      _log(
+        'UserId migrated from $legacyUserId to $actualUserId',
+        level: LogLevel.info,
+      );
+    } catch (e, stack) {
+      _log(
+        'Failed to migrate userId $legacyUserId -> $actualUserId',
+        level: LogLevel.error,
+        error: e,
+        stackTrace: stack,
+      );
+    }
+  }
+
   // 查询单个历史记录
   Future<Map<String, dynamic>?> getHistoricalRecord(String videoSha1) async {
     try {
@@ -1206,7 +1247,7 @@ class DatabaseHelper {
     }
   }
 
-  /// 汇总指定用户的观看与操作明细，供管理员钻取。 
+  /// 汇总指定用户的观看与操作明细，供管理员钻取。
   Future<UserDetailDashboardData> getUserDetailDashboard({
     required int userId,
     int recentLimit = 30,
@@ -1215,8 +1256,8 @@ class DatabaseHelper {
   }) async {
     try {
       final cutoff = DateTime.now().toUtc().subtract(
-        const Duration(hours: 24),
-      );
+            const Duration(hours: 24),
+          );
       final summaryRows = await query('''
         SELECT
           COUNT(*) AS session_count,
@@ -1250,13 +1291,15 @@ class DatabaseHelper {
         WHERE user_id = @userId
       ''', {'userId': userId});
 
-      final summaryData = summaryRows.isEmpty ? <String, dynamic>{} : summaryRows.first;
+      final summaryData =
+          summaryRows.isEmpty ? <String, dynamic>{} : summaryRows.first;
       final overview = UserDetailOverview(
         userId: userId,
         displayName: '用户 #$userId',
         sessionCount: summaryData['session_count'] as int? ?? 0,
         uniqueVideos: summaryData['unique_videos'] as int? ?? 0,
-        totalWatchDuration: _secondsToDuration(summaryData['total_watch_seconds']),
+        totalWatchDuration:
+            _secondsToDuration(summaryData['total_watch_seconds']),
         averageCompletion: _parseDouble(summaryData['avg_completion']),
         sessionsLast24h: summaryData['sessions_last_24h'] as int? ?? 0,
         firstWatchAt: _parseDateTime(summaryData['first_watch_at']),

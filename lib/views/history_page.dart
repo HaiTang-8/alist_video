@@ -17,6 +17,7 @@ import 'package:flutter/services.dart';
 import 'home_page.dart';
 import 'package:alist_player/utils/download_manager.dart';
 import 'package:alist_player/utils/logger.dart';
+import 'package:alist_player/utils/user_session.dart';
 import 'package:alist_player/services/go_bridge/history_screenshot_service.dart';
 
 // Add this extension to avoid importing additional packages
@@ -46,6 +47,7 @@ class _HistoryPageState extends State<HistoryPage>
   Map<String, List<HistoricalRecord>> _groupedRecords = {};
   bool _isLoading = true;
   String? _currentUsername;
+  int? _currentUserId;
   bool _isTimelineMode = true;
   bool _isCompactMode = true;
   String? _selectedDirectory;
@@ -78,6 +80,19 @@ class _HistoryPageState extends State<HistoryPage>
   final FocusNode _searchFocusNode = FocusNode();
   String _searchQuery = '';
   List<HistoricalRecord> _searchResults = [];
+
+  // 统一从缓存中解析 userId，兼容旧版 hashId，缺失时记录警告。
+  int? _requireUserId(String contextLabel) {
+    final resolvedId = _currentUserId ?? _currentUsername?.hashCode;
+    if (resolvedId == null) {
+      _log(
+        '缺少用户ID，无法执行$contextLabel',
+        level: LogLevel.warning,
+      );
+    }
+    return resolvedId;
+  }
+
   int _searchTotalRecords = 0;
   Timer? _searchDebounceTimer;
   // Go 服务截图同步按钮状态，避免重复触发网络请求。
@@ -475,24 +490,26 @@ class _HistoryPageState extends State<HistoryPage>
         _allRecords.clear();
       });
 
-      final prefs = await SharedPreferences.getInstance();
-      _currentUsername = prefs.getString('current_username');
+      final identity = await UserSession.loadIdentity();
+      _currentUsername = identity.username;
+      _currentUserId = identity.effectiveUserId;
 
       // Clear the screenshot cache when refreshing
       _clearImageCache();
 
-      if (_currentUsername != null) {
+      final userId = _requireUserId('加载历史记录');
+      if (userId != null) {
         // 获取总记录数
         _totalRecords =
             await DatabaseHelper.instance.getUserHistoricalRecordsCount(
-          _currentUsername!.hashCode,
+          userId,
         );
 
         if (_isCompactMode) {
           // 精简模式：按父级路径分组，展示每个目录的最新记录
           final records =
               await DatabaseHelper.instance.getUserHistoricalRecords(
-            _currentUsername!.hashCode,
+            userId,
             limit: _totalRecords == 0 ? 1 : _totalRecords,
             offset: 0,
           );
@@ -509,7 +526,7 @@ class _HistoryPageState extends State<HistoryPage>
           // 时间线模式：使用分页加载
           final records =
               await DatabaseHelper.instance.getRecentHistoricalRecords(
-            userId: _currentUsername!.hashCode,
+            userId: userId,
             limit: _pageSize,
             offset: 0,
           );
@@ -526,7 +543,7 @@ class _HistoryPageState extends State<HistoryPage>
           // 目录模式：加载所有数据以构建完整的目录列表
           final records =
               await DatabaseHelper.instance.getUserHistoricalRecords(
-            _currentUsername!.hashCode,
+            userId,
             limit: _totalRecords == 0 ? 1 : _totalRecords, // 加载所有记录
             offset: 0,
           );
@@ -565,11 +582,12 @@ class _HistoryPageState extends State<HistoryPage>
 
   Future<void> _loadMoreHistory() async {
     // 只在时间线模式下支持瀑布流加载
-    if (_isCompactMode ||
-        !_isTimelineMode ||
-        _isLoadingMore ||
-        !_hasMoreData ||
-        _currentUsername == null) {
+    if (_isCompactMode || !_isTimelineMode || _isLoadingMore || !_hasMoreData) {
+      return;
+    }
+
+    final userId = _requireUserId('分页加载历史记录');
+    if (userId == null) {
       return;
     }
 
@@ -578,7 +596,7 @@ class _HistoryPageState extends State<HistoryPage>
 
       _currentPage++;
       final records = await DatabaseHelper.instance.getRecentHistoricalRecords(
-        userId: _currentUsername!.hashCode,
+        userId: userId,
         limit: _pageSize,
         offset: _currentPage * _pageSize,
       );
@@ -608,7 +626,10 @@ class _HistoryPageState extends State<HistoryPage>
 
   // 搜索历史记录
   Future<void> _searchHistory(String query) async {
-    if (_currentUsername == null) return;
+    final userId = _requireUserId('搜索历史记录');
+    if (userId == null) {
+      return;
+    }
 
     try {
       setState(() {
@@ -625,13 +646,13 @@ class _HistoryPageState extends State<HistoryPage>
       // 获取搜索结果总数
       _searchTotalRecords =
           await DatabaseHelper.instance.getSearchHistoricalRecordsCount(
-        userId: _currentUsername!.hashCode,
+        userId: userId,
         searchQuery: _searchQuery,
       );
 
       // 获取搜索结果
       final records = await DatabaseHelper.instance.searchHistoricalRecords(
-        userId: _currentUsername!.hashCode,
+        userId: userId,
         searchQuery: _searchQuery,
         limit: _pageSize,
         offset: 0,
@@ -667,17 +688,19 @@ class _HistoryPageState extends State<HistoryPage>
 
   // 加载更多搜索结果
   Future<void> _loadMoreSearchResults() async {
-    if (_isLoadingMore ||
-        !_hasMoreData ||
-        _currentUsername == null ||
-        _searchQuery.isEmpty) return;
+    if (_isLoadingMore || !_hasMoreData || _searchQuery.isEmpty) return;
+
+    final userId = _requireUserId('加载更多搜索结果');
+    if (userId == null) {
+      return;
+    }
 
     try {
       setState(() => _isLoadingMore = true);
 
       _currentPage++;
       final records = await DatabaseHelper.instance.searchHistoricalRecords(
-        userId: _currentUsername!.hashCode,
+        userId: userId,
         searchQuery: _searchQuery,
         limit: _pageSize,
         offset: _currentPage * _pageSize,
@@ -2154,10 +2177,9 @@ class _HistoryPageState extends State<HistoryPage>
 
   Future<void> _clearAllHistory() async {
     try {
-      if (_currentUsername != null) {
-        await DatabaseHelper.instance.clearUserHistoricalRecords(
-          _currentUsername!.hashCode,
-        );
+      final userId = _requireUserId('清空历史记录');
+      if (userId != null) {
+        await DatabaseHelper.instance.clearUserHistoricalRecords(userId);
         await _loadHistory();
         unawaited(_runBackgroundScreenshotCleanup());
         if (mounted) {

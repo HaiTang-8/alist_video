@@ -11,6 +11,7 @@ class AppConstants {
   static const String dbGoBridgeTokenKey = 'db_go_bridge_token';
   static const String userRoleKey = 'user_role';
   static const String userPermissionKey = 'user_permission';
+  static const String currentUserIdKey = 'current_user_id';
   static const int adminRoleValue = 2; // Alist admin 角色编号
   // 针对 Go 服务代理播放链路的配置键与默认值，允许用户选择性地走本地代理规避被封锁的远端 URL。
   static const String enableGoProxyKey = 'enable_go_proxy';

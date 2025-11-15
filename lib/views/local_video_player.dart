@@ -12,6 +12,7 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:async';
 import 'dart:io';
 import 'package:alist_player/utils/logger.dart';
+import 'package:alist_player/utils/user_session.dart';
 
 class LocalVideoPlayer extends StatefulWidget {
   final String filePath;
@@ -97,6 +98,7 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
       ItemPositionsListener.create();
 
   String? _currentUsername;
+  int? _currentUserId;
   bool _hasSeekInitialPosition = false;
 
   // 添加排序相关状态
@@ -192,7 +194,7 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
     super.initState();
     _loadSettings();
     unawaited(_configurePlaylistErrorPolicy());
-    _getCurrentUsername();
+    _loadCurrentIdentity();
     _initializeLocalPlaylist();
   }
 
@@ -244,10 +246,24 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
     }
   }
 
-  // 获取当前用户名
-  Future<void> _getCurrentUsername() async {
-    final prefs = await SharedPreferences.getInstance();
-    _currentUsername = prefs.getString('username');
+  // 获取当前登录信息并缓存真实 userId
+  Future<void> _loadCurrentIdentity() async {
+    final identity = await UserSession.loadIdentity();
+    setState(() {
+      _currentUsername = identity.username;
+      _currentUserId = identity.effectiveUserId;
+    });
+    if (_currentUserId == null) {
+      _logDebug('未找到当前用户 ID，本地进度记录将无法保存');
+    }
+  }
+
+  int? _requireUserId(String contextLabel) {
+    final resolvedId = _currentUserId ?? _currentUsername?.hashCode;
+    if (resolvedId == null) {
+      _logDebug('缺少用户ID，跳过 $contextLabel');
+    }
+    return resolvedId;
   }
 
   // 初始化本地播放列表
@@ -551,12 +567,16 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
       final duration = player.state.duration;
 
       if (duration.inSeconds > 0 && position.inSeconds > 0) {
+        final userId = _requireUserId('本地播放进度保存');
+        if (userId == null) {
+          return;
+        }
         // 使用DatabaseHelper的upsertHistoricalRecord方法
         await DatabaseHelper.instance.upsertHistoricalRecord(
           videoSha1: _getVideoSha1('local', videoName),
           videoPath: 'local',
           videoSeek: position.inSeconds,
-          userId: (_currentUsername ?? 'unknown').hashCode,
+          userId: userId,
           videoName: videoName,
           totalVideoDuration: duration.inSeconds,
         );
@@ -566,7 +586,7 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
           videoSha1: _getVideoSha1('local', videoName),
           videoPath: 'local',
           videoName: videoName,
-          userId: (_currentUsername ?? 'unknown').hashCode,
+          userId: userId,
           changeTime: DateTime.now(),
           videoSeek: position.inSeconds,
           totalVideoDuration: duration.inSeconds,
@@ -592,9 +612,13 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
   // 跳转到上次播放位置
   Future<void> _seekToLastPosition(String videoName) async {
     try {
+      final userId = _requireUserId('本地进度恢复');
+      if (userId == null) {
+        return;
+      }
       final record = await DatabaseHelper.instance.getHistoricalRecordByName(
         name: videoName,
-        userId: (_currentUsername ?? 'unknown').hashCode,
+        userId: userId,
       );
 
       if (record != null && record.videoSeek > 0) {
@@ -655,11 +679,15 @@ class LocalVideoPlayerState extends State<LocalVideoPlayer> {
   // 加载播放列表历史记录
   Future<void> _loadPlaylistHistoryRecords() async {
     try {
+      final userId = _requireUserId('本地播放列表历史加载');
+      if (userId == null) {
+        return;
+      }
       for (final media in playList) {
         final videoName = media.extras!['name'] as String;
         final record = await DatabaseHelper.instance.getHistoricalRecordByName(
           name: videoName,
-          userId: (_currentUsername ?? 'unknown').hashCode,
+          userId: userId,
         );
         if (record != null) {
           _playlistHistoryRecords[videoName] = record;
