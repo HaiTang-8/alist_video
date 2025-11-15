@@ -13,6 +13,8 @@ logo_background_color: "#0F172A"
 architecture: x64
 languages: zh-cn,en-us
 capabilities: internetClient
+# GitHub Actions 环境无法交互，禁用安装证书提示以避免 CI 阻塞。
+install_certificate: false
 # certificate_path 由 CI 动态生成的临时证书写入，密码需与工作流一致。
 certificate_path: windows/packaging/msix/AlistPlayer_TempCert.pfx
 certificate_password: alistplayer
