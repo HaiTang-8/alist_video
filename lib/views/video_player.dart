@@ -888,36 +888,51 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       if (res.code == 200) {
-        // Load the playlist as normal
-        setState(() {
-          List<Media> playMediaList =
-              res.data?.content!.where((data) => data.type == 2).map((data) {
-                    String baseUrl = baseDownloadUrl;
-                    if (basePath != '/') {
-                      baseUrl = '$baseUrl$basePath';
-                    }
-                    final originalUrl =
-                        '$baseUrl${widget.path.substring(1)}/${data.name}?sign=${data.sign}';
-                    final proxiedUrl = _wrapGoProxyUrl(originalUrl);
-                    return Media(
-                      proxiedUrl,
-                      httpHeaders: _currentProxyHeaders,
-                      extras: {
-                        'name': data.name ?? '',
-                        'size': data.size ?? 0,
-                        'modified': data.modified ?? '',
-                      },
-                    );
-                  }).toList() ??
-                  [];
+        // 使用 /api/fs/get 获取每个视频的 raw_url，确保播放直链正确
+        final videoEntries =
+            res.data?.content?.where((data) => data.type == 2).toList() ?? [];
 
+        final List<Media> playMediaList = [];
+        for (final entry in videoEntries) {
+          // 优先从 fs/get 拿到原始直链；若缺失则兼容旧的 sign 拼接逻辑
+          final getResp = await FsApi.get(
+            path: '${widget.path}/${entry.name}',
+            password: '',
+          );
+
+          String baseUrl = baseDownloadUrl;
+          if (basePath != '/') {
+            baseUrl = '$baseUrl$basePath';
+          }
+
+          final fallbackUrl =
+              '$baseUrl${widget.path.substring(1)}/${entry.name}?sign=${entry.sign}';
+          final rawUrl = getResp.data?.rawUrl ?? fallbackUrl;
+          final proxiedUrl = _wrapGoProxyUrl(rawUrl);
+
+          playMediaList.add(
+            Media(
+              proxiedUrl,
+              httpHeaders: _currentProxyHeaders,
+              extras: {
+                'name': entry.name ?? '',
+                'size': entry.size ?? 0,
+                'modified': entry.modified ?? '',
+                // 记录原始地址便于调试与缓存策略分析
+                'rawUrl': rawUrl,
+              },
+            ),
+          );
+        }
+
+        setState(() {
           playList.clear();
           int index = 0;
-          for (var element in playMediaList) {
-            if (element.extras!['name'] == widget.name) {
+          for (final media in playMediaList) {
+            if (media.extras?['name'] == widget.name) {
               playIndex = index;
             }
-            playList.add(element);
+            playList.add(media);
             index++;
           }
         });
