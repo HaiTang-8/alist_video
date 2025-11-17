@@ -168,6 +168,7 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   // 添加历史记录映射，用于存储播放列表中每个视频的历史记录
   final Map<String, HistoricalRecord> _videoHistoryRecords = {};
+  static const int _screenshotRawLimitBytes = 400 * 1024;
 
   // 本地优先播放设置
   bool _preferLocalPlayback = AppConstants.defaultPreferLocalPlayback;
@@ -506,8 +507,6 @@ class VideoPlayerState extends State<VideoPlayer> {
         '_handleVideoSwitchAsyncWithoutProgressSave 被调用: newIndex=$newIndex');
     Future.microtask(() async {
       try {
-        final startTime = DateTime.now();
-
         // 延迟一段时间后自动应用智能匹配的字幕，确保视频已经开始播放
         if (playList.isNotEmpty && newIndex < playList.length) {
           Future.delayed(const Duration(milliseconds: 1500), () {
@@ -516,9 +515,6 @@ class VideoPlayerState extends State<VideoPlayer> {
             }
           });
         }
-
-        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
-        _logDebug('视频切换异步处理完成（无进度保存），耗时: ${totalTime}ms');
       } catch (e) {
         _logDebug('视频切换异步处理失败（无进度保存）: $e');
       }
@@ -532,7 +528,6 @@ class VideoPlayerState extends State<VideoPlayer> {
     String? videoSha1,
     int? userId,
   }) async {
-    final startTime = DateTime.now();
     try {
       _logDebug('开始截图操作...');
 
@@ -552,10 +547,6 @@ class VideoPlayerState extends State<VideoPlayer> {
         return null;
       }
 
-      final screenshotTime =
-          DateTime.now().difference(startTime).inMilliseconds;
-      _logDebug('截图数据获取完成，耗时: ${screenshotTime}ms');
-
       // 获取当前视频名称
       final String videoNameToUse = specificVideoName ??
           (playList.isNotEmpty && currentPlayingIndex < playList.length
@@ -564,7 +555,10 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 使用优化的主线程处理，但通过Future.microtask避免阻塞当前操作
       final result = await _saveScreenshotToFileOptimized(
-          screenshotBytes, videoNameToUse, widget.path);
+        screenshotBytes,
+        videoNameToUse,
+        widget.path,
+      );
       if (result != null && videoSha1 != null && userId != null) {
         unawaited(
           _uploadScreenshotToGoService(
@@ -577,8 +571,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
       return result;
     } catch (e) {
-      final totalTime = DateTime.now().difference(startTime).inMilliseconds;
-      _logDebug('截图操作失败，总耗时: ${totalTime}ms, 错误: $e');
+      _logDebug('截图操作失败: $e');
 
       if (mounted && specificVideoName == null) {
         // 只在直接调用时显示错误
@@ -597,10 +590,8 @@ class VideoPlayerState extends State<VideoPlayer> {
   Future<ScreenshotSaveResult?> _saveScreenshotToFileOptimized(
       Uint8List screenshotBytes, String videoName, String videoPath) async {
     return await Future.microtask(() async {
-      final startTime = DateTime.now();
       try {
         _logDebug('开始优化截图保存处理...');
-
         final Directory directory = await getApplicationDocumentsDirectory();
         _logDebug('应用文档目录: ${directory.path}');
 
@@ -616,11 +607,24 @@ class VideoPlayerState extends State<VideoPlayer> {
         await screenshotDir.create(recursive: true);
         _logDebug('截图目录创建: ${screenshotDir.path}');
 
-        // 使用compute只处理图片压缩部分（不涉及文件系统操作）
-        final compressionResult =
-            await compute(_compressScreenshotInBackground, screenshotBytes);
-        final compressedBytes = compressionResult['bytes'] as Uint8List;
-        final isJpeg = compressionResult['isJpeg'] as bool;
+        Uint8List processedBytes = screenshotBytes;
+        bool isJpeg = true;
+        final alreadyCompressed = _hasImageMagicHeader(screenshotBytes);
+        if (!alreadyCompressed &&
+            screenshotBytes.length > _screenshotRawLimitBytes) {
+          final compressionResult =
+              await compute(_compressScreenshotInBackground, screenshotBytes);
+          processedBytes = compressionResult['bytes'] as Uint8List;
+          isJpeg = compressionResult['isJpeg'] as bool;
+        } else {
+          _log(
+            alreadyCompressed
+                ? '截图: 直接复用 media_kit 输出 (已是编码图片, size=${screenshotBytes.length} bytes)'
+                : '截图: 数据较小，跳过压缩 (size=${screenshotBytes.length} bytes)',
+            level: LogLevel.debug,
+          );
+          isJpeg = _looksLikeJpeg(screenshotBytes);
+        }
 
         // 在主线程处理文件保存
         final String fileExtension = isJpeg ? 'jpg' : 'png';
@@ -629,24 +633,15 @@ class VideoPlayerState extends State<VideoPlayer> {
         final String filePath = '${screenshotDir.path}/$fileName';
 
         final File file = File(filePath);
-        await file.writeAsBytes(compressedBytes);
-
-        // 验证文件是否成功保存
-        final bool fileExists = await file.exists();
-        final int fileSize = fileExists ? await file.length() : 0;
-
-        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
-        _logDebug('优化截图保存完成: $filePath, 耗时: ${totalTime}ms');
-        _logDebug('文件存在: $fileExists, 文件大小: $fileSize bytes');
+        await file.writeAsBytes(processedBytes);
 
         return ScreenshotSaveResult(
           filePath: filePath,
-          bytes: compressedBytes,
+          bytes: processedBytes,
           isJpeg: isJpeg,
         );
       } catch (e) {
-        final totalTime = DateTime.now().difference(startTime).inMilliseconds;
-        _logDebug('优化截图保存失败，耗时: ${totalTime}ms, 错误: $e');
+        _logDebug('优化截图保存失败: $e');
         return null;
       }
     });
@@ -1214,8 +1209,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       // 更新本地缓存
-      final videoKey = "${widget.path}/$videoName";
-      _videoHistoryRecords[videoKey] = record;
+      _videoHistoryRecords[videoName] = record;
 
       _logDebug(
           '播放进度保存成功: $videoName (${isPlayingLocalFile ? "本地文件" : "在线文件"})');
@@ -1578,12 +1572,7 @@ class VideoPlayerState extends State<VideoPlayer> {
           videoSha1: videoSha1,
           userId: userId,
         );
-        if (screenshotResult != null) {
-          _log(
-            '退出时截图保存完成: ${screenshotResult.filePath}',
-            level: LogLevel.debug,
-          );
-        } else {
+        if (screenshotResult == null) {
           _log(
             '退出时截图保存失败: $videoName',
             level: LogLevel.warning,
@@ -1644,6 +1633,7 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
   }
+
 
   // 查询并跳转到上次播放位
   Future<void> _seekToLastPosition(String videoName) async {
@@ -1789,9 +1779,7 @@ class VideoPlayerState extends State<VideoPlayer> {
               // 等待进度保存
               if (playList.isNotEmpty &&
                   currentPlayingIndex < playList.length) {
-                _log('退出前保存最终播放进度...', level: LogLevel.debug);
                 await _saveCurrentProgress(waitForCompletion: true);
-                _log('退出前进度保存完成', level: LogLevel.debug);
               }
 
               // 等播放器关闭
@@ -5100,6 +5088,27 @@ class ScreenshotSaveResult {
   });
 }
 
+bool _hasImageMagicHeader(Uint8List bytes) {
+  if (bytes.length < 8) return false;
+  return _looksLikeJpeg(bytes) || _looksLikePng(bytes);
+}
+
+bool _looksLikeJpeg(Uint8List bytes) {
+  return bytes.length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+}
+
+bool _looksLikePng(Uint8List bytes) {
+  if (bytes.length < 8) return false;
+  return bytes[0] == 0x89 &&
+      bytes[1] == 0x50 &&
+      bytes[2] == 0x4E &&
+      bytes[3] == 0x47 &&
+      bytes[4] == 0x0D &&
+      bytes[5] == 0x0A &&
+      bytes[6] == 0x1A &&
+      bytes[7] == 0x0A;
+}
+
 // 后台线程压缩截图的函数
 Future<Map<String, dynamic>> _compressScreenshotInBackground(
     Uint8List originalBytes) async {
@@ -5107,7 +5116,10 @@ Future<Map<String, dynamic>> _compressScreenshotInBackground(
     // 解码原始图片
     final img.Image? originalImage = img.decodeImage(originalBytes);
     if (originalImage == null) {
-      return {'bytes': originalBytes, 'isJpeg': false};
+      return {
+        'bytes': originalBytes,
+        'isJpeg': false,
+      };
     }
 
     // 获取原始尺寸
@@ -5126,7 +5138,7 @@ Future<Map<String, dynamic>> _compressScreenshotInBackground(
       needsResize = true;
     }
 
-    // 调整图片尺寸（如果需要）
+    // 调整图片尺寸（如果需要）。
     img.Image resizedImage = originalImage;
     if (needsResize) {
       resizedImage = img.copyResize(
@@ -5149,13 +5161,25 @@ Future<Map<String, dynamic>> _compressScreenshotInBackground(
       // 如果需要调整尺寸但不需要压缩，使用PNG格式保存调整后的图片
       if (needsResize) {
         final resizedPngBytes = img.encodePng(resizedImage);
-        return {'bytes': Uint8List.fromList(resizedPngBytes), 'isJpeg': false};
+        return {
+          'bytes': Uint8List.fromList(resizedPngBytes),
+          'isJpeg': false,
+        };
       }
-      return {'bytes': originalBytes, 'isJpeg': false};
+      return {
+        'bytes': originalBytes,
+        'isJpeg': false,
+      };
     }
 
-    return {'bytes': compressedBytes, 'isJpeg': true};
+    return {
+      'bytes': compressedBytes,
+      'isJpeg': true,
+    };
   } catch (e) {
-    return {'bytes': originalBytes, 'isJpeg': false};
+    return {
+      'bytes': originalBytes,
+      'isJpeg': false,
+    };
   }
 }
