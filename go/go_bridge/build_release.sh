@@ -72,12 +72,19 @@ declare -a BUILD_ENV=()
 if [[ -n "${TARGET_OS}" ]]; then BUILD_ENV+=("GOOS=${TARGET_OS}"); fi
 if [[ -n "${TARGET_ARCH}" ]]; then BUILD_ENV+=("GOARCH=${TARGET_ARCH}"); fi
 
+declare -a BUILD_FLAGS=("-trimpath" "-ldflags" "-s -w")
+if [[ -n "${GO_BUILD_TAGS:-}" ]]; then
+  BUILD_FLAGS+=("-tags" "${GO_BUILD_TAGS}")
+fi
+
+TARGET_PKG="./cmd/go_bridge"
+
 if ((${#BUILD_ENV[@]})); then
-  echo "==> 编译参数: ${BUILD_ENV[*]} ${GO_BIN} build -trimpath -ldflags \"-s -w\" -o ${OUTPUT}"
-  env "${BUILD_ENV[@]}" "${GO_BIN}" build -trimpath -ldflags "-s -w" -o "${OUTPUT}" ./...
+  echo "==> 编译参数: ${BUILD_ENV[*]} ${GO_BIN} build ${BUILD_FLAGS[*]} -o ${OUTPUT} ${TARGET_PKG}"
+  env "${BUILD_ENV[@]}" "${GO_BIN}" build "${BUILD_FLAGS[@]}" -o "${OUTPUT}" "${TARGET_PKG}"
 else
-  echo "==> 编译参数: 默认本机环境 ${GO_BIN} build -trimpath -ldflags \"-s -w\" -o ${OUTPUT}"
-  "${GO_BIN}" build -trimpath -ldflags "-s -w" -o "${OUTPUT}" ./...
+  echo "==> 编译参数: 默认本机环境 ${GO_BIN} build ${BUILD_FLAGS[*]} -o ${OUTPUT}"
+  "${GO_BIN}" build "${BUILD_FLAGS[@]}" -o "${OUTPUT}" "${TARGET_PKG}"
 fi
 
 popd > /dev/null

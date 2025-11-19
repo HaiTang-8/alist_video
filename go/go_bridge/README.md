@@ -6,10 +6,11 @@
 
 ```
 go/go_bridge/
+├── cmd/go_bridge/     # 主程序入口（支持多构建标签）
+├── internal/          # 路由、模块与配置拆分实现
 ├── config.yaml        # 示例配置
 ├── go.mod
-├── go.sum
-└── main.go            # 服务入口
+└── go.sum
 ```
 
 ## 配置说明
@@ -29,11 +30,21 @@ go/go_bridge/
 
 也可以通过环境变量指定配置路径：`GO_BRIDGE_CONFIG=/path/to/config.yaml`。
 
+## 运行模式
+
+为了兼顾跨平台（移动端本地代理、桌面端客户端、服务器全量服务），Go 桥支持两种构建方式：
+
+1. **完整模式（默认）**：包含 SQL、截图与代理能力，适合服务器或需要所有功能的桌面端。直接执行 `go build ./cmd/go_bridge`；配置文件必须提供 `driver`、`dsn` 等数据库字段。
+2. **仅代理模式**：移除数据库相关逻辑，仅保留 `/proxy/media`，体积更小，便于在移动端或局域网桌面代理中分发。构建时附加 `-tags proxy_only` 或设置 `GO_BUILD_TAGS=proxy_only`。
+
+两种模式共享同一份鉴权逻辑与配置文件，方便在多端统一管理 Token 与监听端口，只是对数据库字段的校验不同。
+
 ## 启动
 
 ```bash
 cd go/go_bridge
-go run .
+go run ./cmd/go_bridge          # 完整模式
+go run -tags proxy_only ./cmd/go_bridge   # 仅代理模式
 ```
 
 首次运行会自动安装所需依赖（gin、sqlx、go-ora 等）。启动后可通过 `http://127.0.0.1:7788/health` 探活。
@@ -86,6 +97,9 @@ GOOS=linux GOARCH=amd64 ./build_release.sh
 
 # 指定输出文件名
 BIN_NAME=go_bridge_linux ./build_release.sh
+
+# 生成仅代理包
+GO_BUILD_TAGS=proxy_only ./build_release.sh
 ```
 
-脚本会将结果输出到仓库根目录的 `dist/` 目录，方便打包发布。
+脚本会将结果输出到仓库根目录的 `dist/` 目录，方便打包发布；通过 `GO_BUILD_TAGS` 可以在 CI/桌面端脚本里控制打出的模式。
