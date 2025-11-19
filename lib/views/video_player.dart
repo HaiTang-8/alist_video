@@ -3940,9 +3940,25 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 更新错误显示时间
     _shownErrors[error] = now;
 
+    // 当 Widget 已销毁时直接退出，防止跨端环境中继续访问失效的 context。
+    if (!mounted) {
+      _log('skip error toast, widget disposed: $error',
+          level: LogLevel.debug);
+      return;
+    }
+
+    // 预先缓存 ScaffoldMessengerState，确保 SnackBarAction 中不再依赖
+    // 已经卸载的 context，从而避免 gesture 回调抛出断言。
+    final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
+    if (scaffoldMessenger == null || !scaffoldMessenger.mounted) {
+      _log('ScaffoldMessenger unavailable, skip error toast: $error',
+          level: LogLevel.warning);
+      return;
+    }
+
     // 如果有正在显示的错误提示，先移除它
     if (_currentErrorSnackBar != null) {
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      scaffoldMessenger.hideCurrentSnackBar();
     }
 
     // 创建新的错误提示
@@ -3967,15 +3983,14 @@ class VideoPlayerState extends State<VideoPlayer> {
         label: '关闭',
         textColor: Colors.white,
         onPressed: () {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          // 使用缓存的 messenger 操作栈，避免回调阶段访问失效的 context。
+          scaffoldMessenger.hideCurrentSnackBar();
         },
       ),
     );
 
     // 显示错误提示
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(_currentErrorSnackBar!);
-    }
+    scaffoldMessenger.showSnackBar(_currentErrorSnackBar!);
   }
 
   // 添加快捷键说明按钮
