@@ -858,17 +858,17 @@ class VideoPlayerState extends State<VideoPlayer> {
       );
 
       if (res.code == 200) {
-        // 使用 /api/fs/get 获取每个视频的 raw_url，确保播放直链正确
+        // 原逻辑通过 /api/fs/get 拉取 raw_url；当前暂时禁用，仅基于 sign 直链
         final videoEntries =
             res.data?.content?.where((data) => data.type == 2).toList() ?? [];
 
         final List<Media> playMediaList = [];
         for (final entry in videoEntries) {
-          // 优先从 fs/get 拿到原始直链；若缺失则兼容旧的 sign 拼接逻辑
-          final getResp = await FsApi.get(
-            path: '${widget.path}/${entry.name}',
-            password: '',
-          );
+          // 暂停批量调用 /api/fs/get 以避免首屏频繁请求导致的跨端卡顿
+          // final getResp = await FsApi.get(
+          //   path: '${widget.path}/${entry.name}',
+          //   password: '',
+          // );
 
           String baseUrl = baseDownloadUrl;
           if (basePath != '/') {
@@ -877,7 +877,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
           final fallbackUrl =
               '$baseUrl${widget.path.substring(1)}/${entry.name}?sign=${entry.sign}';
-          final rawUrl = getResp.data?.rawUrl ?? fallbackUrl;
+          // 基于指签回退地址构造可播放链接，后续可再次启用 raw_url 直链
+          final rawUrl = fallbackUrl;
           final proxiedUrl = _wrapGoProxyUrl(rawUrl);
 
           playMediaList.add(
