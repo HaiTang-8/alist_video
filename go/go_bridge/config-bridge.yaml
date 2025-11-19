@@ -1,0 +1,5 @@
+listen: ":7788"
+authToken: "zqtt"
+maxOpenConns: 5
+maxIdleConns: 2
+connMaxLifetime: "30m"

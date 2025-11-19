@@ -27,6 +27,8 @@ class AppConstants {
   static const String defaultDbDriverType = 'remotePostgres';
   static const String defaultSqliteFilename = 'alist_video.db';
   static const String defaultGoBridgeEndpoint = 'http://127.0.0.1:7788';
+  // 允许播放器与下载器在 Go 服务地址上做自定义覆盖，未设置时回退数据库配置。
+  static const String goProxyEndpointKey = 'go_proxy_endpoint';
 
   // 数据库超时设置
   static const Duration dbConnectTimeout = Duration(seconds: 30);

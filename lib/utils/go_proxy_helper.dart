@@ -8,19 +8,21 @@ class GoProxyConfig {
   final DatabasePersistenceType driverType;
   final String endpoint;
   final String authToken;
+  final bool usingBridgeEndpoint;
 
   const GoProxyConfig({
     required this.enableProxy,
     required this.driverType,
     required this.endpoint,
     required this.authToken,
+    required this.usingBridgeEndpoint,
   });
 
   /// 只有在用户开启代理、当前持久化驱动为 Go 服务且配置了可访问的端点时才启用。
   bool get shouldUseProxy =>
-      enableProxy &&
-      driverType == DatabasePersistenceType.localGoBridge &&
-      endpoint.isNotEmpty;
+      endpoint.isNotEmpty &&
+      (!usingBridgeEndpoint ||
+          driverType == DatabasePersistenceType.localGoBridge);
 
   /// 将原始播放/下载 URL 包装成 Go 服务提供的代理地址，并在查询参数中附带 access_token（如果存在）。
   String wrapUrl(String originalUrl) {
@@ -41,7 +43,7 @@ class GoProxyConfig {
 
   /// 返回需要附带到 HTTP 请求头的鉴权信息，播放器可通过 Media.httpHeaders 传递。
   Map<String, String>? buildAuthHeaders() {
-    if (!shouldUseProxy || authToken.isEmpty) {
+    if (!shouldUseProxy || authToken.isEmpty || !usingBridgeEndpoint) {
       return null;
     }
     return {'Authorization': 'Bearer $authToken'};
@@ -60,8 +62,14 @@ class GoProxyHelper {
     final driverTypeValue = prefs.getString(AppConstants.dbDriverTypeKey);
     final driverType =
         DatabasePersistenceTypeExtension.fromStorage(driverTypeValue);
-    final endpoint =
-        (prefs.getString(AppConstants.dbGoBridgeUrlKey) ?? '').trim();
+    final customEndpoint =
+        (prefs.getString(AppConstants.goProxyEndpointKey) ?? '').trim();
+    final bridgeEndpoint = (prefs.getString(AppConstants.dbGoBridgeUrlKey) ??
+            AppConstants.defaultGoBridgeEndpoint)
+        .trim();
+    final usingBridgeEndpoint =
+        enableProxy && driverType == DatabasePersistenceType.localGoBridge;
+    final endpoint = usingBridgeEndpoint ? bridgeEndpoint : customEndpoint;
     final authToken =
         (prefs.getString(AppConstants.dbGoBridgeTokenKey) ?? '').trim();
 
@@ -69,7 +77,8 @@ class GoProxyHelper {
       enableProxy: enableProxy,
       driverType: driverType,
       endpoint: endpoint,
-      authToken: authToken,
+      authToken: usingBridgeEndpoint ? authToken : '',
+      usingBridgeEndpoint: usingBridgeEndpoint,
     );
   }
 }

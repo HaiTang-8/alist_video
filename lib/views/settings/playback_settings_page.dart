@@ -19,8 +19,14 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   final _longSeekController = TextEditingController();
   final _speedController = TextEditingController();
   final _customSpeedController = TextEditingController();
+  final _proxyEndpointController = TextEditingController();
   bool _goProxyEnabled = AppConstants.defaultEnableGoProxy;
   bool _isGoBridgeDriver = false;
+  String _bridgeEndpoint = AppConstants.defaultGoBridgeEndpoint;
+  String _customProxyEndpoint = '';
+  bool _hasCustomProxyEndpoint = false;
+  String? _statusMessage;
+  bool _statusIsError = false;
 
   @override
   void initState() {
@@ -28,6 +34,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _shortSeekController.text = _shortSeekDuration.toString();
     _longSeekController.text = _longSeekDuration.toString();
     _customSpeedController.text = _customPlaybackSpeed.toString();
+    _proxyEndpointController.text = _customProxyEndpoint;
     _loadSettings();
   }
 
@@ -40,10 +47,12 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     final customSpeed = prefs.getDouble(AppConstants.customPlaybackSpeedKey);
     final goProxyPref = prefs.getBool(AppConstants.enableGoProxyKey) ??
         AppConstants.defaultEnableGoProxy;
+    final customProxyEndpoint =
+        (prefs.getString(AppConstants.goProxyEndpointKey) ?? '').trim();
+    final bridgeEndpoint = _resolveBridgeEndpoint(prefs);
     final driverTypeValue = prefs.getString(AppConstants.dbDriverTypeKey);
     final driverType =
         DatabasePersistenceTypeExtension.fromStorage(driverTypeValue);
-
     setState(() {
       if (shortSeek != null) {
         _shortSeekDuration = shortSeek;
@@ -66,6 +75,10 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       }
       _goProxyEnabled = goProxyPref;
       _isGoBridgeDriver = driverType == DatabasePersistenceType.localGoBridge;
+      _bridgeEndpoint = bridgeEndpoint;
+      _customProxyEndpoint = customProxyEndpoint;
+      _proxyEndpointController.text = customProxyEndpoint;
+      _hasCustomProxyEndpoint = customProxyEndpoint.isNotEmpty;
     });
   }
 
@@ -86,12 +99,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       _goProxyEnabled = value;
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(value ? '已启用 Go 服务代理播放' : '已关闭 Go 服务代理播放'),
-        backgroundColor: Colors.green,
-      ),
-    );
+    _showSuccessMessage(value ? '已启用 Go 服务代理播放' : '已关闭 Go 服务代理播放');
   }
 
   Future<void> _saveSettings() async {
@@ -209,27 +217,95 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   // 添加错误提示方法
   void _showErrorMessage(String message) {
     if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    setState(() {
+      _statusMessage = message;
+      _statusIsError = true;
+    });
   }
 
   // 添加成功提示方法
   void _showSuccessMessage(String message) {
     if (!mounted) return;
+    setState(() {
+      _statusMessage = message;
+      _statusIsError = false;
+    });
+  }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+  Future<void> _saveProxyEndpoint(String rawValue) async {
+    if (!_isGoBridgeDriver) {
+      _showErrorMessage('仅在启用本地 Go 服务驱动后才能编辑代理地址');
+      return;
+    }
+    if (_goProxyEnabled) {
+      _showErrorMessage('请先关闭“通过 Go 服务代理播放”后再编辑地址');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+    final sanitized = rawValue.trim();
+    if (sanitized.isEmpty) {
+      await prefs.remove(AppConstants.goProxyEndpointKey);
+      final fallback = _resolveBridgeEndpoint(prefs);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _customProxyEndpoint = '';
+        _bridgeEndpoint = fallback;
+        _proxyEndpointController.clear();
+        _hasCustomProxyEndpoint = false;
+      });
+      _showSuccessMessage('已清空自定义代理地址，关闭代理时将直接访问原链接');
+      return;
+    }
+
+    final uri = Uri.tryParse(sanitized);
+    final isValidUri = uri != null &&
+        (uri.isScheme('http') || uri.isScheme('https')) &&
+        uri.host.isNotEmpty;
+    if (!isValidUri) {
+      _showErrorMessage('请输入有效的 http/https 代理地址');
+      return;
+    }
+
+    final normalized = sanitized.endsWith('/')
+        ? sanitized.substring(0, sanitized.length - 1)
+        : sanitized;
+    await prefs.setString(AppConstants.goProxyEndpointKey, normalized);
+
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _customProxyEndpoint = normalized;
+      _proxyEndpointController.text = normalized;
+      _hasCustomProxyEndpoint = true;
+    });
+    _showSuccessMessage('代理地址已保存');
+  }
+
+  Future<void> _resetProxyEndpoint() async {
+    await _saveProxyEndpoint('');
+  }
+
+  String _resolveBridgeEndpoint(SharedPreferences prefs) {
+    final fallback = (prefs.getString(AppConstants.dbGoBridgeUrlKey) ??
+            AppConstants.defaultGoBridgeEndpoint)
+        .trim();
+    return fallback.isEmpty ? AppConstants.defaultGoBridgeEndpoint : fallback;
+  }
+
+  bool get _canEditCustomProxy => _isGoBridgeDriver && !_goProxyEnabled;
+
+  String get _effectiveProxyLabel {
+    if (_goProxyEnabled) {
+      return _bridgeEndpoint;
+    }
+    if (_customProxyEndpoint.isNotEmpty) {
+      return _customProxyEndpoint;
+    }
+    return '未配置（关闭代理时将直接访问原始链接）';
   }
 
   void _removeSpeed(double speed) {
@@ -251,6 +327,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (_statusMessage != null) _buildStatusBanner(),
           const Text(
             '快进/快退设置',
             style: TextStyle(
@@ -271,26 +348,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
             onChanged: _updateLongSeekDuration,
           ),
           const SizedBox(height: 24),
-          const Text(
-            '网络代理',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          // 通过开关控制是否使用 Go 服务代理播放远程媒体，跨端共享偏好设置。
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('通过 Go 服务代理播放'),
-            subtitle: Text(
-              _isGoBridgeDriver
-                  ? '当远程存储域名在本地被屏蔽时，可借助 Go 服务转发播放链接'
-                  : '切换到“本地 Go 服务”数据库驱动后才可启用此代理',
-            ),
-            value: _goProxyEnabled && _isGoBridgeDriver,
-            onChanged: _isGoBridgeDriver ? _updateGoProxy : null,
-            secondary: const Icon(Icons.shield_outlined),
-          ),
+          _buildProxySection(),
           const SizedBox(height: 24),
           const Text(
             '播放速度设置',
@@ -395,6 +453,124 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _longSeekController.dispose();
     _speedController.dispose();
     _customSpeedController.dispose();
+    _proxyEndpointController.dispose();
     super.dispose();
+  }
+
+  Widget _buildProxySection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '网络代理',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('通过 Go 服务代理播放'),
+          subtitle: Text(
+            _isGoBridgeDriver
+                ? (_goProxyEnabled
+                    ? '已启用：使用数据库中的 Go 服务地址'
+                    : '关闭后可以改用下方自定义的 Go 服务代理地址')
+                : '切换到“本地 Go 服务”数据库驱动后才可启用此代理',
+          ),
+          value: _goProxyEnabled && _isGoBridgeDriver,
+          onChanged: _isGoBridgeDriver ? _updateGoProxy : null,
+          secondary: const Icon(Icons.shield_outlined),
+        ),
+        const SizedBox(height: 8),
+        SelectableText.rich(
+          TextSpan(
+            text: '优先级说明：',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+            children: [
+              TextSpan(
+                text:
+                    '开启开关时会固定走数据库配置的 Go 服务（$_bridgeEndpoint）；关闭后才使用下方自定义地址，留空则直接访问原始链接。',
+                style: const TextStyle(fontWeight: FontWeight.normal),
+              ),
+            ],
+          ),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _proxyEndpointController,
+                enabled: _canEditCustomProxy,
+                keyboardType: TextInputType.url,
+                textInputAction: TextInputAction.done,
+                textCapitalization: TextCapitalization.none,
+                decoration: InputDecoration(
+                  border: const OutlineInputBorder(),
+                  labelText: 'Go 服务代理地址',
+                  hintText: AppConstants.defaultGoBridgeEndpoint,
+                  helperText: _goProxyEnabled
+                      ? '已开启代理开关，当前使用数据库配置，需关闭后才能编辑'
+                      : (_hasCustomProxyEndpoint
+                          ? '已覆盖数据库配置，可点击“恢复数据库配置”撤销'
+                          : '留空时将直接访问原始链接'),
+                  prefixIcon: const Icon(Icons.link_outlined),
+                ),
+                onSubmitted: _canEditCustomProxy
+                    ? (value) {
+                        _saveProxyEndpoint(value);
+                      }
+                    : null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            FilledButton.icon(
+              onPressed: _canEditCustomProxy
+                  ? () {
+                      _saveProxyEndpoint(_proxyEndpointController.text);
+                    }
+                  : null,
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('保存'),
+            ),
+          ],
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: _canEditCustomProxy && _hasCustomProxyEndpoint
+                ? () {
+                    _resetProxyEndpoint();
+                  }
+                : null,
+            icon: const Icon(Icons.refresh_outlined),
+            label: const Text('恢复数据库配置'),
+          ),
+        ),
+        const SizedBox(height: 4),
+        SelectableText(
+          '当前生效地址：$_effectiveProxyLabel',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusBanner() {
+    final color = _statusIsError ? Colors.red : Colors.green;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: SelectableText.rich(
+        TextSpan(
+          text: _statusMessage!,
+          style: TextStyle(
+            color: color,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
   }
 }
