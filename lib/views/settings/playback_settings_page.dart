@@ -327,7 +327,6 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          if (_statusMessage != null) _buildStatusBanner(),
           const Text(
             '快进/快退设置',
             style: TextStyle(
@@ -554,6 +553,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
           '当前生效地址：$_effectiveProxyLabel',
           style: Theme.of(context).textTheme.bodySmall,
         ),
+        if (_statusMessage != null) _buildStatusBanner(),
       ],
     );
   }
