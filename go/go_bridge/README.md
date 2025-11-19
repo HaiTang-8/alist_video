@@ -27,6 +27,7 @@ go/go_bridge/
 | `maxIdleConns` | 最大空闲连接，默认 2 |
 | `connMaxLifetime` | 连接最大生命周期，Go duration 字符串，例如 `30m` |
 | `screenshotDir` | 历史截图落盘目录，默认 `data/screenshots` |
+| `proxyChain` | 可选的多级代理链配置（数组），每项包含 `endpoint` 与 `authToken`，用于将 `/proxy/media` 请求继续转发到下一跳 Go 代理 |
 
 也可以通过环境变量指定配置路径：`GO_BRIDGE_CONFIG=/path/to/config.yaml`。
 
@@ -100,6 +101,23 @@ BIN_NAME=go_bridge_linux ./build_release.sh
 
 # 生成仅代理包
 GO_BUILD_TAGS=proxy_only ./build_release.sh
+
+GO_BUILD_TAGS=proxy_only ./build_release.sh linux/amd64
+
+./build_release.sh linux/amd64
 ```
 
 脚本会将结果输出到仓库根目录的 `dist/` 目录，方便打包发布；通过 `GO_BUILD_TAGS` 可以在 CI/桌面端脚本里控制打出的模式。
+### 代理链示例
+
+```yaml
+listen: :7788
+driver: postgres
+dsn: postgres://user:pass@db:5432/alist_video?sslmode=disable
+authToken: go-bridge-token
+proxyChain:
+  - endpoint: https://hk-proxy.example.com
+    authToken: nested-token
+```
+
+上述配置表示：客户端访问美国节点 `/proxy/media?target=<真实URL>` 时，美节点会把请求继续包装成 `https://hk-proxy.example.com/proxy/media`，并在查询参数与 `Authorization` 中附带 `nested-token`，由香港节点再访问最终资源。若香港节点继续配置 `proxyChain`，即可形成更多层的“套娃”代理，从而实现 用户 → 美国 → 香港 → … → 资源 的链路。

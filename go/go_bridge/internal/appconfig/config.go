@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -12,14 +13,21 @@ import (
 
 // Config 描述 Go 桥服务的公共配置，既可用于完整模式，也可用于仅代理模式。
 type Config struct {
-	Listen        string `yaml:"listen"`
-	Driver        string `yaml:"driver"`
-	DSN           string `yaml:"dsn"`
-	AuthToken     string `yaml:"authToken"`
-	MaxOpenConns  int    `yaml:"maxOpenConns"`
-	MaxIdleConns  int    `yaml:"maxIdleConns"`
-	ConnMaxLife   string `yaml:"connMaxLifetime"`
-	ScreenshotDir string `yaml:"screenshotDir"`
+	Listen        string          `yaml:"listen"`
+	Driver        string          `yaml:"driver"`
+	DSN           string          `yaml:"dsn"`
+	AuthToken     string          `yaml:"authToken"`
+	MaxOpenConns  int             `yaml:"maxOpenConns"`
+	MaxIdleConns  int             `yaml:"maxIdleConns"`
+	ConnMaxLife   string          `yaml:"connMaxLifetime"`
+	ScreenshotDir string          `yaml:"screenshotDir"`
+	ProxyChain    []ProxyChainHop `yaml:"proxyChain"`
+}
+
+// ProxyChainHop 描述多级代理链中下一跳 Go 服务的地址与访问令牌。
+type ProxyChainHop struct {
+	Endpoint  string `yaml:"endpoint"`
+	AuthToken string `yaml:"authToken"`
 }
 
 // Load 从配置文件加载实例；当 requireDatabase=false 时允许省略数据库字段，
@@ -61,6 +69,10 @@ func (c *Config) normalize(requireDatabase bool) error {
 		c.ScreenshotDir = filepath.Join("data", "screenshots")
 	}
 	c.ScreenshotDir = filepath.Clean(c.ScreenshotDir)
+
+	for i := range c.ProxyChain {
+		c.ProxyChain[i].Endpoint = strings.TrimRight(strings.TrimSpace(c.ProxyChain[i].Endpoint), "/")
+	}
 
 	if requireDatabase {
 		if c.Driver == "" {
