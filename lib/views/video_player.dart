@@ -204,6 +204,9 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加初始加载标志
   bool _isInitialLoading = true;
 
+  // 播放器出现错误后标记需要恢复，切换时强制重建流，避免持续缓冲。
+  bool _needsPlayerRecovery = false;
+
   // 添加历史记录映射，用于存储播放列表中每个视频的历史记录
   final Map<String, HistoricalRecord> _videoHistoryRecords = {};
   static const int _screenshotRawLimitBytes = 400 * 1024;
@@ -4387,6 +4390,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     _lastFailedPlaylistIndex = currentPlayingIndex;
     _autoAdvanceBlockedIndex = currentPlayingIndex;
     _isUserInitiatedSwitch = false;
+    _needsPlayerRecovery = true;
 
     try {
       await player.pause();
@@ -4484,13 +4488,16 @@ class VideoPlayerState extends State<VideoPlayer> {
     _isUserInitiatedSwitch = true;
 
     // 发生过播放错误后强制重新 open，避免 mpv 停止状态导致后续视频卡缓冲。
-    final shouldForceReopen =
-        _playbackErrorMessage != null || _lastFailedPlaylistIndex != null;
+    final shouldForceReopen = _needsPlayerRecovery ||
+        _playbackErrorMessage != null ||
+        _lastFailedPlaylistIndex != null;
 
     if (shouldForceReopen) {
       _logDebug('检测到错误后手动切换，强制重新打开播放列表: index=$index');
       await player.stop();
       await player.open(Playlist(playList, index: index), play: true);
+      // 恢复完成后清除错误标记，避免后续切换再次强制重建。
+      _needsPlayerRecovery = false;
     } else {
       player.jump(index);
       if (!player.state.playing) {

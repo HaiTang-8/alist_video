@@ -61,6 +61,8 @@ class _HistoryPageState extends State<HistoryPage>
 
   // Cache for screenshot paths to avoid repeated file checks
   final Map<String, String?> _screenshotPathCache = {};
+  // 本地截图与远端的允许时间差（毫秒），超出则尝试刷新，解决跨设备缩略图不同步。
+  static const int _screenshotStaleToleranceMs = 2000;
 
   @override
   bool get wantKeepAlive => true;
@@ -140,8 +142,11 @@ class _HistoryPageState extends State<HistoryPage>
     }
     final local = value.toLocal();
     String twoDigits(int n) => n.toString().padLeft(2, '0');
-    return '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)} '
-        '${twoDigits(local.hour)}:${twoDigits(local.minute)}:${twoDigits(local.second)}';
+    final datePart =
+        '${local.year}-${twoDigits(local.month)}-${twoDigits(local.day)}';
+    final timePart = '${twoDigits(local.hour)}:'
+        '${twoDigits(local.minute)}:${twoDigits(local.second)}';
+    return '$datePart $timePart';
   }
 
   /// 当前是否使用本地 Go 服务作为数据库驱动
@@ -241,7 +246,11 @@ class _HistoryPageState extends State<HistoryPage>
                 Text(
                   stats.orphanDetails.isEmpty
                       ? '未发现孤儿截图'
-                      : '孤儿截图列表（${stats.orphanDetails.length}${stats.orphanOverflow > 0 ? '+${stats.orphanOverflow}' : ''}）',
+                      : '孤儿截图列表（${stats.orphanDetails.length}'
+                          '${stats.orphanOverflow > 0
+                              ? '+${stats.orphanOverflow}'
+                              : ''}'
+                          '）',
                   style: labelStyle,
                 ),
                 if (stats.orphanDetails.isNotEmpty)
@@ -269,7 +278,8 @@ class _HistoryPageState extends State<HistoryPage>
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      '还有 ${stats.orphanOverflow} 条记录未展示，可通过调大 previewLimit 或查看 Go 服务日志获取。',
+                      '还有 ${stats.orphanOverflow} 条记录未展示，'
+                      '可通过调大 previewLimit 或查看 Go 服务日志获取。',
                       style: secondaryStyle,
                     ),
                   ),
@@ -317,7 +327,8 @@ class _HistoryPageState extends State<HistoryPage>
     final infoBuffer = StringBuffer()
       ..write('用户ID: ${detail.userId} · SHA1: ${detail.videoSha1}\n')
       ..write(
-          '大小: ${_formatFileSize(detail.sizeBytes)} · 修改时间: ${_formatModTime(detail.modTime)}');
+          '大小: ${_formatFileSize(detail.sizeBytes)} · 修改时间: '
+          '${_formatModTime(detail.modTime)}');
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1193,8 +1204,15 @@ class _HistoryPageState extends State<HistoryPage>
       final jpegFile = File(jpegFilePath);
 
       if (await jpegFile.exists()) {
-        _screenshotPathCache[cacheKey] = jpegFilePath;
-        return jpegFilePath;
+        final refreshedPath = await _refreshScreenshotIfStale(
+          record: record,
+          cacheKey: cacheKey,
+          localFile: jpegFile,
+          screenshotDir: screenshotDir,
+          sanitizedVideoPath: sanitizedVideoPath,
+          sanitizedVideoName: sanitizedVideoName,
+        );
+        return refreshedPath;
       }
 
       // 如果 JPEG 格式不存在，尝试旧的 PNG 格式（向后兼容）
@@ -1204,8 +1222,15 @@ class _HistoryPageState extends State<HistoryPage>
       final pngFile = File(pngFilePath);
 
       if (await pngFile.exists()) {
-        _screenshotPathCache[cacheKey] = pngFilePath;
-        return pngFilePath;
+        final refreshedPath = await _refreshScreenshotIfStale(
+          record: record,
+          cacheKey: cacheKey,
+          localFile: pngFile,
+          screenshotDir: screenshotDir,
+          sanitizedVideoPath: sanitizedVideoPath,
+          sanitizedVideoName: sanitizedVideoName,
+        );
+        return refreshedPath;
       }
 
       // 本地缺图时尝试从 Go 服务拉取远端截图并写入缓存
@@ -1285,6 +1310,57 @@ class _HistoryPageState extends State<HistoryPage>
         stackTrace: stack,
       );
       return null;
+    }
+  }
+
+  /// 本地截图过旧时尝试从远端刷新，解决其他设备已更新进度/缩略图但本地仍用旧图的问题。
+  Future<String?> _refreshScreenshotIfStale({
+    required HistoricalRecord record,
+    required String cacheKey,
+    required File localFile,
+    required Directory screenshotDir,
+    required String sanitizedVideoPath,
+    required String sanitizedVideoName,
+  }) async {
+    try {
+      final recordMillis = record.changeTime.millisecondsSinceEpoch;
+      final localMillis = await _getFileModificationTime(localFile.path);
+
+      // 本地文件不存在有效时间或比记录时间落后，尝试拉取远端更新。
+      final isStale = recordMillis > 0 &&
+          recordMillis - localMillis > _screenshotStaleToleranceMs;
+
+      if (isStale || (await localFile.length()) == 0) {
+        _log(
+          '检测到过期或空的本地截图，尝试远端刷新: video=${record.videoName}',
+          level: LogLevel.debug,
+        );
+
+        final remotePath = await _downloadRemoteScreenshot(
+          record: record,
+          screenshotDir: screenshotDir,
+          sanitizedVideoPath: sanitizedVideoPath,
+          sanitizedVideoName: sanitizedVideoName,
+        );
+
+        if (remotePath != null) {
+          _screenshotPathCache[cacheKey] = remotePath;
+          return remotePath;
+        }
+      }
+
+      // 使用本地文件，并缓存结果。
+      _screenshotPathCache[cacheKey] = localFile.path;
+      return localFile.path;
+    } catch (e, stack) {
+      _log(
+        '刷新历史截图时异常 video=${record.videoName}',
+        level: LogLevel.warning,
+        error: e,
+        stackTrace: stack,
+      );
+      _screenshotPathCache[cacheKey] = localFile.path;
+      return localFile.path;
     }
   }
 
@@ -1678,7 +1754,10 @@ class _HistoryPageState extends State<HistoryPage>
                       ),
                       SizedBox(height: isMobile ? 4 : 8),
                       Text(
-                        '最近观看：${timeago.format(latestRecord.changeTime, locale: 'zh_CN')}',
+                        '最近观看：${timeago.format(
+                          latestRecord.changeTime,
+                          locale: 'zh_CN',
+                        )}',
                         style: TextStyle(
                           fontSize: isMobile ? 11 : 13,
                           color: Colors.grey[600],
@@ -2370,7 +2449,9 @@ class _HistoryPageState extends State<HistoryPage>
             ),
             const SizedBox(height: 2),
             Text(
-              '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
+              '观看至 '
+              '${((record.videoSeek / record.totalVideoDuration) * 100)
+                  .toStringAsFixed(1)}%',
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.grey[500],
@@ -2384,6 +2465,12 @@ class _HistoryPageState extends State<HistoryPage>
 
   // 构建桌面端卡片内容 - 保持原有布局
   Widget _buildDesktopCardContent(HistoricalRecord record) {
+    // 将时间格式化为本地短文本，便于缩略显示并减少字符串长度。
+    final watchedAt = record.changeTime
+        .toLocal()
+        .toString()
+        .substring(0, 16);
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -2420,7 +2507,10 @@ class _HistoryPageState extends State<HistoryPage>
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      '${timeago.format(record.changeTime, locale: 'zh_CN')} · ${record.changeTime.toLocal().toString().substring(0, 16)}',
+                      '${timeago.format(
+                        record.changeTime,
+                        locale: 'zh_CN',
+                      )} · $watchedAt',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.grey[600],
@@ -2443,7 +2533,9 @@ class _HistoryPageState extends State<HistoryPage>
               ),
               const SizedBox(height: 4),
               Text(
-                '观看至 ${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
+                '观看至 '
+                '${((record.videoSeek / record.totalVideoDuration) * 100)
+                    .toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[600],
