@@ -47,6 +47,7 @@ app.*.map.json
 /android/app/release
 /android/app/.cxx/*
 go/go_bridge/data/*
+go/go_bridge/.gocache
 .dart-tool/
 
 # Windows 打包临时证书文件，CI 会动态生成不需要提交。

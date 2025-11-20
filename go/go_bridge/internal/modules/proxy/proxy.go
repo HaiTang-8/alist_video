@@ -19,11 +19,13 @@ import (
 var (
 	defaultHTTPClient = &http.Client{
 		Transport: &http.Transport{
-			Proxy:               http.ProxyFromEnvironment,
-			MaxIdleConns:        256,
-			MaxIdleConnsPerHost: 64,
-			IdleConnTimeout:     90 * time.Second,
-			ForceAttemptHTTP2:   true,
+			Proxy:                 http.ProxyFromEnvironment,
+			MaxIdleConns:          256,
+			MaxIdleConnsPerHost:   64,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   15 * time.Second,
+			ResponseHeaderTimeout: 15 * time.Second,
+			ForceAttemptHTTP2:     true,
 		},
 		Timeout: 0,
 	}
@@ -77,6 +79,12 @@ func (r *Registrar) Register(engine *gin.Engine) {
 		client = defaultHTTPClient
 	}
 
+	// OPTIONS 便于跨端播放器执行预检请求。
+	engine.OPTIONS("/proxy/media", func(c *gin.Context) {
+		setCORSHeaders(c)
+		c.Status(http.StatusNoContent)
+	})
+
 	// 暴露代理质量监控数据，供 Flutter 端展示。
 	engine.GET("/proxy/metrics", func(c *gin.Context) {
 		c.JSON(http.StatusOK, r.metrics.Snapshot())
@@ -85,7 +93,14 @@ func (r *Registrar) Register(engine *gin.Engine) {
 	// 启动上游指标轮询。
 	r.hopPuller.start()
 
-	engine.GET("/proxy/media", func(c *gin.Context) {
+	engine.HEAD("/proxy/media", r.proxyHandler(client, http.MethodHead, false))
+	engine.GET("/proxy/media", r.proxyHandler(client, http.MethodGet, true))
+}
+
+// proxyHandler 按方法代理媒体流，可复用 GET/HEAD。
+func (r *Registrar) proxyHandler(client *http.Client, method string, withBody bool) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		setCORSHeaders(c)
 		target := c.Query("target")
 		if strings.TrimSpace(target) == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "target is required"})
@@ -104,7 +119,12 @@ func (r *Registrar) Register(engine *gin.Engine) {
 			return
 		}
 
-		req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodGet, forwardTarget, nil)
+		req, err := http.NewRequestWithContext(
+			c.Request.Context(),
+			method,
+			forwardTarget,
+			nil,
+		)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("proxy request build failed: %v", err)})
 			return
@@ -115,12 +135,31 @@ func (r *Registrar) Register(engine *gin.Engine) {
 			}
 		}
 
-		forwardHeaders := []string{"Range", "User-Agent", "Accept", "Referer"}
+		forwardHeaders := []string{
+			"Range",
+			"User-Agent",
+			"Accept",
+			"Accept-Language",
+			"Accept-Encoding",
+			"Origin",
+			"Referer",
+			"Authorization",
+			"Cookie",
+			"If-None-Match",
+			"If-Modified-Since",
+			"Cache-Control",
+			"Pragma",
+			"X-Requested-With",
+			"X-Custom-Signature",
+			"X-Forwarded-For",
+			"X-Forwarded-Proto",
+		}
 		for _, key := range forwardHeaders {
 			if value := c.GetHeader(key); value != "" {
 				req.Header.Set(key, value)
 			}
 		}
+		stripHopByHop(req.Header)
 
 		start := time.Now()
 		resp, err := client.Do(req)
@@ -131,12 +170,13 @@ func (r *Registrar) Register(engine *gin.Engine) {
 		}
 		defer resp.Body.Close()
 
-		for key, values := range resp.Header {
-			for _, value := range values {
-				c.Writer.Header().Add(key, value)
-			}
-		}
+		copyResponseHeaders(c.Writer.Header(), resp.Header)
 		c.Writer.WriteHeader(resp.StatusCode)
+		if !withBody {
+			success := resp.StatusCode < http.StatusBadRequest
+			r.metrics.Record(time.Since(start), 0, success, resp.StatusCode, "")
+			return
+		}
 
 		buf := bufferPool.Get().([]byte)
 		defer bufferPool.Put(buf)
@@ -145,15 +185,26 @@ func (r *Registrar) Register(engine *gin.Engine) {
 		var byteCount int64
 		counter := &writeCounter{target: c.Writer, countPtr: &byteCount}
 
+		// 若下游关闭连接，尽快中断上游读取，避免占用 goroutine。
+		stopCh := make(chan struct{})
+		go func() {
+			select {
+			case <-c.Request.Context().Done():
+				_ = resp.Body.Close()
+			case <-stopCh:
+			}
+		}()
+
 		if _, err := io.CopyBuffer(counter, resp.Body, buf); err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 				log.Printf("proxy stream interrupted: %v", err)
 			}
 		}
+		close(stopCh)
 
 		success := resp.StatusCode < http.StatusBadRequest
 		r.metrics.Record(time.Since(start), byteCount, success, resp.StatusCode, "")
-	})
+	}
 }
 
 func (r *Registrar) buildChainedTarget(original string) (string, http.Header, error) {
@@ -181,10 +232,58 @@ func (r *Registrar) buildChainedTarget(original string) (string, http.Header, er
 		proxyURL.RawQuery = params.Encode()
 		current = proxyURL.String()
 		if i == 0 && hop.AuthToken != "" {
+			// 第一跳使用头部与查询双通道鉴权，以兼容不同上游配置。
 			headers.Set("Authorization", "Bearer "+hop.AuthToken)
 		}
 	}
 	return current, headers, nil
+}
+
+// setCORSHeaders 允许跨端播放器发起预检与跨域访问。
+func setCORSHeaders(c *gin.Context) {
+	origin := c.GetHeader("Origin")
+	if origin == "" {
+		origin = "*"
+	}
+	headers := c.Writer.Header()
+	headers.Set("Access-Control-Allow-Origin", origin)
+	headers.Set("Vary", "Origin")
+	headers.Set("Access-Control-Allow-Headers", "*")
+	headers.Set("Access-Control-Allow-Methods", "GET,HEAD,OPTIONS")
+}
+
+// stripHopByHop 清理 hop-by-hop 头部，避免代理链出现连接升级问题。
+func stripHopByHop(h http.Header) {
+	hopByHop := []string{
+		"Connection",
+		"Proxy-Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"TE",
+		"Trailer",
+		"Transfer-Encoding",
+		"Upgrade",
+	}
+	for _, key := range hopByHop {
+		h.Del(key)
+	}
+}
+
+// copyResponseHeaders 过滤 hop-by-hop 后再复制响应头。
+func copyResponseHeaders(dst, src http.Header) {
+	for key, values := range src {
+		upper := strings.ToLower(key)
+		switch upper {
+		case "connection", "proxy-connection", "keep-alive",
+			"proxy-authenticate", "proxy-authorization",
+			"te", "trailer", "transfer-encoding", "upgrade":
+			continue
+		}
+		for _, v := range values {
+			dst.Add(key, v)
+		}
+	}
 }
 
 // writeCounter 用于在转发时统计写入字节数，不影响原有响应输出。
