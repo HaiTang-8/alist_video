@@ -2,18 +2,28 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 
 /// 字体帮助类，用于处理不同平台的字体配置。
+///
+/// 设计目标：
+/// - 保证应用在 Windows 下使用合适的中文 UI 字体（微软雅黑及常见备选），
+///   避免默认西文字体导致中文发虚、锯齿明显；
+/// - 为日志、配置等场景提供统一的等宽字体封装，在 Windows 下优先使用
+///   Consolas / Cascadia 系列，提升字符对齐与可读性；
+/// - 其他平台则尽量尊重系统默认字体配置，不强行指定具体字体族。
 class FontHelper {
-  /// Windows平台的字体回退列表
+  /// Windows 平台的中文字体回退列表。
+  ///
+  /// 按优先级从高到低排列，保证在目标字体缺失时仍然有较好的中文渲染。
   static const List<String> _windowsFontFallback = [
-    'Microsoft YaHei',  // 微软雅黑
-    'SimHei',           // 黑体
-    'SimSun',           // 宋体
-    'Microsoft JhengHei', // 微软正黑体
-    'PingFang SC',      // 苹方简体
-    'Noto Sans CJK SC', // 思源黑体简体
+    'Microsoft YaHei',      // 微软雅黑
+    'Microsoft YaHei UI',   // 微软雅黑 UI
+    'SimHei',               // 黑体
+    'SimSun',               // 宋体
+    'Microsoft JhengHei',   // 微软正黑体（繁体）
+    'PingFang SC',          // 苹方简体
+    'Noto Sans CJK SC',     // 思源黑体简体
   ];
 
-  /// Windows平台的等宽字体回退列表。
+  /// Windows 平台的等宽字体回退列表。
   ///
   /// 优先选择 Consolas / Cascadia 系列，其次回退到 Courier New，
   /// 最后回退到通用的 monospace，尽可能保证日志等内容在 Windows
@@ -26,7 +36,10 @@ class FontHelper {
     'monospace',
   ];
 
-  /// 获取适合当前平台的字体族名
+  /// 获取适合当前平台的字体族名。
+  ///
+  /// - Windows：统一使用微软雅黑作为基础 UI 字体；
+  /// - 其他平台：返回 null，交由系统选择默认 UI 字体。
   static String? getPlatformFontFamily() {
     if (Platform.isWindows) {
       return 'Microsoft YaHei';
@@ -34,7 +47,9 @@ class FontHelper {
     return null;
   }
 
-  /// 获取适合当前平台的字体回退列表
+  /// 获取适合当前平台的字体回退列表。
+  ///
+  /// 目前仅在 Windows 平台指定中文字体回退链，其他平台不强制配置。
   static List<String>? getPlatformFontFallback() {
     if (Platform.isWindows) {
       return _windowsFontFallback;
@@ -42,7 +57,11 @@ class FontHelper {
     return null;
   }
 
-  /// 创建带有平台优化的TextStyle
+  /// 创建带有平台优化的 TextStyle。
+  ///
+  /// - 会自动注入 Windows 上的中文字体及回退；
+  /// - 允许调用方覆盖 fontFamily / fontFamilyFallback；
+  /// - 其他样式属性原样透传。
   static TextStyle createTextStyle({
     double? fontSize,
     FontWeight? fontWeight,
@@ -104,7 +123,7 @@ class FontHelper {
     );
   }
 
-  /// 为AppBar标题创建优化的TextStyle
+  /// 为 AppBar 标题创建优化的 TextStyle。
   static TextStyle createAppBarTitleStyle({
     double fontSize = 16,
     FontWeight fontWeight = FontWeight.w500,
@@ -117,7 +136,7 @@ class FontHelper {
     );
   }
 
-  /// 为视频标题创建优化的TextStyle
+  /// 为视频标题创建优化的 TextStyle。
   static TextStyle createVideoTitleStyle({
     double fontSize = 16,
     FontWeight fontWeight = FontWeight.w500,
@@ -130,7 +149,7 @@ class FontHelper {
     );
   }
 
-  /// 为全屏模式视频标题创建优化的TextStyle
+  /// 为全屏模式视频标题创建优化的 TextStyle。
   static TextStyle createFullscreenVideoTitleStyle({
     double fontSize = 16,
     FontWeight fontWeight = FontWeight.w500,
@@ -143,7 +162,7 @@ class FontHelper {
     );
   }
 
-  /// 获取主题的TextTheme配置
+  /// 获取主题的 TextTheme 配置。
   static TextTheme getThemeTextTheme() {
     return TextTheme(
       titleLarge: createTextStyle(
@@ -174,7 +193,7 @@ class FontHelper {
     );
   }
 
-  /// 获取AppBar主题配置
+  /// 获取 AppBar 主题配置。
   static AppBarTheme getAppBarTheme() {
     return AppBarTheme(
       backgroundColor: Colors.white,
@@ -192,3 +211,4 @@ class FontHelper {
     );
   }
 }
+

@@ -29,6 +29,8 @@ Future<void> main() async {
   final zoneFuture = runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // 在这里完成基础组件初始化，确保后续数据库、日志等模块
+      // 可以安全访问平台通道与 Flutter 环境。
       MediaKit.ensureInitialized();
       timeago.setLocaleMessages('zh', timeago.ZhMessages());
       timeago.setLocaleMessages('zh_CN', timeago.ZhCnMessages());
