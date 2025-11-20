@@ -1706,6 +1706,23 @@ class VideoPlayerState extends State<VideoPlayer> {
       final currentPosition = player.state.position;
       final duration = player.state.duration; // 获取视频总时长
 
+      // 播放失败或尚未拿到有效时长时不落库，避免 0 进度污染历史记录。
+      final isFailedItem = _lastFailedPlaylistIndex == currentPlayingIndex;
+      final hasError = _playbackErrorMessage != null || isFailedItem;
+      final isInvalidDuration = duration.inSeconds <= 0;
+      final isInvalidPosition = currentPosition.inSeconds <= 0;
+
+      if (hasError || isInvalidDuration || isInvalidPosition) {
+        _log(
+          '跳过进度保存：error=$hasError\n'
+          'pos=${currentPosition.inSeconds}, '
+          'dur=${duration.inSeconds}, '
+          'failIdx=$_lastFailedPlaylistIndex',
+          level: LogLevel.debug,
+        );
+        return;
+      }
+
       // 安全检查：确保当前播放索引有效
       if (currentPlayingIndex < 0 || currentPlayingIndex >= playList.length) {
         _log(
@@ -4463,10 +4480,24 @@ class VideoPlayerState extends State<VideoPlayer> {
       _hasSeekInitialPosition = false;
     });
 
-    player.jump(index);
-
     // 标记为手动切换，防止 playlist 监听再次介入导致错误回滚。
     _isUserInitiatedSwitch = true;
+
+    // 发生过播放错误后强制重新 open，避免 mpv 停止状态导致后续视频卡缓冲。
+    final shouldForceReopen =
+        _playbackErrorMessage != null || _lastFailedPlaylistIndex != null;
+
+    if (shouldForceReopen) {
+      _logDebug('检测到错误后手动切换，强制重新打开播放列表: index=$index');
+      await player.stop();
+      await player.open(Playlist(playList, index: index), play: true);
+    } else {
+      player.jump(index);
+      if (!player.state.playing) {
+        // 确保切换后立即拉流，避免停留在暂停状态造成假缓冲。
+        unawaited(player.play());
+      }
+    }
 
     // 如果当前全局偏好为 raw_url，则为新视频自动应用 raw_url 链接。
     if (_preferredLinkMode == PlaybackLinkMode.raw && !_isCurrentMediaLocal) {
