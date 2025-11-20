@@ -1,5 +1,9 @@
+import 'dart:async';
+
+import 'package:alist_player/apis/proxy_metrics_api.dart';
 import 'package:alist_player/constants/app_constants.dart';
 import 'package:alist_player/models/database_persistence_type.dart';
+import 'package:alist_player/models/proxy_metrics.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -27,6 +31,10 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
   bool _hasCustomProxyEndpoint = false;
   String? _statusMessage;
   bool _statusIsError = false;
+  ProxyMetrics? _metrics;
+  String? _metricsError;
+  bool _isLoadingMetrics = false;
+  Timer? _metricsTimer;
 
   @override
   void initState() {
@@ -80,6 +88,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       _proxyEndpointController.text = customProxyEndpoint;
       _hasCustomProxyEndpoint = customProxyEndpoint.isNotEmpty;
     });
+
+    _startMetricsPolling();
   }
 
   Future<void> _updateGoProxy(bool value) async {
@@ -100,6 +110,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     });
 
     _showSuccessMessage(value ? '已启用 Go 服务代理播放' : '已关闭 Go 服务代理播放');
+    _startMetricsPolling();
   }
 
   Future<void> _saveSettings() async {
@@ -257,6 +268,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
         _hasCustomProxyEndpoint = false;
       });
       _showSuccessMessage('已清空自定义代理地址，关闭代理时将直接访问原链接');
+      _startMetricsPolling();
       return;
     }
 
@@ -283,6 +295,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
       _hasCustomProxyEndpoint = true;
     });
     _showSuccessMessage('代理地址已保存');
+    _startMetricsPolling();
   }
 
   Future<void> _resetProxyEndpoint() async {
@@ -348,6 +361,8 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
           ),
           const SizedBox(height: 24),
           _buildProxySection(),
+          const SizedBox(height: 24),
+          _buildMetricsSection(),
           const SizedBox(height: 24),
           const Text(
             '播放速度设置',
@@ -453,6 +468,7 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
     _speedController.dispose();
     _customSpeedController.dispose();
     _proxyEndpointController.dispose();
+    _metricsTimer?.cancel();
     super.dispose();
   }
 
@@ -555,6 +571,183 @@ class _PlaybackSettingsPageState extends State<PlaybackSettingsPage> {
         ),
         if (_statusMessage != null) _buildStatusBanner(),
       ],
+    );
+  }
+
+  Widget _buildMetricsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          '代理健康监控（Go 服务）',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SelectableText.rich(
+          const TextSpan(
+            text: '由 Go 代理持续埋点的质量数据，自动轮询获取，无需手动测速。',
+          ),
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: _isLoadingMetrics ? null : _refreshMetrics,
+                icon: _isLoadingMetrics
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_outlined),
+                label: Text(_isLoadingMetrics ? '刷新中...' : '刷新指标'),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (_metricsError != null)
+          _buildStatusBannerWithMessage(_metricsError!, true),
+        const SizedBox(height: 4),
+        if (_metrics != null) _buildMetricsCards(_metrics!),
+      ],
+    );
+  }
+
+  // 周期性拉取 Go 代理埋点数据，便于用户被动查看质量。
+  void _startMetricsPolling() {
+    _metricsTimer?.cancel();
+    _refreshMetrics();
+    _metricsTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _refreshMetrics(),
+    );
+  }
+
+  // 单次拉取最新的代理指标，失败时在页面展示具体错误原因。
+  Future<void> _refreshMetrics() async {
+    setState(() {
+      _isLoadingMetrics = true;
+      _metricsError = null;
+    });
+
+    try {
+      final metrics = await ProxyMetricsApi.fetch();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _metrics = metrics;
+        _isLoadingMetrics = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _metricsError = e.toString();
+        _isLoadingMetrics = false;
+      });
+    }
+  }
+
+  Widget _buildMetricsCards(ProxyMetrics metrics) {
+    final statusColor = metrics.successRate >= 0.99
+        ? Colors.green
+        : (metrics.successRate >= 0.95 ? Colors.orange : Colors.red);
+
+    final lastUpdated = metrics.lastUpdated != null
+        ? '最后更新：${metrics.lastUpdated!.toLocal()}'
+        : '最后更新：未知';
+
+    return Column(
+      children: [
+        Card(
+          margin: const EdgeInsets.symmetric(vertical: 6),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      Icons.shield_outlined,
+                      color: statusColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '可用性 ${(metrics.successRate * 100).toStringAsFixed(2)}%',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: statusColor,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      'RPM ${metrics.requestsPerMinute.toStringAsFixed(2)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                SelectableText(
+                  '平均延迟 ${metrics.avgLatencyMs.toStringAsFixed(0)} ms '
+                  '| P50 ${metrics.p50LatencyMs.toStringAsFixed(0)} ms '
+                  '| P90 ${metrics.p90LatencyMs.toStringAsFixed(0)} ms '
+                  '| P99 ${metrics.p99LatencyMs.toStringAsFixed(0)} ms',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  '平均下行 ${metrics.avgThroughputKbps.toStringAsFixed(1)} KB/s '
+                  '| 样本 ${metrics.samples}/${metrics.windowSamples}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  '累计请求 ${metrics.totalRequests}，错误 ${metrics.totalErrors}，'
+                  '累计下行 ${(metrics.totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 4),
+                SelectableText(
+                  lastUpdated,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (metrics.lastError != null &&
+                    metrics.lastError!.trim().isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: _buildStatusBannerWithMessage(
+                      '最近错误：${metrics.lastError}',
+                      true,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStatusBannerWithMessage(String message, bool isError) {
+    final color = isError ? Colors.red : Colors.green;
+    return SelectableText.rich(
+      TextSpan(
+        text: message,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 

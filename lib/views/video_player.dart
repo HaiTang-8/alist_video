@@ -8,6 +8,7 @@ import 'package:alist_player/utils/font_helper.dart';
 import 'package:alist_player/utils/go_proxy_helper.dart';
 import 'package:alist_player/utils/logger.dart';
 import 'package:alist_player/utils/user_session.dart';
+import 'package:alist_player/widgets/proxy_quality_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/foundation.dart'; // Add this for compute
@@ -2510,6 +2511,12 @@ class VideoPlayerState extends State<VideoPlayer> {
           const Center(
             child: CircularProgressIndicator(),
           ),
+        // 网络质量徽章：实时展示 Go 代理链路健康。
+        const Positioned(
+          top: 12,
+          right: 12,
+          child: ProxyQualityBadge(),
+        ),
       ],
     );
   }

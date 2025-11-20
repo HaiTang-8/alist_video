@@ -36,6 +36,10 @@ var (
 type Registrar struct {
 	Client *http.Client
 	Chain  []ChainHop
+	// metrics 用于对代理质量进行持续埋点并对外暴露。
+	metrics *Metrics
+	// hopPuller 周期拉取上游节点的 metrics，便于前端逐 hop 展示。
+	hopPuller *hopMetricsPuller
 }
 
 // ChainHop 描述一次代理下一跳的目标地址与访问令牌。
@@ -49,7 +53,18 @@ func NewRegistrar(client *http.Client, chain []ChainHop) *Registrar {
 	if client == nil {
 		client = defaultHTTPClient
 	}
-	return &Registrar{Client: client, Chain: chain}
+	metrics := NewMetrics(120)
+	return &Registrar{
+		Client:  client,
+		Chain:   chain,
+		metrics: metrics,
+		hopPuller: newHopMetricsPuller(
+			metrics,
+			chain,
+			client,
+			time.Second*15,
+		),
+	}
 }
 
 // Register 绑定 /proxy/media，透传 Range/User-Agent 等头保证播放器兼容。
@@ -61,6 +76,14 @@ func (r *Registrar) Register(engine *gin.Engine) {
 	if client == nil {
 		client = defaultHTTPClient
 	}
+
+	// 暴露代理质量监控数据，供 Flutter 端展示。
+	engine.GET("/proxy/metrics", func(c *gin.Context) {
+		c.JSON(http.StatusOK, r.metrics.Snapshot())
+	})
+
+	// 启动上游指标轮询。
+	r.hopPuller.start()
 
 	engine.GET("/proxy/media", func(c *gin.Context) {
 		target := c.Query("target")
@@ -99,8 +122,10 @@ func (r *Registrar) Register(engine *gin.Engine) {
 			}
 		}
 
+		start := time.Now()
 		resp, err := client.Do(req)
 		if err != nil {
+			r.metrics.Record(time.Since(start), 0, false, http.StatusBadGateway, err.Error())
 			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("proxy request failed: %v", err)})
 			return
 		}
@@ -116,11 +141,18 @@ func (r *Registrar) Register(engine *gin.Engine) {
 		buf := bufferPool.Get().([]byte)
 		defer bufferPool.Put(buf)
 
-		if _, err := io.CopyBuffer(c.Writer, resp.Body, buf); err != nil {
+		// MultiWriter 记录响应体大小，便于估算吞吐。
+		var byteCount int64
+		counter := &writeCounter{target: c.Writer, countPtr: &byteCount}
+
+		if _, err := io.CopyBuffer(counter, resp.Body, buf); err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 				log.Printf("proxy stream interrupted: %v", err)
 			}
 		}
+
+		success := resp.StatusCode < http.StatusBadRequest
+		r.metrics.Record(time.Since(start), byteCount, success, resp.StatusCode, "")
 	})
 }
 
@@ -153,4 +185,18 @@ func (r *Registrar) buildChainedTarget(original string) (string, http.Header, er
 		}
 	}
 	return current, headers, nil
+}
+
+// writeCounter 用于在转发时统计写入字节数，不影响原有响应输出。
+type writeCounter struct {
+	target   io.Writer
+	countPtr *int64
+}
+
+func (w *writeCounter) Write(p []byte) (int, error) {
+	n, err := w.target.Write(p)
+	if w.countPtr != nil {
+		*w.countPtr += int64(n)
+	}
+	return n, err
 }
