@@ -45,6 +45,19 @@ class SubtitleInfo {
   });
 }
 
+/// 控制当前视频链接使用模式
+enum PlaybackLinkMode {
+  sign,
+  raw,
+}
+
+extension PlaybackLinkModeX on PlaybackLinkMode {
+  String get label => this == PlaybackLinkMode.raw ? 'RAW' : 'SIGN';
+
+  String get description =>
+      this == PlaybackLinkMode.raw ? 'raw_url' : 'sign 直链';
+}
+
 class VideoPlayerState extends State<VideoPlayer> {
   // Player 采用默认配置，先暂时关闭网络激进缓存优化
   late final player = Player();
@@ -59,6 +72,13 @@ class VideoPlayerState extends State<VideoPlayer> {
   List<Media> playList = [];
   int playIndex = 0;
   late int currentPlayingIndex = 0;
+  // _currentLinkMode 表示当前视频实际使用的链接模式（sign/raw_url）。
+  // _preferredLinkMode 表示用户最近一次选择的全局偏好，用于新视频的默认模式。
+  PlaybackLinkMode _currentLinkMode = PlaybackLinkMode.sign;
+  PlaybackLinkMode _preferredLinkMode = PlaybackLinkMode.sign;
+  final ValueNotifier<PlaybackLinkMode> _linkModeNotifier =
+      ValueNotifier<PlaybackLinkMode>(PlaybackLinkMode.sign);
+  bool _isSwitchingLinkMode = false;
 
   // 添加 ValueNotifier 来管理当前播放索引的状态更新
   final ValueNotifier<int> _currentPlayingIndexNotifier = ValueNotifier<int>(0);
@@ -124,7 +144,15 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 处理错误管理相关变量
   final Map<String, DateTime> _shownErrors = {};
   static const _errorCooldown = Duration(seconds: 5);
-  SnackBar? _currentErrorSnackBar;
+  static const Duration _playlistPolicyRetryDelay =
+      Duration(milliseconds: 300);
+  static const int _playlistPolicyMaxAttempts = 5;
+  String? _playbackErrorMessage;
+  int? _lastFailedPlaylistIndex;
+  bool _playlistErrorPolicyConfigured = false;
+  Timer? _playbackErrorDismissTimer;
+  int? _autoAdvanceBlockedIndex;
+  bool _isUserInitiatedSwitch = false;
 
   // 添加自定义播放速度相关变量
   double _customPlaybackSpeed = AppConstants.defaultCustomPlaybackSpeed;
@@ -150,6 +178,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 添加Overlay相关变量
   OverlayEntry? _speedIndicatorOverlay;
   OverlayEntry? _videoInfoOverlay;
+  OverlayEntry? _playbackErrorOverlayEntry;
   final GlobalKey _videoKey = GlobalKey();
 
   // 添加无边框模式状态
@@ -221,6 +250,17 @@ class VideoPlayerState extends State<VideoPlayer> {
           prefs.getBool(AppConstants.preferLocalPlaybackKey) ??
               AppConstants.defaultPreferLocalPlayback;
     });
+
+    // 加载播放链接模式偏好（sign/raw_url），默认使用 sign 直链
+    final linkModeName = prefs.getString(AppConstants.playbackLinkModeKey);
+    if (linkModeName != null) {
+      _preferredLinkMode = linkModeName == PlaybackLinkMode.raw.name
+          ? PlaybackLinkMode.raw
+          : PlaybackLinkMode.sign;
+      _currentLinkMode = _preferredLinkMode;
+      _linkModeNotifier.value = _preferredLinkMode;
+      _logDebug('从偏好中恢复播放链接模式: ${_preferredLinkMode.name}');
+    }
 
     final goProxyConfig = await GoProxyHelper.loadConfig();
     if (mounted) {
@@ -301,23 +341,43 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   /// 统一设置 mpv 的 playlist-on-error 行为，避免播放失败时自动跳转下一条
   Future<void> _configurePlaylistErrorPolicy() async {
-    final dynamic mpvPlayer = player.platform;
-    if (mpvPlayer == null) {
-      _logDebug('未获取到 mpv 实例，无法配置 playlist-on-error');
+    if (_playlistErrorPolicyConfigured || kIsWeb) {
+      // Web 平台不存在 mpv 属性，直接跳过配置。
       return;
     }
 
-    try {
-      await mpvPlayer.setProperty('playlist-on-error', 'fail');
-      _logDebug('已设置 playlist-on-error=fail，播放失败将停留在当前条目');
-    } catch (e, stack) {
-      _log(
-        '设置 playlist-on-error 失败',
-        level: LogLevel.error,
-        error: e,
-        stackTrace: stack,
-      );
+    for (var attempt = 1; attempt <= _playlistPolicyMaxAttempts; attempt++) {
+      final dynamic mpvPlayer = player.platform;
+      if (mpvPlayer == null) {
+        _logDebug(
+          '第$attempt次尝试设置 playlist-on-error 失败：mpv 实例尚未就绪',
+        );
+        await Future.delayed(_playlistPolicyRetryDelay);
+        continue;
+      }
+
+      try {
+        await mpvPlayer.setProperty('playlist-on-error', 'fail');
+        _playlistErrorPolicyConfigured = true;
+        _logDebug(
+          '已设置 playlist-on-error=fail，播放失败将停留在当前条目（尝试$attempt次）',
+        );
+        return;
+      } on NoSuchMethodError {
+        _logDebug('当前平台不支持 playlist-on-error 属性，跳过配置');
+        return;
+      } catch (error, stack) {
+        _log(
+          '设置 playlist-on-error 失败，第$attempt次重试',
+          level: LogLevel.error,
+          error: error,
+          stackTrace: stack,
+        );
+        await Future.delayed(_playlistPolicyRetryDelay);
+      }
     }
+
+    _logDebug('多次尝试后仍未能设置 playlist-on-error，播放器可能会继续跳播');
   }
 
   // 加载文件夹的音轨和字幕记录
@@ -423,6 +483,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         currentPlayingIndex = playList
             .indexWhere((item) => item.extras!['name'] == currentPlayingName);
         _currentPlayingIndexNotifier.value = currentPlayingIndex;
+        _syncLinkModeFromPlaylist(currentPlayingIndex);
       });
     } finally {
       // 等待事件循环的下一帧再取消标记，避免排序触发的回调误判为视频切换
@@ -741,58 +802,88 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // Modified playlist change handler to check for local files
     player.stream.playlist.listen((event) async {
-      if (mounted) {
-        final videoName = playList.isNotEmpty && event.index < playList.length
-            ? playList[event.index].extras!['name'] as String
-            : "未知";
-        _logDebug(
-            '播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading');
-
-        if (_isReorderingPlaylist) {
-          _logDebug('检测到排序导致的播放列表变化，忽略进一步处理');
-          return;
-        }
-
-        // 如果是初始加载，跳过检查
-        if (_isInitialLoading) {
-          _logDebug('初始加载中，跳过本地文件检查');
-          return;
-        }
-
-        if (event.index == currentPlayingIndex) {
-          _logDebug('播放列表索引未发生变化，跳过进度保存');
-          return;
-        }
-
-        // 优化切换视频逻辑：先保存进度，再更新UI状态，然后异步处理其他操作
-        if (mounted) {
-          // 在设置_isLoading=true之前先保存当前视频进度
-          _logDebug('播放列表变化，准备保存当前视频进度');
-          await _saveCurrentProgress(updateUIImmediately: true);
-
-          setState(() {
-            currentPlayingIndex = event.index;
-            _currentPlayingIndexNotifier.value = event.index;
-            _isLoading = true;
-            _hasSeekInitialPosition = false;
-          });
-
-          // 在 setState 完成后再执行滚动
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            scrollToCurrentItem();
-          });
-
-          // 异步处理本地文件检查等其他操作
-          _handleVideoSwitchAsyncWithoutProgressSave(event.index);
-        }
+      if (!mounted) {
+        return;
       }
+
+      // 链接模式切换过程中会触发额外的 playlist 事件，这里直接忽略，避免重复处理。
+      if (_isSwitchingLinkMode) {
+        _logDebug('链接模式切换中，忽略 playlist 事件: 索引=${event.index}');
+        return;
+      }
+
+      final videoName = playList.isNotEmpty && event.index < playList.length
+          ? playList[event.index].extras!['name'] as String
+          : "未知";
+      _logDebug(
+          '播放列表变化: 索引=${event.index}, 视频=$videoName, 初始加载=$_isInitialLoading, userSwitch=$_isUserInitiatedSwitch');
+
+      // 手动切换已经在调用侧处理，这里只负责清理标记，避免与自动跳播逻辑冲突。
+      if (_isUserInitiatedSwitch) {
+        _logDebug('检测到来源于手动切换的 playlist 事件，跳过自动处理');
+        _isUserInitiatedSwitch = false;
+        return;
+      }
+
+      if (_isReorderingPlaylist) {
+        _logDebug('检测到排序导致的播放列表变化，忽略进一步处理');
+        return;
+      }
+
+      // 如果是初始加载，跳过检查
+      if (_isInitialLoading) {
+        _logDebug('初始加载中，跳过本地文件检查');
+        return;
+      }
+
+      if (event.index == currentPlayingIndex) {
+        _logDebug('播放列表索引未发生变化，跳过进度保存');
+        return;
+      }
+
+      // 如果存在未消除的播放错误且当前索引与失败索引不同，阻止 mpv 自动跳到下一条
+      if (_autoAdvanceBlockedIndex != null &&
+          event.index != _autoAdvanceBlockedIndex) {
+        _logDebug(
+          '检测到播放错误后的自动跳播: 当前索引=${event.index}, 失败索引=$_autoAdvanceBlockedIndex',
+        );
+        unawaited(player.pause());
+        unawaited(player.stop());
+        unawaited(player.jump(_autoAdvanceBlockedIndex!));
+        _autoAdvanceBlockedIndex = null;
+        return;
+      }
+
+      // 优化切换视频逻辑：先保存进度，再更新UI状态，然后异步处理其他操作
+      _logDebug('播放列表变化，准备保存当前视频进度');
+      await _saveCurrentProgress(updateUIImmediately: true);
+
+      _clearPlaybackErrorMessage(useSetState: false);
+      _autoAdvanceBlockedIndex = null;
+
+      setState(() {
+        currentPlayingIndex = event.index;
+        _currentPlayingIndexNotifier.value = event.index;
+        _syncLinkModeFromPlaylist(event.index);
+        _isLoading = true;
+        _hasSeekInitialPosition = false;
+      });
+
+      // 在 setState 完成后再执行滚动
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        scrollToCurrentItem();
+      });
+
+      // 异步处理本地文件检查等其他操作
+      _handleVideoSwitchAsyncWithoutProgressSave(event.index);
     });
 
-    // 错误监听统一提示，playlist-on-error=fail 已确保不会跳播
+    // 错误监听：阻止自动跳播并展示可复制的错误信息
     player.stream.error.listen((error) {
-      if (mounted) {
-        _showErrorMessage(error.toString());
+      if (!mounted) {
+        return;
       }
+      unawaited(_handlePlaybackFailure(error));
     });
 
     // 监听字幕轨道变化
@@ -877,9 +968,8 @@ class VideoPlayerState extends State<VideoPlayer> {
 
           final fallbackUrl =
               '$baseUrl${widget.path.substring(1)}/${entry.name}?sign=${entry.sign}';
-          // 基于指签回退地址构造可播放链接，后续可再次启用 raw_url 直链
-          final rawUrl = fallbackUrl;
-          final proxiedUrl = _wrapGoProxyUrl(rawUrl);
+          // sign 链接用作默认播放地址，待用户手动切换至 raw_url 时再动态请求
+          final proxiedUrl = _wrapGoProxyUrl(fallbackUrl);
 
           playMediaList.add(
             Media(
@@ -889,8 +979,11 @@ class VideoPlayerState extends State<VideoPlayer> {
                 'name': entry.name ?? '',
                 'size': entry.size ?? 0,
                 'modified': entry.modified ?? '',
-                // 记录原始地址便于调试与缓存策略分析
-                'rawUrl': rawUrl,
+                // 默认缓存 sign 链接，同时为 raw_url 预留占位
+                'signedUrl': fallbackUrl,
+                'rawUrl': null,
+                // 使用全局偏好作为初始链接模式，后续切换会按需覆盖。
+                'linkMode': _preferredLinkMode.name,
               },
             ),
           );
@@ -906,6 +999,8 @@ class VideoPlayerState extends State<VideoPlayer> {
             playList.add(media);
             index++;
           }
+          _currentLinkMode = PlaybackLinkMode.sign;
+          _linkModeNotifier.value = _currentLinkMode;
         });
 
         // 如果启用本地优先播放，检查并替换本地文件地址
@@ -959,6 +1054,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         // 初始加载时，手动设置当前播放索引
         currentPlayingIndex = playIndex;
         _currentPlayingIndexNotifier.value = playIndex;
+        _syncLinkModeFromPlaylist(playIndex);
 
         // 监听播放列表索引变化前，防止初始化时触发不必要的检查
         player.stream.playlist.first.then((event) {
@@ -967,11 +1063,19 @@ class VideoPlayerState extends State<VideoPlayer> {
 
         await player.open(playable, play: true);
 
+        // 如果用户的链接模式偏好为 raw_url，则在首个视频打开后自动切换到 raw_url。
+        if (_preferredLinkMode == PlaybackLinkMode.raw &&
+            !_isCurrentMediaLocal) {
+          _logDebug('根据偏好自动切换到 raw_url 播放模式');
+          unawaited(_applyPlaybackLinkMode(PlaybackLinkMode.raw));
+        }
+
         // 避免与播放列表变化监听冲突，手动设置初始值
         if (mounted && !_isInitialLoading) {
           setState(() {
             currentPlayingIndex = playIndex;
             _currentPlayingIndexNotifier.value = playIndex;
+            _syncLinkModeFromPlaylist(playIndex);
           });
         }
 
@@ -1106,6 +1210,188 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
   }
 
+  // 在播放器中切换 sign/raw_url 模式
+  Future<void> _togglePlaybackLinkMode() async {
+    if (_isSwitchingLinkMode) {
+      _logDebug('正在切换链接模式，忽略重复请求');
+      return;
+    }
+    final targetMode = _currentLinkMode == PlaybackLinkMode.sign
+        ? PlaybackLinkMode.raw
+        : PlaybackLinkMode.sign;
+    await _applyPlaybackLinkMode(targetMode);
+  }
+
+  Future<void> _applyPlaybackLinkMode(PlaybackLinkMode targetMode) async {
+    if (!mounted || playList.isEmpty) {
+      await _showLinkModeError('播放列表为空，无法切换播放链接。');
+      return;
+    }
+
+    if (currentPlayingIndex < 0 ||
+        currentPlayingIndex >= playList.length ||
+        playList[currentPlayingIndex].extras == null) {
+      await _showLinkModeError('当前播放项无效，无法切换播放链接。');
+      return;
+    }
+
+    if (_isCurrentMediaLocal) {
+      await _showLinkModeError('当前视频使用本地文件播放，暂不支持切换。');
+      return;
+    }
+
+    final previousMedia = playList[currentPlayingIndex];
+    final extras = Map<String, dynamic>.from(previousMedia.extras!);
+    final videoName = extras['name'] as String? ?? widget.name;
+    if (videoName.isEmpty) {
+      await _showLinkModeError('无法识别视频文件名，切换已取消。');
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isSwitchingLinkMode = true;
+      });
+    }
+
+    try {
+      String? targetUrl;
+      if (targetMode == PlaybackLinkMode.raw) {
+        targetUrl = await _ensureRawUrl(extras, videoName);
+      } else {
+        targetUrl = extras['signedUrl'] as String?;
+      }
+
+      if (targetUrl == null || targetUrl.isEmpty) {
+        await _showLinkModeError('缺少 ${targetMode.description} 地址。');
+        return;
+      }
+
+      extras['linkMode'] = targetMode.name;
+      final updatedMedia = Media(
+        _wrapGoProxyUrl(targetUrl),
+        httpHeaders: _currentProxyHeaders,
+        extras: extras,
+      );
+
+      playList[currentPlayingIndex] = updatedMedia;
+      _syncLinkModeFromPlaylist(currentPlayingIndex);
+
+      final wasPlaying = player.state.playing;
+      final currentPosition = player.state.position;
+
+      await player.open(
+        Playlist(playList, index: currentPlayingIndex),
+        play: false,
+      );
+
+      if (currentPosition > Duration.zero) {
+        await player.seek(currentPosition);
+      }
+
+      if (wasPlaying) {
+        await player.play();
+      }
+
+      _logDebug('已切换播放链接模式: ${targetMode.name}');
+
+      // 将用户选择的播放链接模式持久化，保证下次进入播放器时沿用当前偏好。
+      try {
+        _preferredLinkMode = targetMode;
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(
+          AppConstants.playbackLinkModeKey,
+          targetMode.name,
+        );
+        _logDebug('已持久化播放链接模式偏好: ${targetMode.name}');
+      } catch (persistError, persistStack) {
+        _log(
+          '持久化播放链接模式失败',
+          level: LogLevel.warning,
+          error: persistError,
+          stackTrace: persistStack,
+        );
+      }
+    } catch (e, stack) {
+      playList[currentPlayingIndex] = previousMedia;
+      _syncLinkModeFromPlaylist(currentPlayingIndex);
+      _logDebug('切换播放链接失败: $e', error: e, stackTrace: stack);
+      await _showLinkModeError('切换到 ${targetMode.description} 失败: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSwitchingLinkMode = false;
+        });
+      }
+    }
+  }
+
+  Future<String?> _ensureRawUrl(
+    Map<String, dynamic> extras,
+    String videoName,
+  ) async {
+    final cached = extras['rawUrl'] as String?;
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+
+    final resp = await FsApi.get(
+      path: '${widget.path}/${videoName}',
+      password: '',
+    );
+
+    if (resp.code != 200) {
+      throw Exception(resp.message ?? 'raw_url 接口返回错误');
+    }
+
+    final rawUrl = resp.data?.rawUrl;
+    if (rawUrl == null || rawUrl.isEmpty) {
+      throw Exception('raw_url 缺失');
+    }
+    extras['rawUrl'] = rawUrl;
+    return rawUrl;
+  }
+
+  Future<void> _showLinkModeError(String message) async {
+    _logDebug('播放链接切换失败: $message');
+    await _showSelectableErrorDialog(
+      title: '播放链接切换失败',
+      message: message,
+    );
+  }
+
+  Future<void> _showSelectableErrorDialog({
+    required String title,
+    required String message,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(title),
+          content: SelectableText.rich(
+            TextSpan(
+              text: message,
+              style: const TextStyle(
+                color: Colors.red,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('关闭'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // 切换本地优先播放设置
   Future<void> _toggleLocalPlaybackPreference() async {
     try {
@@ -1231,6 +1517,8 @@ class VideoPlayerState extends State<VideoPlayer> {
       await player.pause();
       await player.stop();
 
+      _clearPlaybackErrorMessage(useSetState: false);
+
       // 清空所有状态（保留历史记录缓存）
       setState(() {
         _isLoading = true;
@@ -1240,6 +1528,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         _availableSubtitles.clear();
         playList.clear();
         currentPlayingIndex = 0;
+        _syncLinkModeFromPlaylist(currentPlayingIndex);
         _currentPlayingIndexNotifier.value = 0;
         playIndex = 0;
         _hasSeekInitialPosition = false;
@@ -1259,6 +1548,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         _isLoading = false;
         _isInitialLoading = false;
       });
+      _clearPlaybackErrorMessage(useSetState: false);
 
       // 清除重新加载标志，恢复防抖保存功能
       _isReloadingInterface = false;
@@ -1723,12 +2013,15 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     _subtitleSearchController.dispose();
     _rateNotifier.dispose();
+    _linkModeNotifier.dispose();
     _showSpeedIndicator.dispose();
     _indicatorSpeedValue.dispose();
     _currentPlayingIndexNotifier.dispose();
     _speedIndicatorTimer?.cancel();
     _keyboardLongPressTimer?.cancel();
+    _playbackErrorDismissTimer?.cancel();
     _hideSpeedIndicatorOverlay();
+    _removePlaybackErrorOverlayEntry();
 
     // 注销键盘事件处理器
     HardwareKeyboard.instance.removeHandler(_handleHardwareKeyEvent);
@@ -1890,14 +2183,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                     // 使用更大的 iconSize 配合上方 IconButtonTheme，改善移动端的操控视觉与间距。
                     bottomButtonBar: [
                       // “上一集/下一集”按钮，确保移动端同样具备完整的集间切换能力。
-                      const MaterialSkipPreviousButton(
+                      buildSkipPreviousButton(
                         iconSize: 20,
                       ),
                       // 第二行：控制按钮
                       const MaterialPlayOrPauseButton(
                         iconSize: 20,
                       ),
-                      const MaterialSkipNextButton(
+                      buildSkipNextButton(
                         iconSize: 20,
                       ),
                       const MaterialDesktopVolumeButton(
@@ -1911,6 +2204,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                         ),
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
+                      buildLinkModeButton(),
                       buildSpeedButton(),
                       // buildAudioTrackButton(),
                       // buildSubtitleButton(),
@@ -1939,14 +2233,14 @@ class VideoPlayerState extends State<VideoPlayer> {
                     // 全屏下同样提高 iconSize，保持操作一致性。
                     bottomButtonBar: [
                       // 全屏态同样插入上一集按钮，保证横屏时也能一键回退。
-                      const MaterialSkipPreviousButton(
+                      buildSkipPreviousButton(
                         iconSize: 22,
                       ),
                       // 第二行：控制按钮
                       const MaterialPlayOrPauseButton(
                         iconSize: 22,
                       ),
-                      const MaterialSkipNextButton(
+                      buildSkipNextButton(
                         iconSize: 22,
                       ),
                       const MaterialDesktopVolumeButton(
@@ -1960,6 +2254,7 @@ class VideoPlayerState extends State<VideoPlayer> {
                         ),
                       ),
                       const Spacer(), // 将全屏按钮推到最右边
+                      buildLinkModeButton(),
                       buildSpeedButton(),
                       buildAudioTrackButton(),
                       buildSubtitleButton(),
@@ -1990,6 +2285,9 @@ class VideoPlayerState extends State<VideoPlayer> {
                           );
                         },
                       ),
+                      if (_playbackErrorMessage != null &&
+                          _shouldUseEmbeddedErrorOverlay())
+                        _buildPlaybackErrorOverlay(),
                     ],
                   ),
                 ),
@@ -2097,6 +2395,9 @@ class VideoPlayerState extends State<VideoPlayer> {
             controls: MaterialDesktopVideoControls,
           ),
         ),
+        if (_playbackErrorMessage != null &&
+            _shouldUseEmbeddedErrorOverlay())
+          _buildPlaybackErrorOverlay(),
       ],
     );
 
@@ -2122,12 +2423,13 @@ class VideoPlayerState extends State<VideoPlayer> {
             bottomButtonBarMargin:
                 const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
             bottomButtonBar: [
-              const MaterialDesktopSkipPreviousButton(),
+              buildSkipPreviousButton(iconSize: 24),
               const MaterialPlayOrPauseButton(),
-              const MaterialSkipNextButton(),
+              buildSkipNextButton(iconSize: 24),
               const MaterialDesktopVolumeButton(),
               const MaterialPositionIndicator(),
               const Spacer(), // 将全屏按钮推到最右边
+              buildLinkModeButton(),
               buildSpeedButton(),
               buildAudioTrackButton(),
               buildSubtitleButton(),
@@ -2153,12 +2455,13 @@ class VideoPlayerState extends State<VideoPlayer> {
               bottomButtonBarMargin:
                   const EdgeInsets.only(bottom: 0, left: 0, right: 0, top: 0),
               bottomButtonBar: [
-                const MaterialDesktopSkipPreviousButton(),
+                buildSkipPreviousButton(iconSize: 28),
                 const MaterialPlayOrPauseButton(),
-                const MaterialSkipNextButton(),
+                buildSkipNextButton(iconSize: 28),
                 const MaterialDesktopVolumeButton(),
                 const MaterialPositionIndicator(),
                 const Spacer(), // 将全屏按钮推到最右边
+                buildLinkModeButton(),
                 buildSpeedButton(),
                 buildAudioTrackButton(),
                 buildSubtitleButton(),
@@ -2261,6 +2564,33 @@ class VideoPlayerState extends State<VideoPlayer> {
 
   String _getVideoSha1(String path, String name) {
     return '${path}_$name'.hashCode.toString();
+  }
+
+  PlaybackLinkMode _resolveLinkModeForIndex(int index) {
+    if (playList.isEmpty || index < 0 || index >= playList.length) {
+      return PlaybackLinkMode.sign;
+    }
+    final extras = playList[index].extras;
+    final stored = extras != null ? extras['linkMode'] as String? : null;
+    return stored == PlaybackLinkMode.raw.name
+        ? PlaybackLinkMode.raw
+        : PlaybackLinkMode.sign;
+  }
+
+  void _syncLinkModeFromPlaylist(int index) {
+    final resolved = _resolveLinkModeForIndex(index);
+    _currentLinkMode = resolved;
+    _linkModeNotifier.value = resolved;
+  }
+
+  bool get _isCurrentMediaLocal {
+    if (playList.isEmpty ||
+        currentPlayingIndex < 0 ||
+        currentPlayingIndex >= playList.length) {
+      return false;
+    }
+    final uri = playList[currentPlayingIndex].uri;
+    return uri.startsWith('file://');
   }
 
   // 智能匹配字幕方法
@@ -2611,30 +2941,15 @@ class VideoPlayerState extends State<VideoPlayer> {
         ),
         child: InkWell(
           onTap: () async {
-            // 先保存当前视频进度，再切换视频 - 立即更新UI
-            await _saveCurrentProgress(updateUIImmediately: true);
-            if (mounted) {
-              // 如果在初始加载中，只执行视频切换
-              if (_isInitialLoading) {
-                _logDebug('初始加载中，跳过手动点击的本地文件检查');
-                player.jump(index);
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  scrollToCurrentItem();
-                });
-                return;
-              }
-
-              // 获取要切换到的视频信息
-              final videoName = playList[index].extras!['name'] as String;
-
-              _logDebug('手动点击列表项: 索引=$index, 视频=$videoName');
-
-              // 直接切换到选中的视频
-              player.jump(index);
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                scrollToCurrentItem();
-              });
+            if (!mounted) {
+              return;
             }
+
+            // 获取要切换到的视频信息，仅用于日志输出
+            final videoName = playList[index].extras!['name'] as String;
+            _logDebug('手动点击列表项: 索引=$index, 视频=$videoName');
+
+            await _jumpToIndexFromUser(index);
           },
           hoverColor: Colors.blue.withValues(alpha: 0.05),
           child: Padding(
@@ -3065,6 +3380,59 @@ class VideoPlayerState extends State<VideoPlayer> {
     );
   }
 
+  // 控制栏 raw/sign 切换按钮，同时展示当前模式与切换状态
+  Widget buildLinkModeButton() {
+    return MaterialCustomButton(
+      onPressed: () {
+        if (_isSwitchingLinkMode) {
+          return;
+        }
+        if (_isCurrentMediaLocal) {
+          unawaited(_showLinkModeError('当前视频使用本地文件播放，暂不支持切换。'));
+          return;
+        }
+        unawaited(_togglePlaybackLinkMode());
+      },
+      icon: ValueListenableBuilder<PlaybackLinkMode>(
+        valueListenable: _linkModeNotifier,
+        builder: (context, mode, _) {
+          final nextMode =
+              mode == PlaybackLinkMode.sign ? 'raw_url' : 'sign';
+          final label = _isCurrentMediaLocal ? 'LOCAL' : mode.label;
+          final tooltip = _isCurrentMediaLocal
+              ? '正在使用本地缓存，无法切换链接'
+              : '切换至 $nextMode';
+
+          if (_isSwitchingLinkMode) {
+            return const Tooltip(
+              message: '正在切换播放链接',
+              child: SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+            );
+          }
+
+          return Tooltip(
+            message: tooltip,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // 修改 buildSpeedButton 中的显示方法
   Widget buildSpeedButton() {
     return MaterialCustomButton(
@@ -3086,6 +3454,28 @@ class VideoPlayerState extends State<VideoPlayer> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget buildSkipPreviousButton({double iconSize = 20}) {
+    return MaterialCustomButton(
+      onPressed: _goToPreviousVideo,
+      icon: Icon(
+        Icons.skip_previous,
+        color: Colors.white,
+        size: iconSize,
+      ),
+    );
+  }
+
+  Widget buildSkipNextButton({double iconSize = 20}) {
+    return MaterialCustomButton(
+      onPressed: _goToNextVideo,
+      icon: Icon(
+        Icons.skip_next,
+        color: Colors.white,
+        size: iconSize,
       ),
     );
   }
@@ -3130,9 +3520,9 @@ class VideoPlayerState extends State<VideoPlayer> {
       const SingleActivator(LogicalKeyboardKey.mediaPlayPause): () =>
           player.playOrPause(),
       const SingleActivator(LogicalKeyboardKey.mediaTrackNext): () =>
-          player.next(),
+          _goToNextVideo(),
       const SingleActivator(LogicalKeyboardKey.mediaTrackPrevious): () =>
-          player.previous(),
+          _goToPreviousVideo(),
       const SingleActivator(LogicalKeyboardKey.space): () =>
           player.playOrPause(),
       const SingleActivator(LogicalKeyboardKey.keyJ): () {
@@ -3929,6 +4319,294 @@ class VideoPlayerState extends State<VideoPlayer> {
     return _currentAudio?.id == track.id;
   }
 
+  /// 处理播放失败：停止自动跳播并标记错误信息
+  Future<void> _handlePlaybackFailure(Object error) async {
+    final message = error.toString();
+    _log(
+      '播放失败，停止在当前条目: $message',
+      level: LogLevel.error,
+      error: error,
+    );
+    _lastFailedPlaylistIndex = currentPlayingIndex;
+    _autoAdvanceBlockedIndex = currentPlayingIndex;
+    _isUserInitiatedSwitch = false;
+
+    try {
+      await player.pause();
+    } catch (pauseError, stackTrace) {
+      _log(
+        '播放失败后暂停播放器异常',
+        level: LogLevel.warning,
+        error: pauseError,
+        stackTrace: stackTrace,
+      );
+    }
+
+    try {
+      await player.stop();
+    } catch (stopError, stackTrace) {
+      _log(
+        '播放失败后停止播放器异常',
+        level: LogLevel.warning,
+        error: stopError,
+        stackTrace: stackTrace,
+      );
+    }
+
+    if (mounted) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+
+    _showErrorMessage(message);
+  }
+
+  /// 清除错误提示并允许后续重新尝试
+  void _clearPlaybackErrorMessage({bool useSetState = true}) {
+    if (_playbackErrorMessage == null && _lastFailedPlaylistIndex == null) {
+      _removePlaybackErrorOverlayEntry();
+      _playbackErrorDismissTimer?.cancel();
+      return;
+    }
+
+    void clearFields() {
+      _playbackErrorMessage = null;
+      _lastFailedPlaylistIndex = null;
+      _autoAdvanceBlockedIndex = null;
+    }
+
+    _playbackErrorDismissTimer?.cancel();
+
+    if (!mounted) {
+      clearFields();
+      _removePlaybackErrorOverlayEntry();
+      return;
+    }
+
+    if (useSetState) {
+      setState(clearFields);
+    } else {
+      clearFields();
+    }
+
+    _updatePlaybackErrorOverlay();
+  }
+
+  /// 从用户交互发起的 index 跳转，统一处理进度保存、状态更新与异步逻辑。
+  Future<void> _jumpToIndexFromUser(int index) async {
+    if (playList.isEmpty) {
+      _logDebug('跳转失败: 播放列表为空');
+      return;
+    }
+    if (index < 0 || index >= playList.length) {
+      _logDebug('跳转失败: 无效索引 $index, 播放列表长度: ${playList.length}');
+      return;
+    }
+
+    _logDebug('用户请求跳转到索引: $index');
+
+    // 先保存当前视频进度
+    await _saveCurrentProgress(updateUIImmediately: true);
+    if (!mounted) {
+      return;
+    }
+
+    _clearPlaybackErrorMessage();
+    _disableAutoAdvanceGuard();
+
+    setState(() {
+      currentPlayingIndex = index;
+      _currentPlayingIndexNotifier.value = index;
+      _syncLinkModeFromPlaylist(index);
+      _isLoading = true;
+      _hasSeekInitialPosition = false;
+    });
+
+    player.jump(index);
+
+    // 标记为手动切换，防止 playlist 监听再次介入导致错误回滚。
+    _isUserInitiatedSwitch = true;
+
+    // 如果当前全局偏好为 raw_url，则为新视频自动应用 raw_url 链接。
+    if (_preferredLinkMode == PlaybackLinkMode.raw && !_isCurrentMediaLocal) {
+      _logDebug('根据当前偏好为索引 $index 应用 raw_url 链接');
+      unawaited(_applyPlaybackLinkMode(PlaybackLinkMode.raw));
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      scrollToCurrentItem();
+    });
+
+    // 异步处理字幕等后续工作
+    _handleVideoSwitchAsyncWithoutProgressSave(index);
+  }
+
+  /// 手动交互前关闭自动跳播拦截，允许用户自由切换集数。
+  void _disableAutoAdvanceGuard() {
+    _autoAdvanceBlockedIndex = null;
+    _lastFailedPlaylistIndex = null;
+  }
+
+  /// 处理上一集操作，确保不会触发自动跳播拦截。
+  void _goToPreviousVideo() {
+    final targetIndex = currentPlayingIndex - 1;
+    if (targetIndex < 0) {
+      _logDebug('上一集跳转被忽略: 已经是第一集');
+      return;
+    }
+    unawaited(_jumpToIndexFromUser(targetIndex));
+  }
+
+  /// 处理下一集操作，确保不会触发自动跳播拦截。
+  void _goToNextVideo() {
+    final targetIndex = currentPlayingIndex + 1;
+    if (targetIndex >= playList.length) {
+      _logDebug('下一集跳转被忽略: 已经是最后一集');
+      return;
+    }
+    unawaited(_jumpToIndexFromUser(targetIndex));
+  }
+
+  /// 允许用户主动重新尝试当前视频的播放
+  Future<void> _retryCurrentVideo() async {
+    if (playList.isEmpty ||
+        currentPlayingIndex < 0 ||
+        currentPlayingIndex >= playList.length) {
+      return;
+    }
+
+    final targetIndex = currentPlayingIndex;
+    _logDebug('用户触发重试: 索引=$targetIndex');
+
+    _hasSeekInitialPosition = false;
+    await _jumpToIndexFromUser(targetIndex);
+  }
+
+  /// 将当前错误内容复制到剪贴板，便于反馈
+  Future<void> _copyPlaybackError() async {
+    final message = _playbackErrorMessage;
+    if (message == null) {
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: message));
+    _logDebug('播放错误信息已复制到剪贴板');
+  }
+
+  /// 构建统一的错误浮层，移动端与桌面端复用
+  Widget _buildPlaybackErrorOverlay({BuildContext? overlayContext}) {
+    final message = _playbackErrorMessage ?? '';
+    final BuildContext hostContext = overlayContext ?? context;
+    MediaQueryData? mediaQuery = MediaQuery.maybeOf(hostContext);
+    mediaQuery ??= MediaQuery.maybeOf(context);
+
+    Widget content = Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.78),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.redAccent.withOpacity(0.8),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.error_outline, color: Colors.redAccent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: SelectableText.rich(
+                  TextSpan(
+                    children: [
+                      const TextSpan(
+                        text: '播放失败：',
+                        style: TextStyle(
+                          color: Colors.redAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      TextSpan(
+                        text: message,
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 13,
+                          height: 1.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              IconButton(
+                tooltip: '关闭错误提示',
+                visualDensity: VisualDensity.compact,
+                onPressed: _clearPlaybackErrorMessage,
+                icon: const Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              TextButton(
+                onPressed: _retryCurrentVideo,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.redAccent.withOpacity(0.25),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 6,
+                    horizontal: 12,
+                  ),
+                ),
+                child: const Text('重试播放'),
+              ),
+              TextButton(
+                onPressed: _copyPlaybackError,
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  backgroundColor: Colors.blueGrey.withOpacity(0.25),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 6,
+                    horizontal: 12,
+                  ),
+                ),
+                child: const Text('复制错误信息'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    content = Material(
+      color: Colors.transparent,
+      child: content,
+    );
+
+    Widget overlayChild = SafeArea(child: content);
+    if (mediaQuery != null) {
+      overlayChild = MediaQuery(data: mediaQuery, child: overlayChild);
+    }
+
+    return Positioned(
+      top: 16,
+      left: 16,
+      right: 16,
+      child: overlayChild,
+    );
+  }
+
   // 添加错误处理方法
   void _showErrorMessage(String error) {
     // 检查是否是重复错误且在冷却时间内
@@ -3941,57 +4619,17 @@ class VideoPlayerState extends State<VideoPlayer> {
     // 更新错误显示时间
     _shownErrors[error] = now;
 
-    // 当 Widget 已销毁时直接退出，防止跨端环境中继续访问失效的 context。
+    // 更新错误提示内容，通过 SelectableText.rich 展示
     if (!mounted) {
-      _log('skip error toast, widget disposed: $error',
-          level: LogLevel.debug);
+      _playbackErrorMessage = error;
+      _schedulePlaybackErrorDismissal();
       return;
     }
-
-    // 预先缓存 ScaffoldMessengerState，确保 SnackBarAction 中不再依赖
-    // 已经卸载的 context，从而避免 gesture 回调抛出断言。
-    final scaffoldMessenger = ScaffoldMessenger.maybeOf(context);
-    if (scaffoldMessenger == null || !scaffoldMessenger.mounted) {
-      _log('ScaffoldMessenger unavailable, skip error toast: $error',
-          level: LogLevel.warning);
-      return;
-    }
-
-    // 如果有正在显示的错误提示，先移除它
-    if (_currentErrorSnackBar != null) {
-      scaffoldMessenger.hideCurrentSnackBar();
-    }
-
-    // 创建新的错误提示
-    _currentErrorSnackBar = SnackBar(
-      content: Row(
-        children: [
-          const Icon(Icons.error_outline, color: Colors.white),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '播放错误: $error',
-              style: const TextStyle(color: Colors.white),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ],
-      ),
-      backgroundColor: Colors.red,
-      duration: const Duration(seconds: 3),
-      action: SnackBarAction(
-        label: '关闭',
-        textColor: Colors.white,
-        onPressed: () {
-          // 使用缓存的 messenger 操作栈，避免回调阶段访问失效的 context。
-          scaffoldMessenger.hideCurrentSnackBar();
-        },
-      ),
-    );
-
-    // 显示错误提示
-    scaffoldMessenger.showSnackBar(_currentErrorSnackBar!);
+    setState(() {
+      _playbackErrorMessage = error;
+    });
+    _updatePlaybackErrorOverlay();
+    _schedulePlaybackErrorDismissal();
   }
 
   // 添加快捷键说明按钮
@@ -4269,6 +4907,83 @@ class VideoPlayerState extends State<VideoPlayer> {
     _speedIndicatorOverlay?.remove();
     _speedIndicatorOverlay = null;
     _showSpeedIndicator.value = false;
+  }
+
+  /// 判断是否需要将播放错误提示嵌入当前 Stack，而不是通过全局 OverlayEntry。
+  bool _shouldUseEmbeddedErrorOverlay() {
+    if (!mounted) {
+      return true;
+    }
+    final mediaQuery = MediaQuery.maybeOf(context);
+    if (mediaQuery == null) {
+      return true;
+    }
+    final bool isMobileLayout = mediaQuery.size.width < 600;
+    final bool isFullscreenContext =
+        FullscreenInheritedWidget.maybeOf(context) != null;
+    return isMobileLayout && !isFullscreenContext;
+  }
+
+  /// 根据当前布局动态更新播放错误浮层的呈现方式（嵌入或全局 Overlay）。
+  void _updatePlaybackErrorOverlay() {
+    final shouldShowError = _playbackErrorMessage?.isNotEmpty == true;
+    if (!mounted || !shouldShowError) {
+      _removePlaybackErrorOverlayEntry();
+      return;
+    }
+
+    if (_shouldUseEmbeddedErrorOverlay()) {
+      // 在需要嵌入式的场景下，直接移除 OverlayEntry，剩余渲染交给 Stack。
+      _removePlaybackErrorOverlayEntry();
+      return;
+    }
+
+    final overlayState = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlayState == null) {
+      _log(
+        'Overlay 不可用，播放失败浮层无法展示',
+        level: LogLevel.warning,
+      );
+      return;
+    }
+
+    if (_playbackErrorOverlayEntry == null) {
+      _playbackErrorOverlayEntry = OverlayEntry(
+        builder: (overlayContext) => InheritedTheme.captureAll(
+          context,
+          _buildPlaybackErrorOverlay(
+            overlayContext: overlayContext,
+          ),
+        ),
+      );
+      overlayState.insert(_playbackErrorOverlayEntry!);
+    } else {
+      _playbackErrorOverlayEntry!.markNeedsBuild();
+    }
+  }
+
+  /// 移除全局播放错误浮层，适配切换视频或恢复成功等场景。
+  void _removePlaybackErrorOverlayEntry() {
+    _playbackErrorOverlayEntry?.remove();
+    _playbackErrorOverlayEntry = null;
+  }
+
+  /// 在 2 秒后自动关闭错误提示，除非用户提前清理或新错误覆盖旧错误。
+  void _schedulePlaybackErrorDismissal() {
+    _playbackErrorDismissTimer?.cancel();
+    if (_playbackErrorMessage == null) {
+      return;
+    }
+    _playbackErrorDismissTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) {
+        _playbackErrorMessage = null;
+        _lastFailedPlaylistIndex = null;
+        _autoAdvanceBlockedIndex = null;
+        _removePlaybackErrorOverlayEntry();
+        return;
+      }
+      _clearPlaybackErrorMessage();
+    });
   }
 
   // 统一处理键盘右箭头的长按与短按逻辑
@@ -4757,6 +5472,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    _updatePlaybackErrorOverlay();
 
     // Refresh which videos are available locally when dependencies change
     // This ensures the UI gets updated when new downloads complete

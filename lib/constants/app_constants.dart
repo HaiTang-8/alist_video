@@ -65,6 +65,8 @@ class AppConstants {
   static const double defaultPlaybackSpeed = 1.0;
   static const double longPressPlaybackSpeed = 2.0;
   static const defaultItemHeight = 72.0;
+  // 远程播放链接模式（sign/raw_url）持久化键名
+  static const String playbackLinkModeKey = 'playback_link_mode';
 
   // 播放速度对话框相关
   static const double speedDialogWidth = 300.0;
