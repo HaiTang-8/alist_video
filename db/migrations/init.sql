@@ -23,16 +23,16 @@ CREATE INDEX idx_favorite_directories_user_id ON public.t_favorite_directories U
 -- DROP TABLE t_historical_records;
 
 CREATE TABLE t_historical_records (
-                                      video_sha1 varchar(32) NOT NULL, -- 文件sha1的值
+                                      -- 使用 64 长度以兼容 40 位 SHA1 十六进制字符串，避免插入时被截断报 400
+                                      video_sha1 varchar(64) NOT NULL, -- 文件sha1的值
                                       video_path varchar(2000) NULL, -- 文件路径
                                       video_seek int4 NULL, -- 视频播放进度(单位s）
-                                      user_id int4 NULL, -- 用户id
+                                      user_id int4 NOT NULL, -- 用户id
                                       change_time timestamp(6) NULL, -- 更改时间
                                       video_name varchar(1000) NULL, -- 文件名
                                       total_video_duration int4 NULL, -- 视频总时长(单位S)
                                       screenshot bytea NULL,
-                                      CONSTRAINT t_historical_records_pk PRIMARY KEY (video_sha1),
-                                      CONSTRAINT unique_video_user UNIQUE (video_sha1, user_id)
+                                      CONSTRAINT t_historical_records_pk PRIMARY KEY (video_sha1, user_id)
 );
 COMMENT ON TABLE public.t_historical_records IS '历史记录表';
 
