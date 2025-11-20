@@ -21,7 +21,6 @@ class ProxyQualityBadge extends StatefulWidget {
 
 class _ProxyQualityBadgeState extends State<ProxyQualityBadge> {
   ProxyMetrics? _metrics;
-  String? _error;
   bool _loading = false;
   double? _clientRttMs;
   Timer? _timer;
@@ -53,7 +52,6 @@ class _ProxyQualityBadgeState extends State<ProxyQualityBadge> {
         _metrics = data;
         _loading = false;
         _clientRttMs = rtt;
-        _error = null;
       });
     } catch (e) {
       if (!mounted) return;
@@ -68,17 +66,19 @@ class _ProxyQualityBadgeState extends State<ProxyQualityBadge> {
   @override
   Widget build(BuildContext context) {
     final metrics = _metrics;
-    final success = metrics?.successRate ?? 0;
+    final nodes = _buildNodeViews(metrics);
+    final bottleneck = _pickBottleneck(nodes);
+    final success = bottleneck?.successRate ?? 0;
     final color = success >= 0.99
         ? Colors.green
         : (success >= 0.95 ? Colors.orange : Colors.red);
-    final title =
-        _loading ? '刷新中...' : '代理 ${(success * 100).toStringAsFixed(1)}%';
-    final subtitle = metrics == null
-        ? (_error ?? '等待数据')
+    final title = _loading ? '刷新中...' : '瓶颈：${bottleneck?.label ?? '等待数据'}';
+    final subtitle = bottleneck == null
+        ? 'RTT ${_clientRttMs?.toStringAsFixed(0) ?? "--"} ms'
         : 'RTT ${_clientRttMs?.toStringAsFixed(0) ?? "--"} ms · '
-            'P50 ${metrics.p50LatencyMs.toStringAsFixed(0)} ms · '
-            'RPM ${metrics.requestsPerMinute.toStringAsFixed(1)}';
+            '成功率 ${(success * 100).toStringAsFixed(1)}% · '
+            '${bottleneck.throughputLabel} · '
+            'P90 ${bottleneck.p90LatencyMs.toStringAsFixed(0)} ms';
 
     return Padding(
       padding: widget.padding,
@@ -143,7 +143,7 @@ class _ProxyQualityBadgeState extends State<ProxyQualityBadge> {
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: _expanded
-                  ? _buildDetailCard(context, metrics, color)
+                  ? _buildDetailCard(context, bottleneck, nodes, color)
                   : const SizedBox.shrink(),
             ),
           ],
@@ -154,10 +154,11 @@ class _ProxyQualityBadgeState extends State<ProxyQualityBadge> {
 
   Widget _buildDetailCard(
     BuildContext context,
-    ProxyMetrics? metrics,
+    _NodeView? bottleneck,
+    List<_NodeView> nodes,
     Color color,
   ) {
-    if (metrics == null) {
+    if (nodes.isEmpty) {
       return const SizedBox.shrink();
     }
     return Container(
@@ -181,81 +182,92 @@ class _ProxyQualityBadgeState extends State<ProxyQualityBadge> {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '总体：${(metrics.successRate * 100).toStringAsFixed(2)}% · '
-            '本机→Go RTT ${_clientRttMs?.toStringAsFixed(0) ?? "--"} ms · '
-            'P50 ${metrics.p50LatencyMs.toStringAsFixed(0)} ms · '
-            'P90 ${metrics.p90LatencyMs.toStringAsFixed(0)} ms',
+            '当前最慢：${bottleneck?.label ?? "--"}',
             style: TextStyle(
               fontWeight: FontWeight.bold,
               color: color,
             ),
           ),
           const SizedBox(height: 8),
-          if (metrics.hops.isEmpty)
-            Text(
-              '未获取到链路节点数据',
-              style: TextStyle(color: Colors.grey[700], fontSize: 12),
-            )
-          else
-            ...metrics.hops.map((hop) {
-              final hopColor = hop.successRate >= 0.99
-                  ? Colors.green
-                  : (hop.successRate >= 0.95 ? Colors.orange : Colors.red);
-              final stale = hop.staleSeconds > 60
-                  ? ' (延迟 ${hop.staleSeconds.toStringAsFixed(0)}s)'
-                  : '';
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      hop.endpoint,
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                      ),
+          ...nodes.map(
+            (node) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.adjust,
+                    size: 14,
+                    color: node.color,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '${node.label} · '
+                      '成功率 ${(node.successRate * 100).toStringAsFixed(2)}% · '
+                      '${node.throughputLabel} · '
+                      'P90 ${node.p90LatencyMs.toStringAsFixed(0)} ms',
+                      style: TextStyle(fontSize: 11, color: node.color),
                     ),
-                    Text(
-                      '成功率 ${(hop.successRate * 100).toStringAsFixed(2)}% · '
-                      'P50 ${hop.p50LatencyMs.toStringAsFixed(0)} ms · '
-                      'P90 ${hop.p90LatencyMs.toStringAsFixed(0)} ms · '
-                      '下行 ${hop.throughputKbps.toStringAsFixed(1)} KB/s · '
-                      'RPM ${hop.requestsPerMinute.toStringAsFixed(2)}$stale',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: hopColor,
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }),
-          const SizedBox(height: 8),
-          Text(
-            '累计 ${metrics.totalRequests} 次 · 错误 ${metrics.totalErrors} · '
-            '下行 ${(metrics.totalBytes / (1024 * 1024)).toStringAsFixed(2)} MB',
-            style: TextStyle(fontSize: 11, color: Colors.grey[700]),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildErrorCard(String message) {
-    return Container(
-      key: const ValueKey('error'),
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.redAccent),
+  List<_NodeView> _buildNodeViews(ProxyMetrics? metrics) {
+    if (metrics == null) return const [];
+    final list = <_NodeView>[
+      _NodeView(
+        label: '入口(Go)',
+        successRate: metrics.successRate,
+        p90LatencyMs: metrics.p90LatencyMs,
+        throughputKbps: metrics.avgThroughputKbps,
       ),
-      child: SelectableText(
-        message,
-        style: const TextStyle(color: Colors.red, fontSize: 12),
+      ...metrics.hops.map(
+        (hop) => _NodeView(
+          label: hop.endpoint,
+          successRate: hop.successRate,
+          p90LatencyMs: hop.p90LatencyMs,
+          throughputKbps: hop.throughputKbps,
+        ),
       ),
-    );
+    ];
+    return list;
   }
+
+  _NodeView? _pickBottleneck(List<_NodeView> nodes) {
+    if (nodes.isEmpty) return null;
+    nodes.sort((a, b) {
+      final sr = a.successRate.compareTo(b.successRate);
+      if (sr != 0) return sr; // 成功率低更差
+      final tp = a.throughputKbps.compareTo(b.throughputKbps);
+      if (tp != 0) return tp; // 吞吐低更差
+      return b.p90LatencyMs.compareTo(a.p90LatencyMs); // 延迟高更差
+    });
+    return nodes.first;
+  }
+}
+
+class _NodeView {
+  final String label;
+  final double successRate;
+  final double p90LatencyMs;
+  final double throughputKbps;
+
+  _NodeView({
+    required this.label,
+    required this.successRate,
+    required this.p90LatencyMs,
+    required this.throughputKbps,
+  });
+
+  Color get color => successRate >= 0.99
+      ? Colors.green
+      : (successRate >= 0.95 ? Colors.orange : Colors.red);
+
+  String get throughputLabel => '${throughputKbps.toStringAsFixed(1)} KB/s';
 }

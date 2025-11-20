@@ -26,7 +26,7 @@
 #     sudo ./go_proxy_service.sh start      # 启动
 #     sudo ./go_proxy_service.sh stop       # 停止
 #     sudo ./go_proxy_service.sh restart    # 重启
-#     sudo ./go_proxy_service.sh status          # 查看状态
+#     sudo ./go_proxy_service.sh status     # 查看状态
 #     sudo ./go_proxy_service.sh logs       # 实时日志
 
 set -euo pipefail
@@ -65,6 +65,10 @@ ESCAPED_WORK_DIR="$(printf '%q' "${WORK_DIR}")"
 
 # systemd 服务单元文件路径
 UNIT_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
+
+# 日志落盘位置，默认与可执行文件同级目录
+LOG_DIR="${SCRIPT_DIR}/logs"
+LOG_FILE="${LOG_DIR}/${SERVICE_NAME}.log"
 
 #------------- 通用辅助函数 -------------#
 
@@ -136,9 +140,13 @@ Type=simple
 User=${SERVICE_USER}
 Group=${SERVICE_GROUP}
 WorkingDirectory=${ESCAPED_WORK_DIR}
-ExecStart=${ESCAPED_EXECUTABLE_PATH}
+PermissionsStartOnly=true
+ExecStartPre=/bin/mkdir -p ${LOG_DIR}
+ExecStart=/bin/sh -c '${ESCAPED_EXECUTABLE_PATH} >> ${LOG_FILE} 2>&1'
 Restart=on-failure
 RestartSec=5
+StandardOutput=append:${LOG_FILE}
+StandardError=append:${LOG_FILE}
 
 [Install]
 WantedBy=multi-user.target
