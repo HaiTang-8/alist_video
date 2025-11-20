@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 
-/// 字体帮助类，用于处理不同平台的字体配置
+/// 字体帮助类，用于处理不同平台的字体配置。
 class FontHelper {
   /// Windows平台的字体回退列表
   static const List<String> _windowsFontFallback = [
@@ -11,6 +11,19 @@ class FontHelper {
     'Microsoft JhengHei', // 微软正黑体
     'PingFang SC',      // 苹方简体
     'Noto Sans CJK SC', // 思源黑体简体
+  ];
+
+  /// Windows平台的等宽字体回退列表。
+  ///
+  /// 优先选择 Consolas / Cascadia 系列，其次回退到 Courier New，
+  /// 最后回退到通用的 monospace，尽可能保证日志等内容在 Windows
+  /// 下也有清晰、统一的显示效果。
+  static const List<String> _windowsMonospaceFallback = [
+    'Consolas',
+    'Cascadia Code',
+    'Cascadia Mono',
+    'Courier New',
+    'monospace',
   ];
 
   /// 获取适合当前平台的字体族名
@@ -49,6 +62,45 @@ class FontHelper {
       decoration: decoration,
       fontFamily: fontFamily ?? getPlatformFontFamily(),
       fontFamilyFallback: fontFamilyFallback ?? getPlatformFontFallback(),
+    );
+  }
+
+  /// 创建等宽字体的 TextStyle。
+  ///
+  /// - Windows 下显式指定等宽字体家族，避免默认字体对中文日志渲染不佳；
+  /// - 其他平台保持使用通用的 'monospace'，交由系统映射到适配字体。
+  static TextStyle createMonospaceTextStyle({
+    double? fontSize,
+    FontWeight? fontWeight,
+    Color? color,
+    double? letterSpacing,
+    double? height,
+    TextDecoration? decoration,
+  }) {
+    if (Platform.isWindows) {
+      return TextStyle(
+        fontSize: fontSize,
+        fontWeight: fontWeight,
+        color: color,
+        letterSpacing: letterSpacing,
+        height: height,
+        decoration: decoration,
+        fontFamily: _windowsMonospaceFallback.first,
+        fontFamilyFallback: _windowsMonospaceFallback,
+      );
+    }
+
+    // 非 Windows 平台使用通用等宽族名，让系统自行选择合适的等宽字体。
+    return const TextStyle(
+      fontFamily: 'monospace',
+      fontFamilyFallback: ['monospace'],
+    ).copyWith(
+      fontSize: fontSize,
+      fontWeight: fontWeight,
+      color: color,
+      letterSpacing: letterSpacing,
+      height: height,
+      decoration: decoration,
     );
   }
 

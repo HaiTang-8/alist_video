@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:alist_player/utils/font_helper.dart';
 import '../../utils/download_settings_manager.dart';
 import '../../utils/download_manager.dart';
 import '../../utils/download_adapter.dart';
@@ -785,10 +786,11 @@ class _DownloadSettingsPageState extends State<DownloadSettingsPage> {
                 const SizedBox(height: 8),
                 Text(
                   e.toString(),
-                  style: TextStyle(
+                  // 扫描错误信息使用等宽字体，提升日志可读性并在
+                  // Windows 下避免默认字体导致的显示异常。
+                  style: FontHelper.createMonospaceTextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.error,
-                    fontFamily: 'monospace',
                   ),
                 ),
               ],

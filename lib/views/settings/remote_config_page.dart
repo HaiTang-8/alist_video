@@ -3,6 +3,7 @@ import 'package:alist_player/utils/config_server.dart';
 import 'package:alist_player/utils/network_scanner.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
+import 'package:alist_player/utils/font_helper.dart';
 
 class RemoteConfigPage extends StatefulWidget {
   const RemoteConfigPage({super.key});
@@ -822,9 +823,13 @@ class _RemoteConfigPageState extends State<RemoteConfigPage> with SingleTickerPr
                           ),
                           child: Text(
                             log,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              fontFamily: 'monospace',
-                              color: log.contains('错误') || log.contains('失败')
+                            // 远程配置日志使用等宽字体，便于在 Windows /
+                            // macOS 等平台上对齐查看关键字段。
+                            style: FontHelper.createMonospaceTextStyle(
+                              fontSize:
+                                  theme.textTheme.bodyMedium?.fontSize ?? 14,
+                              color: log.contains('错误') ||
+                                      log.contains('失败')
                                   ? theme.colorScheme.error
                                   : log.contains('成功')
                                       ? Colors.green
@@ -1454,10 +1459,21 @@ class _RemoteConfigPageState extends State<RemoteConfigPage> with SingleTickerPr
                                                 ),
                                               ),
                                               child: Text(
-                                                item.type == 'password' ? '••••••••' : item.value,
-                                                style: theme.textTheme.bodyMedium?.copyWith(
-                                                  fontFamily: 'monospace',
-                                                  color: theme.colorScheme.primary,
+                                                item.type == 'password'
+                                                    ? '••••••••'
+                                                    : item.value,
+                                                // 使用等宽字体渲染配置值，保证在
+                                                // Windows 下中英文字符宽度一致，
+                                                // 方便比对、排查配置差异。
+                                                style: FontHelper
+                                                    .createMonospaceTextStyle(
+                                                  fontSize: theme
+                                                          .textTheme
+                                                          .bodyMedium
+                                                          ?.fontSize ??
+                                                      14,
+                                                  color: theme
+                                                      .colorScheme.primary,
                                                 ),
                                               ),
                                             ),

@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:alist_player/utils/font_helper.dart';
 import '../utils/logger.dart';
 
 class LogViewerPage extends StatefulWidget {
@@ -291,8 +292,9 @@ class _LogViewerPageState extends State<LogViewerPage> {
                               ),
                               child: SelectableText(
                                 line,
-                                style: TextStyle(
-                                  fontFamily: 'monospace',
+                                // 使用统一的等宽字体样式，确保 Windows 下
+                                // 日志内容字符对齐且中英文混排清晰。
+                                style: FontHelper.createMonospaceTextStyle(
                                   fontSize: 12,
                                   color: _getTextColor(line),
                                 ),

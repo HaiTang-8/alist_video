@@ -4765,9 +4765,10 @@ class VideoPlayerState extends State<VideoPlayer> {
             ),
             child: Text(
               key,
-              style: const TextStyle(
+              // 使用等宽字体展示快捷键，确保在 Windows 下字符对齐，
+              // 避免默认西文字体导致中英文混排不一致。
+              style: FontHelper.createMonospaceTextStyle(
                 fontWeight: FontWeight.bold,
-                fontFamily: 'monospace',
               ),
             ),
           ),

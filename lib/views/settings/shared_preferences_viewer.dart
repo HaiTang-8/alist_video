@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:alist_player/utils/font_helper.dart';
 
 class SharedPreferencesViewer extends StatefulWidget {
   const SharedPreferencesViewer({super.key});
@@ -306,8 +307,11 @@ class _SharedPreferencesViewerState extends State<SharedPreferencesViewer> {
                                             value is List
                                                 ? value.join('\n')
                                                 : value.toString(),
-                                            style: const TextStyle(
-                                              fontFamily: 'monospace',
+                                            // 使用 FontHelper 的等宽字体样式，
+                                            // 保证在 Windows 等平台上 key/value
+                                            // 内容对齐且字体渲染一致。
+                                            style: FontHelper
+                                                .createMonospaceTextStyle(
                                               fontSize: 14,
                                             ),
                                           ),
