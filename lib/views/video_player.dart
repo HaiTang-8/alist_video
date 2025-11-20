@@ -17,7 +17,9 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io'; // Add this import for File class and Platform
+import 'package:crypto/crypto.dart';
 import 'package:image/image.dart'
     as img; // Add this import for image processing
 import 'package:path_provider/path_provider.dart'; // Added for path_provider
@@ -119,6 +121,12 @@ class VideoPlayerState extends State<VideoPlayer> {
   Timer? _saveProgressDebounceTimer;
   bool _isSavingProgress = false;
   bool _isReloadingInterface = false; // 标志是否正在重新加载界面
+
+  /// 播放器流订阅统一收集，便于销毁时立即取消，避免事件晚到触发无效回调。
+  final List<StreamSubscription<dynamic>> _streamSubscriptions = [];
+
+  /// 定期输出调试信息的定时器，退出时需取消以防止后台任务泄漏。
+  Timer? _debugLogTimer;
 
   // 将 late 移除，提供默认值
   List<double> _playbackSpeeds = AppConstants.defaultPlaybackSpeeds;
@@ -230,26 +238,28 @@ class VideoPlayerState extends State<VideoPlayer> {
 
     // 加载自定义播放速度
     final customSpeed = prefs.getDouble(AppConstants.customPlaybackSpeedKey);
-    if (customSpeed != null) {
+    if (customSpeed != null && mounted) {
       setState(() {
         _customPlaybackSpeed = customSpeed;
       });
     }
 
     // 加载其他设置
-    setState(() {
-      _shortSeekDuration = Duration(
-        seconds: prefs.getInt(AppConstants.shortSeekKey) ??
-            AppConstants.defaultShortSeekDuration.inSeconds,
-      );
-      _longSeekDuration = Duration(
-        seconds: prefs.getInt(AppConstants.longSeekKey) ??
-            AppConstants.defaultLongSeekDuration.inSeconds,
-      );
-      _preferLocalPlayback =
-          prefs.getBool(AppConstants.preferLocalPlaybackKey) ??
-              AppConstants.defaultPreferLocalPlayback;
-    });
+    if (mounted) {
+      setState(() {
+        _shortSeekDuration = Duration(
+          seconds: prefs.getInt(AppConstants.shortSeekKey) ??
+              AppConstants.defaultShortSeekDuration.inSeconds,
+        );
+        _longSeekDuration = Duration(
+          seconds: prefs.getInt(AppConstants.longSeekKey) ??
+              AppConstants.defaultLongSeekDuration.inSeconds,
+        );
+        _preferLocalPlayback =
+            prefs.getBool(AppConstants.preferLocalPlaybackKey) ??
+                AppConstants.defaultPreferLocalPlayback;
+      });
+    }
 
     // 加载播放链接模式偏好（sign/raw_url），默认使用 sign 直链
     final linkModeName = prefs.getString(AppConstants.playbackLinkModeKey);
@@ -496,10 +506,12 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 获取当前登录信息，优先使用真实 userId，兼容历史 hash 行为
   Future<void> _loadCurrentUserIdentity() async {
     final identity = await UserSession.loadIdentity();
-    setState(() {
-      _currentUsername = identity.username;
-      _currentUserId = identity.effectiveUserId;
-    });
+    if (mounted) {
+      setState(() {
+        _currentUsername = identity.username;
+        _currentUserId = identity.effectiveUserId;
+      });
+    }
     if (_currentUserId == null) {
       _log(
         '未获取到当前登录用户 ID，后续操作可能失败',
@@ -733,7 +745,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     _loadPlaybackSpeeds();
 
     // 添加定期调试信息
-    Timer.periodic(const Duration(seconds: 30), (timer) {
+    _debugLogTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (!mounted) {
         timer.cancel();
         return;
@@ -764,18 +776,21 @@ class VideoPlayerState extends State<VideoPlayer> {
     HardwareKeyboard.instance.addHandler(_handleHardwareKeyEvent);
 
     // 监听播放速度变化
-    player.stream.rate.listen((rate) {
+    _streamSubscriptions.add(player.stream.rate.listen((rate) {
       _logDebug('播放器速率变更事件: ${rate.toStringAsFixed(2)}x');
       _rateNotifier.value = rate;
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _currentSpeed = rate;
       });
-    });
+    }));
 
     _loadCurrentUserIdentity();
     _openAndSeekVideo();
 
-    player.stream.buffer.listen((event) {
+    _streamSubscriptions.add(player.stream.buffer.listen((event) {
       if (event.inSeconds > 0 && mounted && !_hasSeekInitialPosition) {
         _seekToLastPosition(playList[currentPlayingIndex].extras!['name'])
             .then((_) {
@@ -785,7 +800,7 @@ class VideoPlayerState extends State<VideoPlayer> {
         });
         _hasSeekInitialPosition = true;
       }
-    });
+    }));
 
     // 2秒后标记初始加载完成，避免多次检查
     Future.delayed(const Duration(seconds: 2), () {
@@ -801,7 +816,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     });
 
     // Modified playlist change handler to check for local files
-    player.stream.playlist.listen((event) async {
+    _streamSubscriptions.add(player.stream.playlist.listen((event) async {
       if (!mounted) {
         return;
       }
@@ -876,36 +891,42 @@ class VideoPlayerState extends State<VideoPlayer> {
 
       // 异步处理本地文件检查等其他操作
       _handleVideoSwitchAsyncWithoutProgressSave(event.index);
-    });
+    }));
 
     // 错误监听：阻止自动跳播并展示可复制的错误信息
-    player.stream.error.listen((error) {
+    _streamSubscriptions.add(player.stream.error.listen((error) {
       if (!mounted) {
         return;
       }
       unawaited(_handlePlaybackFailure(error));
-    });
+    }));
 
     // 监听字幕轨道变化
-    player.stream.tracks.listen((tracks) {
+    _streamSubscriptions.add(player.stream.tracks.listen((tracks) {
+      if (!mounted) {
+        return;
+      }
       setState(() {});
 
       // 打印当前视频的字幕轨道列表
       _logDebug('当前视频字幕轨道列表: ${tracks.subtitle.length}个轨道');
       // 打印当前视频的音轨列表
       _logDebug('当前视频音轨列表: ${tracks.audio.length}个轨道');
-    });
+    }));
 
     // 监听当前选中的字幕和音轨
-    player.stream.track.listen((track) {
+    _streamSubscriptions.add(player.stream.track.listen((track) {
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _currentSubtitle = track.subtitle;
         _currentAudio = track.audio;
       });
-    });
+    }));
 
     // Add position monitoring to detect when video ends
-    player.stream.position.listen((position) {
+    _streamSubscriptions.add(player.stream.position.listen((position) {
       if (player.state.duration.inSeconds > 0 &&
           position.inSeconds >= player.state.duration.inSeconds - 1) {
         // Video reached the end, make sure it's paused
@@ -918,15 +939,15 @@ class VideoPlayerState extends State<VideoPlayer> {
           });
         }
       }
-    });
+    }));
 
     // 添加对播放状态的监听，在暂停时保存进度（使用防抖机制）
-    player.stream.playing.listen((isPlaying) {
+    _streamSubscriptions.add(player.stream.playing.listen((isPlaying) {
       if (!isPlaying && mounted) {
         // 使用防抖机制，避免频繁的暂停/播放操作触发多次保存
         _debouncedSaveProgress();
       }
-    });
+    }));
   }
 
   // 修改初始化视频加载方法，避免多次检查
@@ -1634,9 +1655,11 @@ class VideoPlayerState extends State<VideoPlayer> {
         _localFilePaths[path] = task.filePath;
 
         // Add to set of local videos for UI
-        setState(() {
-          _localVideos.add(fileName);
-        });
+        if (mounted) {
+          setState(() {
+            _localVideos.add(fileName);
+          });
+        }
 
         return task.filePath;
       }
@@ -1971,6 +1994,13 @@ class VideoPlayerState extends State<VideoPlayer> {
     Future<void> cleanup() async {
       try {
         _log('视频播放器正在清理资源...', level: LogLevel.debug);
+
+        // 先取消周期任务和流订阅，防止播放器销毁后仍有回调触发。
+        _debugLogTimer?.cancel();
+        for (final subscription in _streamSubscriptions) {
+          await subscription.cancel();
+        }
+        _streamSubscriptions.clear();
 
         if (_isPlayerDisposed) {
           _log('播放器已提前释放，跳过重复清理', level: LogLevel.debug);
@@ -2562,8 +2592,11 @@ class VideoPlayerState extends State<VideoPlayer> {
     );
   }
 
+  /// 生成跨端稳定的唯一标识，避免使用 hashCode 导致不同进程值不一致。
   String _getVideoSha1(String path, String name) {
-    return '${path}_$name'.hashCode.toString();
+    final normalized = '$path/$name';
+    final digest = sha1.convert(utf8.encode(normalized));
+    return digest.toString();
   }
 
   PlaybackLinkMode _resolveLinkModeForIndex(int index) {
@@ -5490,6 +5523,9 @@ class VideoPlayerState extends State<VideoPlayer> {
         final localPath = await _checkLocalFile(videoKey);
 
         if (localPath != null) {
+          if (!mounted) {
+            return;
+          }
           setState(() {
             _localVideos.add(videoName);
           });
@@ -5502,6 +5538,9 @@ class VideoPlayerState extends State<VideoPlayer> {
     final prefs = await SharedPreferences.getInstance();
     final speedsString = prefs.getStringList(AppConstants.playbackSpeedsKey);
     if (speedsString != null) {
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _playbackSpeeds = speedsString.map((s) => double.parse(s)).toList()
           ..sort();

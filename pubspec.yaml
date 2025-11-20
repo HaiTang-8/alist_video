@@ -37,6 +37,7 @@ dependencies:
   sqflite_common_ffi: ^2.3.3 # 桌面端通过 FFI 访问 SQLite
   sqflite_common_ffi_web: ^0.4.2 # Web 端 SQLite 兼容
   sqflite_common: ^2.5.5 # SQLite 抽象层供多端共享
+  crypto: ^3.0.3 # 生成跨端稳定的视频唯一标识
   universal_io: ^2.2.2 # 提供 io/http polyfill 以统一多端 API
   
 dependency_overrides:
