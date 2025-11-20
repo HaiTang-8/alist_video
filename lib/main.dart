@@ -6,6 +6,7 @@ import 'package:alist_player/models/database_persistence_type.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:alist_player/views/index.dart';
@@ -29,6 +30,8 @@ Future<void> main() async {
   final zoneFuture = runZonedGuarded<Future<void>>(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      // 这里保留 Google Fonts 默认行为（允许运行时拉取字体并本地缓存），
+      // 避免在未手动打包字体资源到 assets 时出现加载异常。
       MediaKit.ensureInitialized();
       timeago.setLocaleMessages('zh', timeago.ZhMessages());
       timeago.setLocaleMessages('zh_CN', timeago.ZhCnMessages());

@@ -1,32 +1,48 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
-/// 字体帮助类，用于处理不同平台的字体配置
+/// 字体帮助类，用于处理不同平台的字体配置。
+/// 
+/// 当前实现通过 Google Fonts 的 Noto Sans SC 作为统一的基础字体，
+/// 再结合一组常用系统字体作为回退，确保在：
+/// - Windows / macOS 桌面端
+/// - Android / iOS 移动端
+/// 上尽可能保持一致的中英文显示效果。
 class FontHelper {
-  /// Windows平台的字体回退列表
-  static const List<String> _windowsFontFallback = [
-    'Microsoft YaHei',  // 微软雅黑
-    'SimHei',           // 黑体
-    'SimSun',           // 宋体
-    'Microsoft JhengHei', // 微软正黑体
-    'PingFang SC',      // 苹方简体
+  /// 通用无衬线字体回退列表。
+  /// 
+  /// 顺序按照「更接近 Noto Sans SC」的程度排列，保证在目标字体
+  /// 无法加载时仍然有稳定的跨平台体验。
+  static const List<String> _commonSansFallback = [
     'Noto Sans CJK SC', // 思源黑体简体
+    'Source Han Sans SC', // 思源黑体（Adobe 版本）
+    'PingFang SC',      // macOS / iOS 系统中文 UI 字体
+    'Microsoft YaHei',  // Windows 常用中文 UI 字体
+    'Helvetica Neue',
+    'Helvetica',
+    'Arial',
+    'sans-serif',
   ];
 
-  /// 获取适合当前平台的字体族名
+  /// 获取应用统一使用的字体族名。
+  ///
+  /// 这里通过 GoogleFonts.notoSansSc() 返回的 fontFamily，确保在
+  /// 所有平台上使用同一套字体族配置，从而达到「跨平台字体统一」的目标。
   static String? getPlatformFontFamily() {
-    if (Platform.isWindows) {
-      return 'Microsoft YaHei';
-    }
-    return null;
+    // GoogleFonts 会在构建阶段将字体作为资源打包进应用，
+    // 结合 main.dart 中的 allowRuntimeFetching=false，可避免运行时拉取网络字体。
+    return GoogleFonts.notoSansSc().fontFamily ?? 'NotoSansSC';
   }
 
-  /// 获取适合当前平台的字体回退列表
+  /// 获取统一的字体回退列表。
+  ///
+  /// 包含 Google Fonts 字体自身以及常见系统无衬线字体，确保在某些
+  /// 平台或极端环境下缺少 Noto Sans SC 时仍能有合理的显示效果。
   static List<String>? getPlatformFontFallback() {
-    if (Platform.isWindows) {
-      return _windowsFontFallback;
-    }
-    return null;
+    return [
+      getPlatformFontFamily() ?? 'NotoSansSC',
+      ..._commonSansFallback,
+    ];
   }
 
   /// 创建带有平台优化的TextStyle
@@ -40,13 +56,18 @@ class FontHelper {
     String? fontFamily,
     List<String>? fontFamilyFallback,
   }) {
-    return TextStyle(
+    // 先使用 Noto Sans SC 生成基础样式，保证跨平台的主字体一致，
+    // 再叠加调用方传入的字体信息与统一的回退配置。
+    final base = GoogleFonts.notoSansSc(
       fontSize: fontSize,
       fontWeight: fontWeight,
       color: color,
       letterSpacing: letterSpacing,
       height: height,
       decoration: decoration,
+    );
+
+    return base.copyWith(
       fontFamily: fontFamily ?? getPlatformFontFamily(),
       fontFamilyFallback: fontFamilyFallback ?? getPlatformFontFallback(),
     );

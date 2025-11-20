@@ -30,6 +30,7 @@ dependencies:
   flutter_downloader: ^1.11.8 # 原生后台下载任务管理
   permission_handler: ^11.3.1 # 统一申请系统权限（存储、通知等）
   share_plus: ^7.2.2 # 调用系统分享面板
+  google_fonts: ^6.2.1 # 引入 Google Fonts 以统一跨平台 UI 字体
   scrollable_positioned_list: ^0.3.8 # 可定位的长列表展示
   volume_controller: ^2.0.7 # 多平台音量控制
   screen_brightness: ^2.1.2 # 调整设备亮度
