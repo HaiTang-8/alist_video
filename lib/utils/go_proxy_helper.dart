@@ -19,7 +19,9 @@ class GoProxyConfig {
   });
 
   /// 只有在用户开启代理、当前持久化驱动为 Go 服务且配置了可访问的端点时才启用。
+  /// 这里提前校验 enableProxy，确保关闭代理时所有播放/下载模块即时禁用代理链路。
   bool get shouldUseProxy =>
+      enableProxy &&
       endpoint.isNotEmpty &&
       (!usingBridgeEndpoint ||
           driverType == DatabasePersistenceType.localGoBridge);

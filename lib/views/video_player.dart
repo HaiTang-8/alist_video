@@ -2531,12 +2531,13 @@ class VideoPlayerState extends State<VideoPlayer> {
           const Center(
             child: CircularProgressIndicator(),
           ),
-        // 网络质量徽章：实时展示 Go 代理链路健康。
-        const Positioned(
-          top: 12,
-          right: 12,
-          child: ProxyQualityBadge(),
-        ),
+        // 网络质量徽章：仅在用户开启代理时展示，避免关闭代理后仍发起指标请求。
+        if (_shouldUseGoProxy)
+          const Positioned(
+            top: 12,
+            right: 12,
+            child: ProxyQualityBadge(),
+          ),
       ],
     );
   }
