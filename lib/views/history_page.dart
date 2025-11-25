@@ -247,9 +247,7 @@ class _HistoryPageState extends State<HistoryPage>
                   stats.orphanDetails.isEmpty
                       ? '未发现孤儿截图'
                       : '孤儿截图列表（${stats.orphanDetails.length}'
-                          '${stats.orphanOverflow > 0
-                              ? '+${stats.orphanOverflow}'
-                              : ''}'
+                          '${stats.orphanOverflow > 0 ? '+${stats.orphanOverflow}' : ''}'
                           '）',
                   style: labelStyle,
                 ),
@@ -326,8 +324,7 @@ class _HistoryPageState extends State<HistoryPage>
   ) {
     final infoBuffer = StringBuffer()
       ..write('用户ID: ${detail.userId} · SHA1: ${detail.videoSha1}\n')
-      ..write(
-          '大小: ${_formatFileSize(detail.sizeBytes)} · 修改时间: '
+      ..write('大小: ${_formatFileSize(detail.sizeBytes)} · 修改时间: '
           '${_formatModTime(detail.modTime)}');
 
     return Padding(
@@ -1075,6 +1072,7 @@ class _HistoryPageState extends State<HistoryPage>
       if (result == SnackBarClosedReason.timeout &&
           _lastDeletedRecord == deletedRecord) {
         await DatabaseHelper.instance.deleteHistoricalRecord(record.videoSha1);
+        await _deleteLocalScreenshotForRecord(record);
         _lastDeletedRecord = null;
         _lastDeletedGroupKey = null;
         unawaited(_runBackgroundScreenshotCleanup());
@@ -1137,8 +1135,14 @@ class _HistoryPageState extends State<HistoryPage>
       );
 
       if (confirmed == true) {
-        for (var sha1 in _selectedItems) {
-          await DatabaseHelper.instance.deleteHistoricalRecord(sha1);
+        final selectedRecords = _allRecords
+            .where((record) => _selectedItems.contains(record.videoSha1))
+            .toList();
+
+        for (final record in selectedRecords) {
+          await DatabaseHelper.instance
+              .deleteHistoricalRecord(record.videoSha1);
+          await _deleteLocalScreenshotForRecord(record);
         }
 
         setState(() {
@@ -1192,10 +1196,8 @@ class _HistoryPageState extends State<HistoryPage>
       final screenshotDir = Directory('${directory.path}/alist_player');
 
       // Sanitize path and name as done in the video player
-      final String sanitizedVideoPath =
-          record.videoPath.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
-      final String sanitizedVideoName =
-          record.videoName.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+      final String sanitizedVideoPath = _sanitizeForFilename(record.videoPath);
+      final String sanitizedVideoName = _sanitizeForFilename(record.videoName);
 
       // 首先尝试新的 JPEG 格式（压缩后的格式）
       final String jpegFileName =
@@ -1364,6 +1366,10 @@ class _HistoryPageState extends State<HistoryPage>
     }
   }
 
+  /// 统一的文件名清洗规则，确保路径/名称转换与保存、删除保持一致。
+  String _sanitizeForFilename(String input) =>
+      input.replaceAll(RegExp(r'[\/\\:*?"<>|\x00-\x1F]'), '_');
+
   // Clear image cache to force reload
   void _clearImageCache() {
     // Clear our screenshot path cache
@@ -1372,6 +1378,82 @@ class _HistoryPageState extends State<HistoryPage>
     // Clear Flutter's image cache
     imageCache.clear();
     imageCache.clearLiveImages();
+  }
+
+  /// 清空历史记录时同步删除本地截图文件，避免占用磁盘且界面继续引用过期缩略图。
+  Future<void> _deleteLocalScreenshots() async {
+    try {
+      final Directory appDocDir = await getApplicationDocumentsDirectory();
+      final Directory screenshotDir =
+          Directory('${appDocDir.path}/alist_player');
+      if (!await screenshotDir.exists()) {
+        return;
+      }
+
+      await for (final entity in screenshotDir.list(followLinks: false)) {
+        if (entity is! File) continue;
+        final fileName = path.basename(entity.path);
+        final looksLikeScreenshot = fileName.startsWith('screenshot_') &&
+            (fileName.endsWith('.jpg') || fileName.endsWith('.png'));
+        if (looksLikeScreenshot) {
+          await entity.delete();
+        }
+      }
+    } catch (e, stack) {
+      _log(
+        '清空历史时删除本地截图失败',
+        level: LogLevel.warning,
+        error: e,
+        stackTrace: stack,
+      );
+    } finally {
+      // 删除本地文件后强制清除内存缓存，保证界面刷新
+      _clearImageCache();
+    }
+  }
+
+  /// 删除指定历史记录关联的本地截图文件，保持手动删除与批量删除的一致性。
+  Future<void> _deleteLocalScreenshotForRecord(
+    HistoricalRecord record,
+  ) async {
+    try {
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final screenshotDir = Directory('${appDocDir.path}/alist_player');
+      if (!await screenshotDir.exists()) {
+        return;
+      }
+
+      final sanitizedVideoPath = _sanitizeForFilename(record.videoPath);
+      final sanitizedVideoName = _sanitizeForFilename(record.videoName);
+      final candidates = [
+        path.join(
+          screenshotDir.path,
+          'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.jpg',
+        ),
+        path.join(
+          screenshotDir.path,
+          'screenshot_${sanitizedVideoPath}_$sanitizedVideoName.png',
+        ),
+      ];
+
+      for (final filePath in candidates) {
+        final file = File(filePath);
+        if (await file.exists()) {
+          await file.delete();
+          imageCache.evict(FileImage(file)); // 避免已删文件仍被缓存显示
+        }
+      }
+
+      // 移除内存中的路径缓存，避免 UI 继续引用已删除的缩略图
+      _screenshotPathCache.remove('${record.videoPath}_${record.videoName}');
+    } catch (e, stack) {
+      _log(
+        '删除单条历史对应截图失败 video=${record.videoName}',
+        level: LogLevel.warning,
+        error: e,
+        stackTrace: stack,
+      );
+    }
   }
 
   // Preload screenshots in the background to avoid UI stutters
@@ -2259,6 +2341,7 @@ class _HistoryPageState extends State<HistoryPage>
       final userId = _requireUserId('清空历史记录');
       if (userId != null) {
         await DatabaseHelper.instance.clearUserHistoricalRecords(userId);
+        await _deleteLocalScreenshots();
         await _loadHistory();
         unawaited(_runBackgroundScreenshotCleanup());
         if (mounted) {
@@ -2450,8 +2533,7 @@ class _HistoryPageState extends State<HistoryPage>
             const SizedBox(height: 2),
             Text(
               '观看至 '
-              '${((record.videoSeek / record.totalVideoDuration) * 100)
-                  .toStringAsFixed(1)}%',
+              '${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.grey[500],
@@ -2466,10 +2548,7 @@ class _HistoryPageState extends State<HistoryPage>
   // 构建桌面端卡片内容 - 保持原有布局
   Widget _buildDesktopCardContent(HistoricalRecord record) {
     // 将时间格式化为本地短文本，便于缩略显示并减少字符串长度。
-    final watchedAt = record.changeTime
-        .toLocal()
-        .toString()
-        .substring(0, 16);
+    final watchedAt = record.changeTime.toLocal().toString().substring(0, 16);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2534,8 +2613,7 @@ class _HistoryPageState extends State<HistoryPage>
               const SizedBox(height: 4),
               Text(
                 '观看至 '
-                '${((record.videoSeek / record.totalVideoDuration) * 100)
-                    .toStringAsFixed(1)}%',
+                '${((record.videoSeek / record.totalVideoDuration) * 100).toStringAsFixed(1)}%',
                 style: TextStyle(
                   fontSize: 12,
                   color: Colors.grey[600],
