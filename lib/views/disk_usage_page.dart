@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -299,8 +300,45 @@ class _DiskUsagePageState extends State<DiskUsagePage> {
             subtleColor: subtleColor,
             totalSize: _totalSize,
             onRetry: _loadDiskUsage,
+            onItemTap: _copyPathToClipboard,
           ),
         ],
+      ),
+    );
+  }
+
+  /// 复制磁盘分类对应的存储路径到剪贴板，并给出结果反馈。
+  Future<void> _copyPathToClipboard(_DiskUsageItem item) async {
+    final path = item.detail;
+    if (path == null || path.isEmpty) {
+      if (!mounted) return;
+      _showClipboardMessage('未找到可复制的路径', isError: true);
+      return;
+    }
+
+    try {
+      await Clipboard.setData(ClipboardData(text: path));
+      if (!mounted) return;
+      _showClipboardMessage('${item.label}路径已复制');
+    } catch (e) {
+      if (!mounted) return;
+      _showClipboardMessage('复制失败: $e', isError: true);
+    }
+  }
+
+  /// SnackBar 形式的轻量提示，便于在桌面和移动端保持一致的反馈体验。
+  void _showClipboardMessage(
+    String message, {
+    bool isError = false,
+  }) {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: const Duration(seconds: 2),
+        behavior: SnackBarBehavior.floating,
       ),
     );
   }
@@ -407,6 +445,7 @@ class _DiskUsageCard extends StatelessWidget {
     required this.subtleColor,
     required this.totalSize,
     required this.onRetry,
+    required this.onItemTap,
   });
 
   final bool isLoading;
@@ -418,6 +457,7 @@ class _DiskUsageCard extends StatelessWidget {
   final Color subtleColor;
   final int totalSize;
   final VoidCallback onRetry;
+  final ValueChanged<_DiskUsageItem> onItemTap;
 
   @override
   Widget build(BuildContext context) {
@@ -582,6 +622,7 @@ class _DiskUsageCard extends StatelessWidget {
                         item: item,
                         subtleColor: subtleColor,
                         totalSize: totalSize,
+                        onTap: onItemTap,
                       ))
                   .toList(),
             ),
@@ -616,85 +657,100 @@ class _DiskUsageRow extends StatelessWidget {
     required this.item,
     required this.subtleColor,
     required this.totalSize,
+    this.onTap,
   });
 
   final _DiskUsageItem item;
   final Color subtleColor;
   final int totalSize;
+  final ValueChanged<_DiskUsageItem>? onTap;
 
   @override
   Widget build(BuildContext context) {
     final ratio =
         totalSize <= 0 ? 0.0 : (item.size / totalSize).clamp(0.0, 1.0);
+    final isClickable = item.detail?.isNotEmpty == true && onTap != null;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.18),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Icon(
-                  item.icon,
-                  color: Colors.white,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: isClickable ? () => onTap?.call(item) : null,
+          borderRadius: BorderRadius.circular(12),
+          splashColor: Colors.white24,
+          highlightColor: Colors.white12,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.18),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Icon(
+                        item.icon,
+                        color: Colors.white,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            item.label,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          if (item.detail != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              item.detail!,
+                              style: TextStyle(
+                                color: Colors.white.withOpacity(0.7),
+                                fontSize: 11,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
                     Text(
-                      item.label,
+                      _formatBytes(item.size),
                       style: const TextStyle(
                         color: Colors.white,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    if (item.detail != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        item.detail!,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.7),
-                          fontSize: 11,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
                   ],
                 ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                _formatBytes(item.size),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 10),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 6,
+                    backgroundColor: Colors.white.withOpacity(0.1),
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      item.color.withOpacity(0.9),
+                    ),
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: LinearProgressIndicator(
-              value: ratio,
-              minHeight: 6,
-              backgroundColor: Colors.white.withOpacity(0.1),
-              valueColor: AlwaysStoppedAnimation<Color>(
-                item.color.withOpacity(0.9),
-              ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
