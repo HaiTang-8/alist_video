@@ -163,6 +163,12 @@ class VideoPlayerState extends State<VideoPlayer> {
   int? _autoAdvanceBlockedIndex;
   bool _isUserInitiatedSwitch = false;
 
+  // 自动重试相关变量
+  static const int _maxAutoRetryAttempts = 5; // 最大自动重试次数
+  int _currentRetryAttempt = 0; // 当前重试次数
+  Timer? _autoRetryTimer; // 自动重试定时器
+  bool _isAutoRetrying = false; // 是否正在自动重试
+
   // 添加自定义播放速度相关变量
   double _customPlaybackSpeed = AppConstants.defaultCustomPlaybackSpeed;
   bool _isCustomSpeedEnabled = false;
@@ -2071,6 +2077,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     _speedIndicatorTimer?.cancel();
     _keyboardLongPressTimer?.cancel();
     _playbackErrorDismissTimer?.cancel();
+    _autoRetryTimer?.cancel(); // 取消自动重试定时器
     _hideSpeedIndicatorOverlay();
     _removePlaybackErrorOverlayEntry();
 
@@ -4380,7 +4387,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     return _currentAudio?.id == track.id;
   }
 
-  /// 处理播放失败：停止自动跳播并标记错误信息
+  /// 处理播放失败：停止自动跳播并标记错误信息，同时触发自动重试
   Future<void> _handlePlaybackFailure(Object error) async {
     final message = error.toString();
     _log(
@@ -4421,7 +4428,107 @@ class VideoPlayerState extends State<VideoPlayer> {
       });
     }
 
-    _showErrorMessage(message);
+    // 显示错误信息并触发自动重试
+    _showErrorMessageWithRetry(message);
+  }
+
+  /// 显示错误信息并启动自动重试机制
+  void _showErrorMessageWithRetry(String error) {
+    // 检查是否是重复错误且在冷却时间内
+    final now = DateTime.now();
+    final lastShown = _shownErrors[error];
+    if (lastShown != null && now.difference(lastShown) < _errorCooldown) {
+      return;
+    }
+
+    // 更新错误显示时间
+    _shownErrors[error] = now;
+
+    // 如果当前未在自动重试中，重置重试计数
+    if (!_isAutoRetrying) {
+      _currentRetryAttempt = 0;
+    }
+
+    // 更新错误提示内容
+    if (!mounted) {
+      _playbackErrorMessage = error;
+      _startAutoRetry();
+      return;
+    }
+    setState(() {
+      _playbackErrorMessage = error;
+    });
+    _updatePlaybackErrorOverlay();
+
+    // 启动自动重试
+    _startAutoRetry();
+  }
+
+  /// 启动自动重试机制
+  void _startAutoRetry() {
+    // 如果已达到最大重试次数，停止重试
+    if (_currentRetryAttempt >= _maxAutoRetryAttempts) {
+      _log(
+        '已达到最大自动重试次数 ($_maxAutoRetryAttempts)，停止重试',
+        level: LogLevel.warning,
+      );
+      _isAutoRetrying = false;
+      return;
+    }
+
+    _isAutoRetrying = true;
+    _currentRetryAttempt++;
+
+    _log(
+      '准备第 $_currentRetryAttempt/$_maxAutoRetryAttempts 次自动重试',
+      level: LogLevel.info,
+    );
+
+    // 取消之前的重试定时器
+    _autoRetryTimer?.cancel();
+
+    // 根据重试次数增加延迟时间（指数退避）
+    final delaySeconds = _currentRetryAttempt * 2;
+    _autoRetryTimer = Timer(Duration(seconds: delaySeconds), () {
+      if (mounted && _playbackErrorMessage != null) {
+        _performAutoRetry();
+      }
+    });
+
+    // 更新 UI 显示重试状态
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  /// 执行自动重试
+  Future<void> _performAutoRetry() async {
+    if (!mounted || _isExiting || _isPlayerDisposed) {
+      _isAutoRetrying = false;
+      return;
+    }
+
+    _log(
+      '执行第 $_currentRetryAttempt/$_maxAutoRetryAttempts 次自动重试',
+      level: LogLevel.info,
+    );
+
+    // 清除错误状态但保留重试计数
+    final retryAttempt = _currentRetryAttempt;
+    _clearPlaybackErrorMessage(useSetState: false);
+
+    // 恢复重试计数
+    _currentRetryAttempt = retryAttempt;
+
+    // 执行重试
+    await _retryCurrentVideo();
+  }
+
+  /// 重置自动重试状态（用于用户手动操作时）
+  void _resetAutoRetryState() {
+    _autoRetryTimer?.cancel();
+    _currentRetryAttempt = 0;
+    _isAutoRetrying = false;
   }
 
   /// 清除错误提示并允许后续重新尝试
@@ -4467,6 +4574,9 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
 
     _logDebug('用户请求跳转到索引: $index');
+
+    // 用户手动操作时重置自动重试状态
+    _resetAutoRetryState();
 
     // 先保存当前视频进度
     await _saveCurrentProgress(updateUIImmediately: true);
@@ -4572,101 +4682,342 @@ class VideoPlayerState extends State<VideoPlayer> {
     _logDebug('播放错误信息已复制到剪贴板');
   }
 
-  /// 构建统一的错误浮层，移动端与桌面端复用
+  /// 构建统一的错误浮层，移动端采用更紧凑的布局，桌面端保持原有样式
   Widget _buildPlaybackErrorOverlay({BuildContext? overlayContext}) {
     final message = _playbackErrorMessage ?? '';
     final BuildContext hostContext = overlayContext ?? context;
     MediaQueryData? mediaQuery = MediaQuery.maybeOf(hostContext);
     mediaQuery ??= MediaQuery.maybeOf(context);
 
-    Widget content = Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.78),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: Colors.redAccent.withOpacity(0.8),
-          width: 1,
+    // 判断是否为移动端布局（屏幕宽度小于 600dp）
+    final screenWidth = mediaQuery?.size.width ?? 600;
+    final isMobileLayout = screenWidth < 600;
+
+    // 截断错误信息，移动端最多显示 80 个字符，桌面端不限制
+    final displayMessage = isMobileLayout && message.length > 80
+        ? '${message.substring(0, 80)}...'
+        : message;
+
+    // 构建重试状态文本
+    String retryStatusText = '';
+    if (_isAutoRetrying && _currentRetryAttempt > 0) {
+      if (_currentRetryAttempt < _maxAutoRetryAttempts) {
+        retryStatusText = '正在自动重试 ($_currentRetryAttempt/$_maxAutoRetryAttempts)...';
+      } else {
+        retryStatusText = '已达最大重试次数 ($_maxAutoRetryAttempts)';
+      }
+    }
+
+    Widget content;
+
+    if (isMobileLayout) {
+      // 移动端紧凑布局
+      content = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.85),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: Colors.redAccent.withOpacity(0.6),
+            width: 1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Icon(Icons.error_outline, color: Colors.redAccent),
-              const SizedBox(width: 8),
-              Expanded(
-                child: SelectableText.rich(
-                  TextSpan(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 标题行：图标 + 标题 + 关闭按钮
+            Row(
+              children: [
+                const Icon(
+                  Icons.error_outline,
+                  color: Colors.redAccent,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    '播放失败',
+                    style: TextStyle(
+                      color: Colors.redAccent,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                ),
+                // 自动重试状态
+                if (retryStatusText.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (_isAutoRetrying &&
+                            _currentRetryAttempt < _maxAutoRetryAttempts)
+                          const SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.orange,
+                              ),
+                            ),
+                          ),
+                        if (_isAutoRetrying &&
+                            _currentRetryAttempt < _maxAutoRetryAttempts)
+                          const SizedBox(width: 4),
+                        Text(
+                          retryStatusText,
+                          style: const TextStyle(
+                            color: Colors.orange,
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                const SizedBox(width: 4),
+                GestureDetector(
+                  onTap: () {
+                    _resetAutoRetryState();
+                    _clearPlaybackErrorMessage();
+                  },
+                  child: const Icon(
+                    Icons.close,
+                    color: Colors.white54,
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            // 错误信息（可点击展开/复制）
+            GestureDetector(
+              onTap: _copyPlaybackError,
+              onLongPress: () {
+                // 长按显示完整错误信息的对话框
+                _showFullErrorDialog(message);
+              },
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  displayMessage,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.9),
+                    fontSize: 12,
+                    height: 1.3,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // 操作按钮行
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCompactButton(
+                    icon: Icons.refresh,
+                    label: '重试',
+                    onTap: () {
+                      _resetAutoRetryState();
+                      _retryCurrentVideo();
+                    },
+                    isPrimary: true,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildCompactButton(
+                    icon: Icons.copy,
+                    label: '复制',
+                    onTap: _copyPlaybackError,
+                    isPrimary: false,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _buildCompactButton(
+                    icon: Icons.info_outline,
+                    label: '详情',
+                    onTap: () => _showFullErrorDialog(message),
+                    isPrimary: false,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    } else {
+      // 桌面端原有布局
+      content = Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(0.78),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: Colors.redAccent.withOpacity(0.8),
+            width: 1,
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.error_outline, color: Colors.redAccent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const TextSpan(
-                        text: '播放失败：',
-                        style: TextStyle(
-                          color: Colors.redAccent,
-                          fontWeight: FontWeight.bold,
+                      SelectableText.rich(
+                        TextSpan(
+                          children: [
+                            const TextSpan(
+                              text: '播放失败：',
+                              style: TextStyle(
+                                color: Colors.redAccent,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            TextSpan(
+                              text: message,
+                              style: const TextStyle(
+                                color: Colors.redAccent,
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      TextSpan(
-                        text: message,
-                        style: const TextStyle(
-                          color: Colors.redAccent,
-                          fontSize: 13,
-                          height: 1.4,
+                      // 显示自动重试状态
+                      if (retryStatusText.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Row(
+                            children: [
+                              if (_isAutoRetrying &&
+                                  _currentRetryAttempt < _maxAutoRetryAttempts)
+                                const SizedBox(
+                                  width: 12,
+                                  height: 12,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.orange,
+                                    ),
+                                  ),
+                                ),
+                              if (_isAutoRetrying &&
+                                  _currentRetryAttempt < _maxAutoRetryAttempts)
+                                const SizedBox(width: 6),
+                              Text(
+                                retryStatusText,
+                                style: const TextStyle(
+                                  color: Colors.orange,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
-              ),
-              IconButton(
-                tooltip: '关闭错误提示',
-                visualDensity: VisualDensity.compact,
-                onPressed: _clearPlaybackErrorMessage,
-                icon: const Icon(
-                  Icons.close,
-                  color: Colors.white,
-                  size: 18,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            children: [
-              TextButton(
-                onPressed: _retryCurrentVideo,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  backgroundColor: Colors.redAccent.withOpacity(0.25),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 6,
-                    horizontal: 12,
+                IconButton(
+                  tooltip: '关闭错误提示',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    _resetAutoRetryState();
+                    _clearPlaybackErrorMessage();
+                  },
+                  icon: const Icon(
+                    Icons.close,
+                    color: Colors.white,
+                    size: 18,
                   ),
                 ),
-                child: const Text('重试播放'),
-              ),
-              TextButton(
-                onPressed: _copyPlaybackError,
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.white,
-                  backgroundColor: Colors.blueGrey.withOpacity(0.25),
-                  padding: const EdgeInsets.symmetric(
-                    vertical: 6,
-                    horizontal: 12,
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                TextButton(
+                  onPressed: () {
+                    _resetAutoRetryState();
+                    _retryCurrentVideo();
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.redAccent.withOpacity(0.25),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 12,
+                    ),
                   ),
+                  child: const Text('重试播放'),
                 ),
-                child: const Text('复制错误信息'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+                TextButton(
+                  onPressed: _copyPlaybackError,
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    backgroundColor: Colors.blueGrey.withOpacity(0.25),
+                    padding: const EdgeInsets.symmetric(
+                      vertical: 6,
+                      horizontal: 12,
+                    ),
+                  ),
+                  child: const Text('复制错误信息'),
+                ),
+                // 停止自动重试按钮
+                if (_isAutoRetrying &&
+                    _currentRetryAttempt < _maxAutoRetryAttempts)
+                  TextButton(
+                    onPressed: _resetAutoRetryState,
+                    style: TextButton.styleFrom(
+                      foregroundColor: Colors.white,
+                      backgroundColor: Colors.orange.withOpacity(0.25),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 6,
+                        horizontal: 12,
+                      ),
+                    ),
+                    child: const Text('停止重试'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
 
     content = Material(
       color: Colors.transparent,
@@ -4678,37 +5029,156 @@ class VideoPlayerState extends State<VideoPlayer> {
       overlayChild = MediaQuery(data: mediaQuery, child: overlayChild);
     }
 
+    // 移动端定位更靠近顶部，桌面端保持原位置
     return Positioned(
-      top: 16,
-      left: 16,
-      right: 16,
+      top: isMobileLayout ? 8 : 16,
+      left: isMobileLayout ? 8 : 16,
+      right: isMobileLayout ? 8 : 16,
       child: overlayChild,
     );
   }
 
-  // 添加错误处理方法
-  void _showErrorMessage(String error) {
-    // 检查是否是重复错误且在冷却时间内
-    final now = DateTime.now();
-    final lastShown = _shownErrors[error];
-    if (lastShown != null && now.difference(lastShown) < _errorCooldown) {
-      return;
-    }
+  /// 构建移动端紧凑按钮
+  Widget _buildCompactButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    required bool isPrimary,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: isPrimary
+              ? Colors.redAccent.withOpacity(0.3)
+              : Colors.white.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: isPrimary
+                ? Colors.redAccent.withOpacity(0.5)
+                : Colors.white.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              icon,
+              color: isPrimary ? Colors.white : Colors.white70,
+              size: 14,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isPrimary ? Colors.white : Colors.white70,
+                fontSize: 12,
+                fontWeight: isPrimary ? FontWeight.w600 : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-    // 更新错误显示时间
-    _shownErrors[error] = now;
+  /// 显示完整错误信息的对话框
+  void _showFullErrorDialog(String message) {
+    if (!mounted) return;
 
-    // 更新错误提示内容，通过 SelectableText.rich 展示
-    if (!mounted) {
-      _playbackErrorMessage = error;
-      _schedulePlaybackErrorDismissal();
-      return;
-    }
-    setState(() {
-      _playbackErrorMessage = error;
-    });
-    _updatePlaybackErrorOverlay();
-    _schedulePlaybackErrorDismissal();
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: Colors.grey[900],
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        title: Row(
+          children: [
+            const Icon(Icons.error_outline, color: Colors.redAccent),
+            const SizedBox(width: 8),
+            const Text(
+              '错误详情',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (_isAutoRetrying)
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: Colors.orange.withOpacity(0.3),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.orange,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '正在自动重试 ($_currentRetryAttempt/$_maxAutoRetryAttempts)',
+                        style: const TextStyle(
+                          color: Colors.orange,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              SelectableText(
+                message,
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.9),
+                  fontSize: 13,
+                  height: 1.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: message));
+              Navigator.of(dialogContext).pop();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('错误信息已复制'),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 2),
+                  ),
+                );
+              }
+            },
+            child: const Text('复制'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('关闭'),
+          ),
+        ],
+      ),
+    );
   }
 
   // 添加快捷键说明按钮
@@ -5048,23 +5518,7 @@ class VideoPlayerState extends State<VideoPlayer> {
     _playbackErrorOverlayEntry = null;
   }
 
-  /// 在 2 秒后自动关闭错误提示，除非用户提前清理或新错误覆盖旧错误。
-  void _schedulePlaybackErrorDismissal() {
-    _playbackErrorDismissTimer?.cancel();
-    if (_playbackErrorMessage == null) {
-      return;
-    }
-    _playbackErrorDismissTimer = Timer(const Duration(seconds: 2), () {
-      if (!mounted) {
-        _playbackErrorMessage = null;
-        _lastFailedPlaylistIndex = null;
-        _autoAdvanceBlockedIndex = null;
-        _removePlaybackErrorOverlayEntry();
-        return;
-      }
-      _clearPlaybackErrorMessage();
-    });
-  }
+  /// 构建链接模式切换按钮
 
   // 统一处理键盘右箭头的长按与短按逻辑
   bool _handleHardwareKeyEvent(KeyEvent event) {
