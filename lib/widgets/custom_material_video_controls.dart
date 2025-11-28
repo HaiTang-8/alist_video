@@ -830,78 +830,49 @@ class _CustomMaterialVideoControlsState
                       ),
                 ),
               ),
-              // Speedup Indicator.
+              // Speedup Indicator - 独立定位，不受按钮栏高度影响
               IgnorePointer(
-                child: Padding(
-                  padding: _theme(context).padding ??
-                      (
-                          // Add padding in fullscreen!
-                          isFullscreen(context)
-                              ? MediaQuery.of(context).padding
-                              : EdgeInsets.zero),
-                  child: Column(
-                    children: [
-                      Container(
-                        height: _theme(context).buttonBarHeight,
-                        margin: _theme(context).topButtonBarMargin,
-                      ),
-                      Expanded(
-                        child: AnimatedOpacity(
-                          duration: _theme(context).controlsTransitionDuration,
-                          opacity: _speedUpIndicator ? 1 : 0,
-                          child: _theme(context).speedUpIndicatorBuilder?.call(
-                                  context, _theme(context).speedUpFactor) ??
-                              Container(
-                                alignment: Alignment.topCenter,
-                                child: Container(
-                                  margin: const EdgeInsets.all(16.0),
-                                  alignment: Alignment.center,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0x88000000),
-                                    borderRadius: BorderRadius.circular(64.0),
-                                  ),
-                                  height: 48.0,
-                                  width: 108.0,
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      const SizedBox(width: 16.0),
-                                      Expanded(
-                                        child: Text(
-                                          '${_theme(context).speedUpFactor.toStringAsFixed(1)}x',
-                                          textAlign: TextAlign.center,
-                                          style: const TextStyle(
-                                            fontSize: 14.0,
-                                            color: Color(0xFFFFFFFF),
-                                          ),
-                                        ),
-                                      ),
-                                      Container(
-                                        height: 48.0,
-                                        width: 48.0 - 16.0,
-                                        alignment: Alignment.centerRight,
-                                        child: const Icon(
-                                          Icons.fast_forward,
-                                          color: Color(0xFFFFFFFF),
-                                          size: 24.0,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16.0),
-                                    ],
+                child: AnimatedOpacity(
+                  duration: _theme(context).controlsTransitionDuration,
+                  opacity: _speedUpIndicator ? 1 : 0,
+                  child: _theme(context).speedUpIndicatorBuilder?.call(
+                          context, _theme(context).speedUpFactor) ??
+                      // 长按倍速提示 - 紧凑样式，位置靠上，减少对画面遮挡
+                      Align(
+                        alignment: Alignment.topCenter,
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 5),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.fast_forward_rounded,
+                                  color: Color(0xB3FFFFFF),
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${_theme(context).speedUpFactor.toStringAsFixed(1)}x',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w500,
+                                    color: Color(0xFFFFFFFF),
                                   ),
                                 ),
-                              ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
-                      Container(
-                        height: _theme(context).buttonBarHeight,
-                        margin: _theme(context).bottomButtonBarMargin,
-                      ),
-                    ],
-                  ),
                 ),
               ),
               // Seek Indicator.

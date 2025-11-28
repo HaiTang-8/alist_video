@@ -903,9 +903,15 @@ class VideoPlayerState extends State<VideoPlayer> {
       _handleVideoSwitchAsyncWithoutProgressSave(event.index);
     }));
 
-    // 错误监听：阻止自动跳播并展示可复制的错误信息
+    // 错误监听：过滤非致命错误，仅对真正影响播放的错误进行处理
     _streamSubscriptions.add(player.stream.error.listen((error) {
       if (!mounted) {
+        return;
+      }
+      // 检查是否为非致命警告（只显示提示，不重试不暂停）
+      if (_isNonFatalWarning(error)) {
+        _logDebug('检测到非致命警告: $error');
+        _showWarningMessage(error.toString());
         return;
       }
       unawaited(_handlePlaybackFailure(error));
@@ -4387,6 +4393,166 @@ class VideoPlayerState extends State<VideoPlayer> {
     return _currentAudio?.id == track.id;
   }
 
+  /// 判断是否为非致命警告（只需显示提示，不需要重试和暂停播放）
+  /// 这些错误通常是警告性质，不会真正影响视频播放
+  bool _isNonFatalWarning(Object error) {
+    final message = error.toString().toLowerCase();
+
+    // 可忽略的错误关键词列表
+    const ignorablePatterns = [
+      // 字幕相关的非致命错误
+      'subtitle',
+      'sub',
+      'ass',
+      'srt',
+      // 元数据/标签相关
+      'metadata',
+      'tag',
+      'cover',
+      'album',
+      'artist',
+      'title tag',
+      // 编解码器警告（非致命）
+      'aviavi',
+      'avi header',
+      'discarding',
+      'discarded',
+      'deprecated',
+      // 缓冲相关的临时警告
+      'buffer underflow',
+      'underrun',
+      // 音频相关的轻微问题
+      'audio sync',
+      'audio discontinuity',
+      'pts discontinuity',
+      'av_interleaved',
+      'audio device', // 音频设备初始化失败，视频仍可播放
+      'no sound', // 无声音警告，不影响视频播放
+      // 网络相关的临时问题（通常会自动恢复）
+      'timed out', // 注意：严重超时应该让它重试
+      'temporarily',
+      // 格式检测相关
+      'probing',
+      'probe',
+      'detection',
+      // 流信息更新
+      'stream info',
+      'track info',
+      // HDR/色彩空间相关（不影响播放）
+      'hdr',
+      'color space',
+      'color primaries',
+      'transfer characteristics',
+      // 章节/导航相关
+      'chapter',
+      'navigation',
+      // 外部滤镜相关
+      'filter',
+      'vf ',
+      'af ',
+      // 播放器内部信息性消息
+      'info:',
+      'warning:',
+    ];
+
+    // 特殊情况：音频设备问题虽然包含 "could not open" 但不影响视频播放
+    // 需要优先检查这些特殊模式
+    const audioDevicePatterns = [
+      'audio device',
+      'no sound',
+      'initialize audio',
+    ];
+    for (final pattern in audioDevicePatterns) {
+      if (message.contains(pattern)) {
+        return true; // 音频设备问题，视频仍可播放
+      }
+    }
+
+    // 致命错误关键词 - 这些错误即使包含上述关键词也不能忽略
+    const fatalPatterns = [
+      'failed to open',
+      'could not open',
+      'no such file',
+      'file not found',
+      'access denied',
+      'permission denied',
+      'connection refused',
+      'connection reset',
+      'network unreachable',
+      'host not found',
+      'dns',
+      '404',
+      '403',
+      '401',
+      '500',
+      '502',
+      '503',
+      'codec not found',
+      'unsupported codec',
+      'no video',
+      'no audio',
+      'demuxer',
+      'corrupted',
+      'invalid data',
+      'end of file',
+      'eof',
+    ];
+
+    // 先检查是否包含致命错误关键词
+    for (final pattern in fatalPatterns) {
+      if (message.contains(pattern)) {
+        return false; // 致命错误，不可忽略
+      }
+    }
+
+    // 再检查是否包含可忽略的关键词
+    for (final pattern in ignorablePatterns) {
+      if (message.contains(pattern)) {
+        return true; // 非致命错误，可忽略
+      }
+    }
+
+    // 检查播放器是否仍在正常播放（如果正在播放，说明错误不影响播放）
+    if (player.state.playing && player.state.position.inSeconds > 0) {
+      _logDebug('播放器仍在播放中，错误可能不影响播放: $message');
+      return true;
+    }
+
+    return false; // 默认不忽略，保守处理
+  }
+
+  /// 显示非致命警告信息（不触发重试，不暂停播放）
+  void _showWarningMessage(String warning) {
+    // 检查是否是重复警告且在冷却时间内
+    final now = DateTime.now();
+    final lastShown = _shownErrors[warning];
+    if (lastShown != null && now.difference(lastShown) < _errorCooldown) {
+      return;
+    }
+    _shownErrors[warning] = now;
+
+    // 使用 SnackBar 显示简短警告，不干扰播放
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          warning,
+          style: const TextStyle(fontSize: 12),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: Colors.orange.shade700,
+        margin: const EdgeInsets.only(
+          bottom: 16,
+          left: 16,
+          right: 16,
+        ),
+      ),
+    );
+  }
+
   /// 处理播放失败：停止自动跳播并标记错误信息，同时触发自动重试
   Future<void> _handlePlaybackFailure(Object error) async {
     final message = error.toString();
@@ -6280,14 +6446,18 @@ class _SpeedIndicatorOverlayState extends State<_SpeedIndicatorOverlay>
       return const SizedBox.shrink();
     }
 
+    // 获取安全区域顶部间距，确保不被刘海/状态栏遮挡
+    final topPadding = MediaQuery.of(context).padding.top;
+
     return Positioned.fill(
       child: Stack(
         children: [
-          // 在全屏和非全屏模式下添加倍速提示
+          // 倍速提示 - 位置靠上，样式紧凑，减少对画面遮挡
           Align(
             alignment: Alignment.topCenter,
             child: Padding(
-              padding: const EdgeInsets.only(top: 50.0),
+              // 移动端全屏时位置更靠上，仅留出安全区域 + 少量间距
+              padding: EdgeInsets.only(top: topPadding + 12),
               child: AnimatedBuilder(
                 animation: _animationController,
                 builder: (context, child) {
@@ -6303,34 +6473,31 @@ class _SpeedIndicatorOverlayState extends State<_SpeedIndicatorOverlay>
                   valueListenable: widget.speedValue,
                   builder: (context, speed, _) {
                     return Container(
+                      // 紧凑的内边距
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 8),
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.7),
-                        borderRadius: BorderRadius.circular(20),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.3),
-                            blurRadius: 10,
-                            spreadRadius: 1,
-                          ),
-                        ],
+                        // 半透明背景，减少视觉干扰
+                        color: Colors.black.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(
-                            Icons.speed,
-                            color: Colors.white,
-                            size: 24,
+                            Icons.fast_forward_rounded,
+                            color: Colors.white70,
+                            size: 14,
                           ),
-                          const SizedBox(width: 8),
+                          const SizedBox(width: 4),
                           Text(
                             '${speed}x',
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
                         ],
