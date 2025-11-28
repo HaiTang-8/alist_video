@@ -3,8 +3,10 @@
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## work
+- 最后的回答要有一段用于git提交的总结话语
 - 必须使用中文回答
 - 改动代码必须要有正确详细的代码注释
+- 因为是跨端项目必须同时考虑移动端和桌面端
 
 ## Project Overview
 
