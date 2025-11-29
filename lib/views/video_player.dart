@@ -153,8 +153,7 @@ class VideoPlayerState extends State<VideoPlayer> {
   // 处理错误管理相关变量
   final Map<String, DateTime> _shownErrors = {};
   static const _errorCooldown = Duration(seconds: 5);
-  static const Duration _playlistPolicyRetryDelay =
-      Duration(milliseconds: 300);
+  static const Duration _playlistPolicyRetryDelay = Duration(milliseconds: 300);
   static const int _playlistPolicyMaxAttempts = 5;
   String? _playbackErrorMessage;
   int? _lastFailedPlaylistIndex;
@@ -1285,6 +1284,15 @@ class VideoPlayerState extends State<VideoPlayer> {
       return;
     }
 
+    // 切换前先基于当前播放进度落库，避免切换时长暂为0导致进度缺失
+    final currentPosition = player.state.position;
+    final currentDuration = player.state.duration;
+    await _saveCurrentProgress(
+      updateUIImmediately: true,
+      positionOverride: currentPosition,
+      durationOverride: currentDuration,
+    );
+
     if (mounted) {
       setState(() {
         _isSwitchingLinkMode = true;
@@ -1315,16 +1323,14 @@ class VideoPlayerState extends State<VideoPlayer> {
       _syncLinkModeFromPlaylist(currentPlayingIndex);
 
       final wasPlaying = player.state.playing;
-      final currentPosition = player.state.position;
+      final seekPosition = currentPosition;
 
       await player.open(
         Playlist(playList, index: currentPlayingIndex),
         play: false,
       );
 
-      if (currentPosition > Duration.zero) {
-        await player.seek(currentPosition);
-      }
+      await _seekAfterLinkModeSwitch(seekPosition);
 
       if (wasPlaying) {
         await player.play();
@@ -1361,6 +1367,63 @@ class VideoPlayerState extends State<VideoPlayer> {
         });
       }
     }
+  }
+
+  Future<void> _seekAfterLinkModeSwitch(Duration targetPosition) async {
+    if (targetPosition <= Duration.zero) {
+      return;
+    }
+
+    // 通过多次尝试 + 时长就绪校验，避免部分平台在切换后首次 seek 失败
+    const maxAttempts = 3;
+    Duration resolvedDuration = Duration.zero;
+
+    try {
+      resolvedDuration = await player.stream.duration
+          .firstWhere((duration) => duration > Duration.zero)
+          .timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => player.state.duration,
+          );
+    } catch (_) {
+      resolvedDuration = player.state.duration;
+    }
+
+    final safeTarget =
+        resolvedDuration > Duration.zero && targetPosition >= resolvedDuration
+            ? resolvedDuration - const Duration(seconds: 1)
+            : targetPosition;
+
+    for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        await player.seek(safeTarget);
+
+        // 等待位置接近目标（±2 秒），确认 seek 生效
+        final reached = await player.stream.position
+            .firstWhere(
+              (pos) => (pos - safeTarget).inSeconds.abs() <= 2,
+            )
+            .timeout(const Duration(seconds: 2),
+                onTimeout: () => Duration.zero);
+
+        if (reached > Duration.zero) {
+          _logDebug(
+            '切换后定位成功，跳转至 ${safeTarget.inSeconds} 秒',
+          );
+          return;
+        }
+      } catch (e) {
+        _logDebug('切换后第 $attempt 次定位失败，重试: $e');
+      }
+
+      await Future.delayed(const Duration(milliseconds: 250));
+    }
+
+    // 兜底再跳转一次，避免长期卡在开头
+    try {
+      await player.seek(safeTarget);
+      _logDebug('切换后兜底跳转至 ${safeTarget.inSeconds} 秒');
+    } catch (_) {}
   }
 
   Future<String?> _ensureRawUrl(
@@ -1688,6 +1751,8 @@ class VideoPlayerState extends State<VideoPlayer> {
   Future<void> _saveCurrentProgress({
     bool updateUIImmediately = false,
     bool waitForCompletion = false, // 新增参数：是否等待完成（用于退出时）
+    Duration? positionOverride,
+    Duration? durationOverride,
   }) async {
     // 退出阶段只允许 waitForCompletion 的强制保存，避免异步重复执行。
     if (_isExiting && !waitForCompletion) {
@@ -1718,8 +1783,8 @@ class VideoPlayerState extends State<VideoPlayer> {
     }
 
     try {
-      final currentPosition = player.state.position;
-      final duration = player.state.duration; // 获取视频总时长
+      final currentPosition = positionOverride ?? player.state.position;
+      final duration = durationOverride ?? player.state.duration;
 
       // 播放失败或尚未拿到有效时长时不落库，避免 0 进度污染历史记录。
       final isFailedItem = _lastFailedPlaylistIndex == currentPlayingIndex;
@@ -1980,7 +2045,6 @@ class VideoPlayerState extends State<VideoPlayer> {
       }
     });
   }
-
 
   // 查询并跳转到上次播放位
   Future<void> _seekToLastPosition(String videoName) async {
@@ -2459,8 +2523,7 @@ class VideoPlayerState extends State<VideoPlayer> {
             controls: MaterialDesktopVideoControls,
           ),
         ),
-        if (_playbackErrorMessage != null &&
-            _shouldUseEmbeddedErrorOverlay())
+        if (_playbackErrorMessage != null && _shouldUseEmbeddedErrorOverlay())
           _buildPlaybackErrorOverlay(),
       ],
     );
@@ -3470,12 +3533,10 @@ class VideoPlayerState extends State<VideoPlayer> {
       icon: ValueListenableBuilder<PlaybackLinkMode>(
         valueListenable: _linkModeNotifier,
         builder: (context, mode, _) {
-          final nextMode =
-              mode == PlaybackLinkMode.sign ? 'raw_url' : 'sign';
+          final nextMode = mode == PlaybackLinkMode.sign ? 'raw_url' : 'sign';
           final label = _isCurrentMediaLocal ? 'LOCAL' : mode.label;
-          final tooltip = _isCurrentMediaLocal
-              ? '正在使用本地缓存，无法切换链接'
-              : '切换至 $nextMode';
+          final tooltip =
+              _isCurrentMediaLocal ? '正在使用本地缓存，无法切换链接' : '切换至 $nextMode';
 
           if (_isSwitchingLinkMode) {
             return const Tooltip(
@@ -4868,7 +4929,8 @@ class VideoPlayerState extends State<VideoPlayer> {
     String retryStatusText = '';
     if (_isAutoRetrying && _currentRetryAttempt > 0) {
       if (_currentRetryAttempt < _maxAutoRetryAttempts) {
-        retryStatusText = '正在自动重试 ($_currentRetryAttempt/$_maxAutoRetryAttempts)...';
+        retryStatusText =
+            '正在自动重试 ($_currentRetryAttempt/$_maxAutoRetryAttempts)...';
       } else {
         retryStatusText = '已达最大重试次数 ($_maxAutoRetryAttempts)';
       }
